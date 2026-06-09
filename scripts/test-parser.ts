@@ -329,4 +329,44 @@ assert.equal(blockText(dataTable[0]), "Model · Score");
 assert.equal(blockText(dataTable[1]), "Fable 5 · 98");
 
 console.log("PG-style <br><br>/layout-table tests passed");
+
+// ---- Image extraction upgrades ----
+// Linked images (logo grids): <a> wrapping an <img> must surface the image.
+const linkedImg = htmlToBlocks(`
+  <div>
+    <a href="https://sponsor.example.com">
+      <img src="https://cdn.example.com/logo.png" alt="Acme"
+           data-inkwell-src="https://cdn.example.com/logo@2x.png"
+           data-inkwell-cssw="180" data-inkwell-cssh="60"
+           data-inkwell-w="360" data-inkwell-h="120" />
+    </a>
+    <p>Acme sponsors the newsletter.</p>
+  </div>
+`);
+assert.equal(linkedImg.length, 2, "a-wrapped img surfaces as a block");
+assert.equal(linkedImg[0].type, "image");
+const linked = linkedImg[0] as Extract<Block, { type: "image" }>;
+assert.equal(
+  linked.src,
+  "https://cdn.example.com/logo@2x.png",
+  "data-inkwell-src wins over src"
+);
+assert.equal(linked.width, 180, "display width from data-inkwell-cssw");
+assert.equal(linked.height, 60, "display height from data-inkwell-cssh");
+
+// Icon-sized images are dropped; unknown-size images are kept.
+const icons = htmlToBlocks(`
+  <div>
+    <img src="https://e.com/emoji.png" data-inkwell-cssw="20" data-inkwell-cssh="20" />
+    <img src="https://e.com/unknown-size.jpg" />
+    <p>text</p>
+  </div>
+`);
+assert.equal(
+  icons.filter((b) => b.type === "image").length,
+  1,
+  "icon-sized image dropped, unknown-size image kept"
+);
+
+console.log("image extraction tests passed");
 console.log("\nPARSER TESTS PASSED");

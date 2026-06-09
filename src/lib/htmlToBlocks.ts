@@ -258,6 +258,12 @@ function processChildren(nodes: AnyNode[], blocks: Block[]): void {
     if (BLOCK_TAGS.has(tag)) {
       flushRun();
       processBlock(node, tag, blocks);
+    } else if (findFirst(node.children, "img")) {
+      // Inline wrappers (usually <a>) around images — common in logo grids
+      // and linked figures. Surface the image as a block instead of silently
+      // dropping it during inline span flattening.
+      flushRun();
+      processChildren(node.children, blocks);
     } else {
       inlineRun.push(node);
     }
@@ -415,9 +421,18 @@ function firstSrcsetUrl(srcset: string): string | undefined {
   return srcset.split(",")[0]?.trim().split(/\s+/)[0] || undefined;
 }
 
+function parseDimension(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const size = Number.parseFloat(value);
+  return Number.isFinite(size) && size > 0 ? Math.round(size) : undefined;
+}
+
 function imageBlock(el: ElementNode, caption?: string): ImageBlock | null {
   const attribs = el.attribs;
+  // data-inkwell-src is the browser-resolved URL stamped by the extraction
+  // script (it already reflects srcset / <picture> / lazy-load resolution).
   const src =
+    attribs["data-inkwell-src"] ||
     attribs.src ||
     attribs["data-src"] ||
     (attribs.srcset ? firstSrcsetUrl(attribs.srcset) : undefined);
@@ -426,10 +441,27 @@ function imageBlock(el: ElementNode, caption?: string): ImageBlock | null {
   if (isTinyDimension(attribs.width) || isTinyDimension(attribs.height)) {
     return null;
   }
+  // On-screen size stamped at extraction time; intrinsic size as fallback.
+  const width =
+    parseDimension(attribs["data-inkwell-cssw"]) ??
+    parseDimension(attribs["data-inkwell-w"]);
+  const height =
+    parseDimension(attribs["data-inkwell-cssh"]) ??
+    parseDimension(attribs["data-inkwell-h"]);
+  // Icon-sized images (favicons, emoji glyphs, UI chrome) aren't content.
+  if (
+    width !== undefined &&
+    height !== undefined &&
+    (width < 24 || height < 24)
+  ) {
+    return null;
+  }
   const block: ImageBlock = { type: "image", src };
   const alt = attribs.alt?.trim();
   if (alt) block.alt = alt;
   if (caption) block.caption = caption;
+  if (width !== undefined) block.width = width;
+  if (height !== undefined) block.height = height;
   return block;
 }
 

@@ -19,7 +19,7 @@ function blockText(block: Block): string {
     case "code":
       return block.text;
     case "image":
-      return block.caption ? `[image: ${block.caption}]` : "[image]";
+      return `![${block.caption || block.alt || "image"}](${block.src})`;
     case "rule":
       return "";
   }

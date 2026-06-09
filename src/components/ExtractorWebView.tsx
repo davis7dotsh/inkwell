@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef } from "react";
-import { StyleSheet, View } from "react-native";
+import { Dimensions, StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
 import type { WebViewMessageEvent } from "react-native-webview";
 
@@ -28,7 +28,7 @@ type ExtractMessage =
  * page, and reports the extracted article (or an error) exactly once.
  *
  * The view is visually hidden but mounted — display:none would stop JS from
- * running on some platforms, so it is rendered at 1x1 with opacity 0 instead.
+ * running on some platforms, so it is rendered full-screen with opacity 0.
  */
 export function ExtractorWebView({
   url,
@@ -170,11 +170,16 @@ export function ExtractorWebView({
   );
 }
 
+// Full-screen (not 1x1) so the page lays out at a realistic viewport — the
+// extraction script stamps each image's on-screen size, which the reader uses
+// for natural-size rendering. Still invisible and untouchable.
 const styles = StyleSheet.create({
   hidden: {
     position: "absolute",
-    width: 1,
-    height: 1,
+    top: 0,
+    left: 0,
+    width: Dimensions.get("window").width,
+    height: Dimensions.get("window").height,
     opacity: 0,
     overflow: "hidden",
   },

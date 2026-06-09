@@ -16,7 +16,15 @@ export type Block =
   | { type: "paragraph"; spans: Span[] }
   | { type: "quote"; spans: Span[] }
   | { type: "list"; ordered: boolean; items: Span[][] }
-  | { type: "image"; src: string; alt?: string; caption?: string }
+  | {
+      type: "image";
+      src: string;
+      alt?: string;
+      caption?: string;
+      /** Display dimensions (CSS px) captured at extraction time, if known. */
+      width?: number;
+      height?: number;
+    }
   | { type: "code"; text: string }
   | { type: "rule" };
 

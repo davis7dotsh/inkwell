@@ -36,18 +36,43 @@ function SpanText({ spans }: { spans: Span[] }) {
   );
 }
 
-function ArticleImage({ src, caption }: { src: string; caption?: string }) {
-  const [aspect, setAspect] = useState(16 / 9);
+function ArticleImage({
+  src,
+  caption,
+  width,
+  height,
+}: {
+  src: string;
+  caption?: string;
+  width?: number;
+  height?: number;
+}) {
+  // Extraction-time dimensions give a stable layout up front; the loaded
+  // image refines the aspect ratio. Images narrower than the column render
+  // at their natural size instead of stretching to fill it.
+  const [aspect, setAspect] = useState(
+    width && height ? width / height : 16 / 9
+  );
+  const [displayWidth, setDisplayWidth] = useState<number | undefined>(width);
   return (
     <View style={styles.figure}>
       <Image
         source={{ uri: src }}
-        style={{ width: "100%", aspectRatio: aspect, borderRadius: 8 }}
-        contentFit="cover"
+        style={{
+          width: displayWidth ?? "100%",
+          maxWidth: "100%",
+          aspectRatio: aspect,
+          borderRadius: 8,
+          alignSelf: "center",
+        }}
+        contentFit="contain"
         transition={150}
         onLoad={(e) => {
-          const { width, height } = e.source;
-          if (width > 0 && height > 0) setAspect(width / height);
+          const loaded = e.source;
+          if (loaded.width > 0 && loaded.height > 0) {
+            setAspect(loaded.width / loaded.height);
+            if (displayWidth === undefined) setDisplayWidth(loaded.width);
+          }
         }}
       />
       {caption ? <Text style={styles.caption}>{caption}</Text> : null}
@@ -93,7 +118,14 @@ function BlockView({ block }: { block: Block }) {
         </View>
       );
     case "image":
-      return <ArticleImage src={block.src} caption={block.caption} />;
+      return (
+        <ArticleImage
+          src={block.src}
+          caption={block.caption}
+          width={block.width}
+          height={block.height}
+        />
+      );
     case "code":
       return (
         <View style={styles.codeBlock}>
