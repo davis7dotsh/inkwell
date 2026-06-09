@@ -1,0 +1,545 @@
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useLocalSearchParams } from "expo-router";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  Share,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  useAnimatedScrollHandler,
+  useSharedValue,
+} from "react-native-reanimated";
+
+import { BlockRenderer } from "../../components/BlockRenderer";
+import { BrushStroke } from "../../components/BrushStroke";
+import { ScreenHeader } from "../../components/ScreenHeader";
+import { BoxesLayer } from "../../components/annotation/BoxesLayer";
+import { NoteEditorModal } from "../../components/annotation/NoteEditorModal";
+import { NotesLayer } from "../../components/annotation/NotesLayer";
+import { StrokesCanvas } from "../../components/annotation/StrokesCanvas";
+import { Toolbar, type Tool } from "../../components/annotation/Toolbar";
+import { buildExportMarkdown, type BlockLayout } from "../../lib/exportMarkdown";
+import {
+  getAnnotations,
+  getArticle,
+  newId,
+  saveAnnotations,
+} from "../../lib/storage";
+import {
+  CONTENT_PADDING,
+  HIGHLIGHTER_COLOR,
+  HIGHLIGHTER_WIDTH,
+  MAX_CONTENT_WIDTH,
+  PEN_WIDTH,
+  colors,
+  penColors,
+  serif,
+} from "../../lib/theme";
+import {
+  emptyAnnotations,
+  type Annotations,
+  type Article,
+  type BoxAnnotation,
+  type NoteAnnotation,
+  type Point,
+  type Stroke,
+} from "../../lib/types";
+
+type UndoOp = { kind: "stroke" | "box" | "note"; id: string };
+
+export default function ArticleScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { width: windowWidth } = useWindowDimensions();
+
+  const [article, setArticle] = useState<Article | null>(null);
+  const [annotations, setAnnotations] = useState<Annotations | null>(null);
+  const [tool, setTool] = useState<Tool>("read");
+  const [penColor, setPenColor] = useState<string>(penColors[0]);
+  const [activeStroke, setActiveStroke] = useState<Stroke | null>(null);
+  const [previewBox, setPreviewBox] = useState<BoxAnnotation | null>(null);
+  const [noteEditor, setNoteEditor] = useState<
+    | { mode: "new"; at: Point }
+    | { mode: "edit"; note: NoteAnnotation }
+    | null
+  >(null);
+  const [undoStack, setUndoStack] = useState<UndoOp[]>([]);
+
+  const contentWidth = Math.min(
+    MAX_CONTENT_WIDTH,
+    windowWidth - CONTENT_PADDING * 2
+  );
+  const offsetX = (windowWidth - contentWidth) / 2;
+  const scale = annotations ? contentWidth / annotations.contentWidth : 1;
+
+  const scrollY = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler((event) => {
+    scrollY.value = event.contentOffset.y;
+  });
+
+  // Refs so the (stable) gesture callbacks never see stale values. Updated in
+  // an effect (not during render) to stay React-Compiler-safe.
+  const stateRef = useRef({ tool, penColor, scale, offsetX });
+  const anchorRef = useRef<Point | null>(null);
+  const activeStrokeRef = useRef<Stroke | null>(null);
+  const previewBoxRef = useRef<BoxAnnotation | null>(null);
+  const noteSizesRef = useRef(new Map<string, { w: number; h: number }>());
+  const layoutsRef = useRef(new Map<number, BlockLayout>());
+  const annotationsRef = useRef<Annotations | null>(null);
+  useEffect(() => {
+    stateRef.current = { tool, penColor, scale, offsetX };
+    annotationsRef.current = annotations;
+  });
+
+  // ---- load & persist ----
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const loaded = await getArticle(id);
+      const anns =
+        (await getAnnotations(id)) ?? emptyAnnotations(id, contentWidth);
+      if (cancelled) return;
+      setArticle(loaded);
+      setAnnotations(anns);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // contentWidth intentionally omitted: only used to seed new annotations.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  useEffect(() => {
+    if (!annotations) return;
+    const timer = setTimeout(() => void saveAnnotations(annotations), 600);
+    return () => clearTimeout(timer);
+  }, [annotations]);
+
+  useEffect(
+    () => () => {
+      if (annotationsRef.current) void saveAnnotations(annotationsRef.current);
+    },
+    []
+  );
+
+  // ---- annotation mutations ----
+  const update = useCallback((fn: (a: Annotations) => Annotations) => {
+    setAnnotations((a) => (a ? fn(a) : a));
+  }, []);
+
+  const pushUndo = useCallback((op: UndoOp) => {
+    setUndoStack((s) => [...s, op]);
+  }, []);
+
+  const undo = useCallback(() => {
+    setUndoStack((stack) => {
+      const op = stack[stack.length - 1];
+      if (!op) return stack;
+      update((a) => ({
+        ...a,
+        strokes:
+          op.kind === "stroke"
+            ? a.strokes.filter((s) => s.id !== op.id)
+            : a.strokes,
+        boxes:
+          op.kind === "box" ? a.boxes.filter((b) => b.id !== op.id) : a.boxes,
+        notes:
+          op.kind === "note" ? a.notes.filter((n) => n.id !== op.id) : a.notes,
+      }));
+      return stack.slice(0, -1);
+    });
+  }, [update]);
+
+  // ---- gesture handling (all on the JS thread via runOnJS) ----
+  const toPoint = useCallback((x: number, y: number): Point => {
+    const { scale: s, offsetX: ox } = stateRef.current;
+    return { x: (x - ox) / s, y: (y + scrollY.value) / s };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const eraseAt = useCallback(
+    (p: Point) => {
+      const { scale: s } = stateRef.current;
+      const strokeThreshold = 20 / s;
+      const borderThreshold = 24 / s;
+      update((a) => {
+        const strokes = a.strokes.filter(
+          (stroke) =>
+            Math.min(
+              ...stroke.points.map((q) => Math.hypot(q.x - p.x, q.y - p.y))
+            ) > strokeThreshold
+        );
+        const boxes = a.boxes.filter((b) => {
+          const nearX =
+            Math.abs(p.x - b.x) < borderThreshold ||
+            Math.abs(p.x - (b.x + b.w)) < borderThreshold;
+          const nearY =
+            Math.abs(p.y - b.y) < borderThreshold ||
+            Math.abs(p.y - (b.y + b.h)) < borderThreshold;
+          const withinX =
+            p.x > b.x - borderThreshold && p.x < b.x + b.w + borderThreshold;
+          const withinY =
+            p.y > b.y - borderThreshold && p.y < b.y + b.h + borderThreshold;
+          return !((nearX && withinY) || (nearY && withinX));
+        });
+        const notes = a.notes.filter((n) => {
+          const size = noteSizesRef.current.get(n.id);
+          if (!size) return true;
+          return !(
+            p.x >= n.x &&
+            p.x <= n.x + size.w / s &&
+            p.y >= n.y &&
+            p.y <= n.y + size.h / s
+          );
+        });
+        if (
+          strokes.length === a.strokes.length &&
+          boxes.length === a.boxes.length &&
+          notes.length === a.notes.length
+        ) {
+          return a;
+        }
+        return { ...a, strokes, boxes, notes };
+      });
+    },
+    [update]
+  );
+
+  const onPanStart = useCallback(
+    (x: number, y: number) => {
+      const { tool: t, penColor: color, scale: s } = stateRef.current;
+      const p = toPoint(x, y);
+      if (t === "pen" || t === "highlighter") {
+        const stroke: Stroke = {
+          id: newId(),
+          tool: t === "highlighter" ? "highlighter" : "pen",
+          color: t === "highlighter" ? HIGHLIGHTER_COLOR : color,
+          width: (t === "highlighter" ? HIGHLIGHTER_WIDTH : PEN_WIDTH) / s,
+          points: [p],
+        };
+        activeStrokeRef.current = stroke;
+        setActiveStroke(stroke);
+      } else if (t === "box") {
+        anchorRef.current = p;
+        const box = { id: "preview", x: p.x, y: p.y, w: 0, h: 0 };
+        previewBoxRef.current = box;
+        setPreviewBox(box);
+      } else if (t === "eraser") {
+        eraseAt(p);
+      }
+    },
+    [eraseAt, toPoint]
+  );
+
+  const onPanUpdate = useCallback(
+    (x: number, y: number) => {
+      const { tool: t } = stateRef.current;
+      const p = toPoint(x, y);
+      if (t === "pen" || t === "highlighter") {
+        const current = activeStrokeRef.current;
+        if (!current) return;
+        const next = { ...current, points: [...current.points, p] };
+        activeStrokeRef.current = next;
+        setActiveStroke(next);
+      } else if (t === "box") {
+        const anchor = anchorRef.current;
+        if (!anchor) return;
+        const box = {
+          id: "preview",
+          x: Math.min(anchor.x, p.x),
+          y: Math.min(anchor.y, p.y),
+          w: Math.abs(p.x - anchor.x),
+          h: Math.abs(p.y - anchor.y),
+        };
+        previewBoxRef.current = box;
+        setPreviewBox(box);
+      } else if (t === "eraser") {
+        eraseAt(p);
+      }
+    },
+    [eraseAt, toPoint]
+  );
+
+  const onPanEnd = useCallback(() => {
+    const { tool: t, scale: s } = stateRef.current;
+    if (t === "pen" || t === "highlighter") {
+      const stroke = activeStrokeRef.current;
+      activeStrokeRef.current = null;
+      setActiveStroke(null);
+      if (stroke && stroke.points.length > 0) {
+        update((a) => ({ ...a, strokes: [...a.strokes, stroke] }));
+        pushUndo({ kind: "stroke", id: stroke.id });
+      }
+    } else if (t === "box") {
+      const box = previewBoxRef.current;
+      anchorRef.current = null;
+      previewBoxRef.current = null;
+      setPreviewBox(null);
+      if (box && box.w * s > 16 && box.h * s > 16) {
+        const committed = { ...box, id: newId() };
+        update((a) => ({ ...a, boxes: [...a.boxes, committed] }));
+        pushUndo({ kind: "box", id: committed.id });
+      }
+    }
+  }, [pushUndo, update]);
+
+  const onNoteTap = useCallback(
+    (x: number, y: number) => {
+      const { scale: s } = stateRef.current;
+      const p = toPoint(x, y);
+      const existing = annotationsRef.current?.notes.find((n) => {
+        const size = noteSizesRef.current.get(n.id);
+        if (!size) return false;
+        return (
+          p.x >= n.x &&
+          p.x <= n.x + size.w / s &&
+          p.y >= n.y &&
+          p.y <= n.y + size.h / s
+        );
+      });
+      setNoteEditor(
+        existing ? { mode: "edit", note: existing } : { mode: "new", at: p }
+      );
+    },
+    [toPoint]
+  );
+
+  const panGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .runOnJS(true)
+        .minDistance(0)
+        .maxPointers(1)
+        .onStart((e) => onPanStart(e.x, e.y))
+        .onUpdate((e) => onPanUpdate(e.x, e.y))
+        .onEnd(() => onPanEnd())
+        .onFinalize(() => onPanEnd()),
+    [onPanStart, onPanUpdate, onPanEnd]
+  );
+
+  const tapGesture = useMemo(
+    () =>
+      Gesture.Tap()
+        .runOnJS(true)
+        .onEnd((e, success) => {
+          if (success) onNoteTap(e.x, e.y);
+        }),
+    [onNoteTap]
+  );
+
+  // ---- note editor actions ----
+  const saveNote = useCallback(
+    (text: string) => {
+      if (!noteEditor) return;
+      if (noteEditor.mode === "edit") {
+        update((a) => ({
+          ...a,
+          notes: a.notes.map((n) =>
+            n.id === noteEditor.note.id ? { ...n, text } : n
+          ),
+        }));
+      } else {
+        const note: NoteAnnotation = {
+          id: newId(),
+          x: noteEditor.at.x,
+          y: noteEditor.at.y,
+          text,
+        };
+        update((a) => ({ ...a, notes: [...a.notes, note] }));
+        pushUndo({ kind: "note", id: note.id });
+      }
+      setNoteEditor(null);
+    },
+    [noteEditor, pushUndo, update]
+  );
+
+  const deleteNote = useCallback(() => {
+    if (noteEditor?.mode !== "edit") return;
+    update((a) => ({
+      ...a,
+      notes: a.notes.filter((n) => n.id !== noteEditor.note.id),
+    }));
+    setNoteEditor(null);
+  }, [noteEditor, update]);
+
+  const onPressNote = useCallback((note: NoteAnnotation) => {
+    setNoteEditor({ mode: "edit", note });
+  }, []);
+
+  const onNoteLayout = useCallback((noteId: string, size: { w: number; h: number }) => {
+    noteSizesRef.current.set(noteId, size);
+  }, []);
+
+  const onBlockLayout = useCallback((index: number, layout: BlockLayout) => {
+    layoutsRef.current.set(index, layout);
+  }, []);
+
+  // ---- export ----
+  const onExport = useCallback(() => {
+    if (!article || !annotationsRef.current) return;
+    const markdown = buildExportMarkdown(
+      article,
+      annotationsRef.current,
+      layoutsRef.current,
+      stateRef.current.scale
+    );
+    void Share.share({ message: markdown });
+  }, [article]);
+
+  const savedDate = article
+    ? new Date(article.savedAt).toLocaleDateString(undefined, {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      })
+    : "";
+
+  return (
+    <View style={styles.screen}>
+      <ScreenHeader
+        title={article?.siteName ?? ""}
+        right={
+          article ? (
+            <Pressable onPress={onExport} hitSlop={10}>
+              <MaterialCommunityIcons
+                name="export-variant"
+                size={22}
+                color={colors.accent}
+              />
+            </Pressable>
+          ) : null
+        }
+      />
+      {!article || !annotations ? (
+        <View style={styles.center}>
+          {article === null && annotations !== null ? (
+            <Text style={styles.missing}>Article not found.</Text>
+          ) : (
+            <ActivityIndicator color={colors.accent} />
+          )}
+        </View>
+      ) : (
+        <View style={styles.readerArea}>
+          <Animated.ScrollView
+            onScroll={scrollHandler}
+            scrollEventThrottle={16}
+            scrollEnabled={tool === "read"}
+            contentContainerStyle={styles.scrollContent}
+          >
+            <View style={{ width: contentWidth, alignSelf: "center" }}>
+              <Text style={styles.title}>{article.title}</Text>
+              <Text style={styles.meta}>
+                {[article.byline, article.siteName, savedDate]
+                  .filter(Boolean)
+                  .join("  ·  ")}
+              </Text>
+              <BrushStroke
+                width={Math.min(220, contentWidth * 0.4)}
+                height={8}
+                color={colors.wash}
+                opacity={0.75}
+                style={{ marginBottom: 26 }}
+              />
+              <BlockRenderer
+                blocks={article.blocks}
+                onBlockLayout={onBlockLayout}
+              />
+              <BoxesLayer
+                boxes={annotations.boxes}
+                previewBox={previewBox}
+                scale={scale}
+              />
+              <NotesLayer
+                notes={annotations.notes}
+                scale={scale}
+                onPressNote={onPressNote}
+                onNoteLayout={onNoteLayout}
+              />
+            </View>
+          </Animated.ScrollView>
+
+          <StrokesCanvas
+            strokes={annotations.strokes}
+            activeStroke={activeStroke}
+            scrollY={scrollY}
+            offsetX={offsetX}
+            scale={scale}
+          />
+
+          {tool !== "read" && (
+            <GestureDetector
+              gesture={tool === "note" ? tapGesture : panGesture}
+            >
+              <View style={StyleSheet.absoluteFill} />
+            </GestureDetector>
+          )}
+
+          <Toolbar
+            tool={tool}
+            onToolChange={setTool}
+            penColor={penColor}
+            onPenColorChange={setPenColor}
+            canUndo={undoStack.length > 0}
+            onUndo={undo}
+          />
+
+          <NoteEditorModal
+            visible={noteEditor !== null}
+            initialText={noteEditor?.mode === "edit" ? noteEditor.note.text : ""}
+            isEditing={noteEditor?.mode === "edit"}
+            onSave={saveNote}
+            onDelete={deleteNote}
+            onCancel={() => setNoteEditor(null)}
+          />
+        </View>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  readerArea: {
+    flex: 1,
+  },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  missing: {
+    fontSize: 16,
+    color: colors.inkSecondary,
+  },
+  scrollContent: {
+    paddingTop: 28,
+    paddingBottom: 160,
+  },
+  title: {
+    fontFamily: serif,
+    fontSize: 32,
+    lineHeight: 40,
+    fontWeight: "700",
+    color: colors.ink,
+    marginBottom: 12,
+  },
+  meta: {
+    fontSize: 13,
+    color: colors.inkFaint,
+    marginBottom: 14,
+  },
+});

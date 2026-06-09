@@ -1,56 +1,71 @@
-# Welcome to your Expo app 👋
+# Inkwell
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Save articles from the web, read them in a clean serif reader, and mark them up
+with your Apple Pencil — ink, highlighter, boxes around key sections, and
+pinned notes. Export your markups as Markdown to paste into an LLM.
 
-## Get started
+Built with Expo SDK 54 / React Native 0.81 / pnpm. (Pinned to SDK 54 because
+that's the newest Expo Go on the App Store.)
 
-1. Install dependencies
+Ink-wash palette: deep ink `#0E2E52` · brush blue `#1B4F8A` · stroke blue
+`#3D7BC0` · wash `#8FB8DE` · mist `#E4EEF7` · paper `#F7F8F6`.
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Run it
 
 ```bash
-npm run reset-project
+pnpm install
+pnpm start        # then press i for the iOS simulator, or scan the QR in Expo Go on iPad
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+The first launch seeds a sample article that explains the tools. Paste any
+article URL on the library screen to save the real thing.
 
-### Other setup steps
+## How it works
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+**Extraction** — a hidden `WebView` loads the URL (so client-rendered pages
+work), then a vendored copy of Mozilla Readability is injected and posts the
+cleaned article HTML back (`src/components/ExtractorWebView.tsx`,
+`src/lib/extractScript.ts`). Re-vendor with `pnpm vendor:readability`.
 
-## Learn more
+**Reader** — the article HTML is parsed once at save time by
+`src/lib/htmlToBlocks.ts` (htmlparser2, pure JS) into a typed `Block[]` model,
+rendered natively by `src/components/BlockRenderer.tsx`. No WebView at read
+time; articles are stored offline.
 
-To learn more about developing your project with Expo, look at the following resources:
+**Annotation** — all coordinates live in "content space" (relative to the text
+column, scaled by the column width recorded at creation), so markups stay
+anchored across rotation and screen sizes:
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+- ink/highlighter strokes render on a viewport-fixed Skia canvas
+  counter-translated by the scroll offset via Reanimated
+  (`src/components/annotation/StrokesCanvas.tsx`);
+- boxes and note bubbles are plain views inside the scroll content;
+- a gesture capture layer (active when a tool is selected) turns pans into
+  strokes/boxes and taps into notes; the eraser hit-tests everything.
 
-## Join the community
+**Persistence** — `expo-sqlite/kv-store`, one key per article + per annotation
+set (`src/lib/storage.ts`). Annotations autosave ~600 ms after each change.
 
-Join our community of developers creating universal apps.
+**Export** — the share button builds Markdown from the markups: boxed sections
+quote the article text they enclose (block layouts are measured at render
+time), highlights quote covered passages, notes keep nearby context
+(`src/lib/exportMarkdown.ts`).
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Tests
+
+```bash
+pnpm tsx scripts/test-parser.ts          # HTML → blocks parser fixtures
+pnpm tsx scripts/test-extract-script.mjs # injected-JS syntax check
+pnpm tsc --noEmit
+```
+
+## Known v1 limits
+
+- Web pages only — no PDFs yet.
+- Pen strokes export as positions/counts, not text (no handwriting OCR).
+- Tools are mode-based via the toolbar; no pencil-vs-finger detection yet.
+- LLM chat is intentionally out of scope for v1 — use the Markdown export.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

@@ -1,2 +1,4 @@
 allowBuilds:
-  msgpackr-extract: set this to true or false
+  '@shopify/react-native-skia': true
+  esbuild: true
+  msgpackr-extract: true
