@@ -500,7 +500,11 @@ export default function ArticleScreen() {
                 opacity={0.75}
                 style={{ marginBottom: 26 }}
               />
-              <BlockRenderer blocks={blocks} onBlockLayout={onBlockLayout} />
+              <BlockRenderer
+                blocks={blocks}
+                contentWidth={contentWidth}
+                onBlockLayout={onBlockLayout}
+              />
               <BoxesLayer
                 boxes={annotations.boxes}
                 previewBox={previewBox}

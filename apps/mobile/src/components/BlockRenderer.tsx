@@ -41,27 +41,31 @@ function ArticleImage({
   caption,
   width,
   height,
+  columnWidth,
 }: {
   src: string;
   caption?: string;
   width?: number;
   height?: number;
+  columnWidth: number;
 }) {
-  // Extraction-time dimensions give a stable layout up front; the loaded
-  // image refines the aspect ratio. Images narrower than the column render
-  // at their natural size instead of stretching to fill it.
+  // Width AND height are computed explicitly from the column width: mixing
+  // an oversized natural width with maxWidth + aspectRatio leaves Yoga's
+  // height at the unclamped value, reserving a huge blank box under wide
+  // hero images. Images narrower than the column render at natural size.
   const [aspect, setAspect] = useState(
     width && height ? width / height : 16 / 9
   );
-  const [displayWidth, setDisplayWidth] = useState<number | undefined>(width);
+  const [naturalWidth, setNaturalWidth] = useState<number | undefined>(width);
+  const renderWidth = Math.min(naturalWidth ?? columnWidth, columnWidth);
+  const renderHeight = Math.round(renderWidth / aspect);
   return (
     <View style={styles.figure}>
       <Image
         source={{ uri: src }}
         style={{
-          width: displayWidth ?? "100%",
-          maxWidth: "100%",
-          aspectRatio: aspect,
+          width: renderWidth,
+          height: renderHeight,
           borderRadius: 8,
           alignSelf: "center",
         }}
@@ -71,7 +75,7 @@ function ArticleImage({
           const loaded = e.source;
           if (loaded.width > 0 && loaded.height > 0) {
             setAspect(loaded.width / loaded.height);
-            if (displayWidth === undefined) setDisplayWidth(loaded.width);
+            if (naturalWidth === undefined) setNaturalWidth(loaded.width);
           }
         }}
       />
@@ -80,7 +84,7 @@ function ArticleImage({
   );
 }
 
-function BlockView({ block }: { block: Block }) {
+function BlockView({ block, contentWidth }: { block: Block; contentWidth: number }) {
   switch (block.type) {
     case "heading":
       return (
@@ -124,6 +128,7 @@ function BlockView({ block }: { block: Block }) {
           caption={block.caption}
           width={block.width}
           height={block.height}
+          columnWidth={contentWidth}
         />
       );
     case "code":
@@ -143,6 +148,8 @@ function BlockView({ block }: { block: Block }) {
 
 type Props = {
   blocks: Block[];
+  /** Rendered width of the content column (px) — images size against it. */
+  contentWidth: number;
   /** Reports each top-level block's layout relative to the content container. */
   onBlockLayout?: (index: number, layout: { y: number; height: number }) => void;
 };
@@ -153,6 +160,7 @@ type Props = {
  */
 export const BlockRenderer = memo(function BlockRenderer({
   blocks,
+  contentWidth,
   onBlockLayout,
 }: Props) {
   return (
@@ -167,7 +175,7 @@ export const BlockRenderer = memo(function BlockRenderer({
             })
           }
         >
-          <BlockView block={block} />
+          <BlockView block={block} contentWidth={contentWidth} />
         </View>
       ))}
     </>
