@@ -2,6 +2,7 @@
   "name": "inkwell",
   "private": true,
   "scripts": {
+    "dev": "pnpm -r --parallel --no-bail --stream run dev",
     "mobile": "pnpm --filter inkwell-mobile start",
     "web": "pnpm --filter inkwell-web dev",
     "api": "pnpm --filter @inkwell/api dev",
