@@ -1,7 +1,16 @@
 // Turns an annotated article into Markdown suitable for pasting into an LLM:
 // boxed sections become quoted excerpts, notes keep their nearby context,
 // highlighter strokes quote the lines they cover.
-import type { Annotations, Article, Block } from "./types";
+import type { Annotations, ArticleContent, Block } from "./types";
+
+/**
+ * What the export needs beyond the content payload: the source URL and saved
+ * timestamp (ISO 8601 string or epoch ms) from the persistence layer.
+ */
+export type ExportArticle = ArticleContent & {
+  url: string;
+  savedAt: string | number;
+};
 
 /** Layout of each top-level block, measured by the reader (current render px). */
 export type BlockLayout = { y: number; height: number };
@@ -68,7 +77,7 @@ function nearestBlock(
  *   (currentContentWidth / annotations.contentWidth).
  */
 export function buildExportMarkdown(
-  article: Article,
+  article: ExportArticle,
   annotations: Annotations,
   layouts: Map<number, BlockLayout>,
   scale: number

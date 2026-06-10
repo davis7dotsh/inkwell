@@ -1,19 +1,26 @@
-// Test for htmlToBlocks. Run with: pnpm tsx scripts/test-parser.ts
+// Tests for @inkwell/content. Run with: pnpm --filter @inkwell/content test
 
-// @ts-ignore -- @types/node is not installed in this Expo project; tsx
-// provides the real implementation at runtime.
+// @ts-ignore -- @types/node is not installed in this package; tsx provides
+// the real implementation at runtime.
 import nodeAssert from "node:assert/strict";
 
-import { htmlToBlocks } from "../src/lib/htmlToBlocks";
-import type { Block, Span } from "../src/lib/types";
+import { htmlToBlocks } from "../src/htmlToBlocks";
+import { markdownToBlocks } from "../src/markdownToBlocks";
+import { firecrawlToArticle } from "../src/normalize";
+import type { Block, Span } from "../src/types";
 
 type Assert = {
   (value: unknown, message?: string): void;
   equal(actual: unknown, expected: unknown, message?: string): void;
   deepEqual(actual: unknown, expected: unknown, message?: string): void;
   ok(value: unknown, message?: string): void;
+  throws(fn: () => unknown, expected?: RegExp, message?: string): void;
 };
 const assert = nodeAssert as Assert;
+
+// The package tsconfig has no DOM/node libs (it must stay RN/Workers-safe),
+// so declare the one runtime global this test script uses.
+declare const console: { log(...args: unknown[]): void };
 
 // Fixture: resembles Mozilla Readability output for a tech blog post.
 // Deliberately messy: stray indentation/newlines between tags, entities,
@@ -370,3 +377,288 @@ assert.equal(
 
 console.log("image extraction tests passed");
 console.log("\nPARSER TESTS PASSED");
+
+// ============================================================
+// markdownToBlocks
+// ============================================================
+
+const markdownFixture = [
+  "# Title One",
+  "",
+  "Some intro with [a link](https://example.com/doc) and **bold** plus *italic* and `inline code`.",
+  "",
+  "## Section Two",
+  "",
+  "- alpha",
+  "- bravo with **bold**",
+  "- charlie",
+  "",
+  "1. first",
+  "2. second",
+  "",
+  "![Diagram of the system](https://example.com/diagram.png)",
+  "",
+  "```js",
+  "const x = 1;",
+  "console.log(x);",
+  "```",
+  "",
+  "> Quoted wisdom.",
+  "",
+  "---",
+  "",
+  "GFM strikes ~~struck~~ through.",
+  "",
+  "| Model | Score |",
+  "| --- | --- |",
+  "| Fable 5 | 98 |",
+].join("\n");
+
+const mdBlocks = markdownToBlocks(markdownFixture);
+
+assert.deepEqual(
+  mdBlocks.map((b) => b.type),
+  [
+    "heading", // h1
+    "paragraph", // intro with link/bold/italic/code
+    "heading", // h2
+    "list", // unordered
+    "list", // ordered
+    "image", // markdown image
+    "code", // fenced code block
+    "quote", // blockquote
+    "rule", // ---
+    "paragraph", // strikethrough (gfm)
+    "paragraph", // gfm table header row
+    "paragraph", // gfm table body row
+  ],
+  "markdown block types in order"
+);
+
+// ---- Headings ----
+const mdH1 = mdBlocks[0] as Extract<Block, { type: "heading" }>;
+assert.equal(mdH1.level, 1);
+assert.equal(spanText(mdH1.spans), "Title One");
+const mdH2 = mdBlocks[2] as Extract<Block, { type: "heading" }>;
+assert.equal(mdH2.level, 2);
+assert.equal(spanText(mdH2.spans), "Section Two");
+
+// ---- Inline styling: link, bold, italic, code ----
+const mdIntro = mdBlocks[1] as Extract<Block, { type: "paragraph" }>;
+assert.equal(
+  spanText(mdIntro.spans),
+  "Some intro with a link and bold plus italic and inline code."
+);
+const mdLink = mdIntro.spans.find((s) => s.href !== undefined);
+assert.ok(mdLink, "markdown link span exists");
+assert.equal(mdLink!.text, "a link");
+assert.equal(mdLink!.href, "https://example.com/doc");
+assert.deepEqual(
+  mdIntro.spans.find((s) => s.bold),
+  { text: "bold", bold: true }
+);
+assert.deepEqual(
+  mdIntro.spans.find((s) => s.italic),
+  { text: "italic", italic: true }
+);
+assert.deepEqual(
+  mdIntro.spans.find((s) => s.code),
+  { text: "inline code", code: true }
+);
+
+// ---- Lists ----
+const mdUl = mdBlocks[3] as Extract<Block, { type: "list" }>;
+assert.equal(mdUl.ordered, false);
+assert.deepEqual(mdUl.items.map(spanText), [
+  "alpha",
+  "bravo with bold",
+  "charlie",
+]);
+assert.deepEqual(mdUl.items[1][1], { text: "bold", bold: true });
+const mdOl = mdBlocks[4] as Extract<Block, { type: "list" }>;
+assert.equal(mdOl.ordered, true);
+assert.deepEqual(mdOl.items.map(spanText), ["first", "second"]);
+
+// ---- Markdown image comes through as an image block ----
+const mdImage = mdBlocks[5] as Extract<Block, { type: "image" }>;
+assert.equal(mdImage.src, "https://example.com/diagram.png");
+assert.equal(mdImage.alt, "Diagram of the system");
+
+// ---- Code fence preserved verbatim ----
+const mdCode = mdBlocks[6] as Extract<Block, { type: "code" }>;
+assert.equal(mdCode.text, "const x = 1;\nconsole.log(x);");
+
+// ---- Quote / rule ----
+const mdQuote = mdBlocks[7] as Extract<Block, { type: "quote" }>;
+assert.equal(spanText(mdQuote.spans), "Quoted wisdom.");
+assert.equal(mdBlocks[8].type, "rule");
+
+// ---- GFM: strikethrough tokenized (tildes gone), tables flattened ----
+const mdStruck = mdBlocks[9] as Extract<Block, { type: "paragraph" }>;
+assert.equal(spanText(mdStruck.spans), "GFM strikes struck through.");
+const mdTableHeader = mdBlocks[10] as Extract<Block, { type: "paragraph" }>;
+assert.equal(spanText(mdTableHeader.spans), "Model · Score");
+assert.deepEqual(mdTableHeader.spans[0], { text: "Model", bold: true });
+assert.equal(
+  spanText((mdBlocks[11] as typeof mdTableHeader).spans),
+  "Fable 5 · 98"
+);
+
+console.log("markdownToBlocks tests passed");
+
+// ============================================================
+// firecrawlToArticle
+// ============================================================
+
+// ---- html preferred over markdown when both are present ----
+const fromHtml = firecrawlToArticle({
+  html: "<h1>HTML Title</h1><p>From the html branch.</p>",
+  markdown: "# MD Title\n\nFrom the markdown branch.",
+  metadata: { sourceURL: "https://blog.example.com/post" },
+});
+assert.deepEqual(
+  fromHtml.blocks.map((b) => b.type),
+  ["heading", "paragraph"]
+);
+assert.equal(
+  blockText(fromHtml.blocks[1]),
+  "From the html branch.",
+  "html wins over markdown"
+);
+assert.equal(fromHtml.title, "HTML Title", "title from first heading block");
+assert.equal(fromHtml.siteName, "blog.example.com", "siteName from sourceURL");
+assert.equal(fromHtml.excerpt, undefined);
+
+// ---- markdown-only PDF-ish input (Firecrawl returns no html for PDFs) ----
+const fromPdf = firecrawlToArticle({
+  html: null,
+  markdown: [
+    "# Attention Is All You Need",
+    "",
+    "## Abstract",
+    "",
+    "The dominant sequence transduction models are based on complex",
+    "recurrent or convolutional neural networks.",
+    "",
+    "![Figure 1: The Transformer](https://arxiv.org/fig1.png)",
+    "",
+    "- encoder",
+    "- decoder",
+  ].join("\n"),
+  metadata: {
+    title: "1706.03762v7.pdf",
+    sourceURL: "https://arxiv.org/pdf/1706.03762",
+  },
+});
+assert.equal(fromPdf.title, "1706.03762v7.pdf", "metadata.title wins");
+assert.equal(fromPdf.siteName, "arxiv.org");
+assert.deepEqual(
+  fromPdf.blocks.map((b) => b.type),
+  ["heading", "heading", "paragraph", "image", "list"]
+);
+const pdfImage = fromPdf.blocks[3] as Extract<Block, { type: "image" }>;
+assert.equal(pdfImage.src, "https://arxiv.org/fig1.png");
+
+// ---- html that produces zero blocks falls back to markdown ----
+const rescued = firecrawlToArticle({
+  html: "<div><script>nope();</script></div>",
+  markdown: "# Rescue\n\nBody text.",
+});
+assert.equal(rescued.title, "Rescue");
+assert.deepEqual(
+  rescued.blocks.map((b) => b.type),
+  ["heading", "paragraph"]
+);
+
+// ---- Title derivation chain ----
+assert.equal(
+  firecrawlToArticle({
+    html: "<h1>Heading Title</h1><p>x</p>",
+    metadata: { title: "Meta Title", ogTitle: "OG Title" },
+  }).title,
+  "Meta Title",
+  "metadata.title wins over ogTitle and heading"
+);
+assert.equal(
+  firecrawlToArticle({
+    html: "<h1>Heading Title</h1><p>x</p>",
+    metadata: { ogTitle: "OG Title" },
+  }).title,
+  "OG Title",
+  "ogTitle wins over heading"
+);
+assert.equal(
+  firecrawlToArticle({
+    html: "<p>no headings here</p>",
+    metadata: { sourceURL: "https://example.com/x" },
+  }).title,
+  "https://example.com/x",
+  "sourceURL when no metadata title and no heading"
+);
+assert.equal(
+  firecrawlToArticle({ markdown: "Just a paragraph." }).title,
+  "Untitled",
+  "last-resort title"
+);
+assert.equal(
+  firecrawlToArticle({
+    html: "<p>blank title treated as missing</p>",
+    metadata: { title: "   ", ogTitle: "OG Title" },
+  }).title,
+  "OG Title",
+  "whitespace-only metadata.title ignored"
+);
+
+// ---- Excerpt: description preferred over ogDescription ----
+assert.equal(
+  firecrawlToArticle({
+    html: "<p>x</p>",
+    metadata: { description: "Desc", ogDescription: "OG Desc" },
+  }).excerpt,
+  "Desc"
+);
+assert.equal(
+  firecrawlToArticle({
+    html: "<p>x</p>",
+    metadata: { ogDescription: "OG Desc" },
+  }).excerpt,
+  "OG Desc"
+);
+
+// ---- siteName derivation ----
+assert.equal(
+  firecrawlToArticle({
+    html: "<p>x</p>",
+    metadata: { sourceURL: "https://WWW.Example.com:8080/path?q=1" },
+  }).siteName,
+  "www.example.com",
+  "hostname lowercased, port/path stripped"
+);
+assert.equal(
+  firecrawlToArticle({ html: "<p>x</p>" }).siteName,
+  undefined,
+  "no siteName without sourceURL"
+);
+
+// ---- Throws on empty / unparseable content ----
+assert.throws(() => firecrawlToArticle({}), /both html and markdown are empty/);
+assert.throws(
+  () => firecrawlToArticle({ html: "", markdown: "   " }),
+  /both html and markdown are empty/
+);
+assert.throws(
+  () => firecrawlToArticle({ html: null, markdown: null }),
+  /both html and markdown are empty/
+);
+assert.throws(
+  () =>
+    firecrawlToArticle({
+      html: "<script>x()</script>",
+      metadata: { sourceURL: "https://example.com/empty" },
+    }),
+  /zero readable blocks.*https:\/\/example\.com\/empty/,
+  "zero-block html with no markdown fallback throws"
+);
+
+console.log("firecrawlToArticle tests passed");
+console.log("\nALL CONTENT TESTS PASSED");

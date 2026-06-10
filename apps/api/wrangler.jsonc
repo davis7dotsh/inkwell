@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "inkwell-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-09",
+  "observability": {
+    "enabled": true
+  },
+  // Filled at deploy time; secrets (FIRECRAWL_API_KEY, CLERK_SECRET_KEY,
+  // WORKER_SHARED_SECRET) go through `wrangler secret put`.
+  "vars": {
+    "CLERK_PUBLISHABLE_KEY": "",
+    "CONVEX_SITE_URL": ""
+  }
+}

@@ -46,8 +46,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint",
-    "vendor:readability": "node scripts/vendor-readability.mjs"
+    "lint": "expo lint"
   },
   "private": true,
   "license": "MIT"

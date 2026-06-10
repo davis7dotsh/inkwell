@@ -1,0 +1,132 @@
+// Articles: user-facing queries/mutations plus the internal mutations the
+// api worker drives through convex/http.ts (pending → ready/failed).
+import { v } from "convex/values";
+
+import type { Doc, Id } from "./_generated/dataModel";
+import { internalMutation, mutation, query } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
+
+export async function requireUserId(ctx: QueryCtx): Promise<string> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) throw new Error("Not authenticated");
+  return identity.subject;
+}
+
+export async function requireOwnedArticle(
+  ctx: QueryCtx,
+  id: Id<"articles">
+): Promise<Doc<"articles">> {
+  const userId = await requireUserId(ctx);
+  const article = await ctx.db.get(id);
+  if (!article || article.userId !== userId) {
+    throw new Error("Article not found");
+  }
+  return article;
+}
+
+export const list = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await requireUserId(ctx);
+    const articles = await ctx.db
+      .query("articles")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    // by_user indexes on userId only, so order newest-first here.
+    articles.sort((a, b) => b.savedAt - a.savedAt);
+    // Explicit fields: keep blocksJson out of the live list.
+    return articles.map((article) => ({
+      _id: article._id,
+      _creationTime: article._creationTime,
+      userId: article.userId,
+      url: article.url,
+      kind: article.kind,
+      status: article.status,
+      error: article.error,
+      title: article.title,
+      byline: article.byline,
+      siteName: article.siteName,
+      excerpt: article.excerpt,
+      savedAt: article.savedAt,
+    }));
+  },
+});
+
+export const get = query({
+  args: { id: v.id("articles") },
+  handler: async (ctx, args) => {
+    return requireOwnedArticle(ctx, args.id);
+  },
+});
+
+export const remove = mutation({
+  args: { id: v.id("articles") },
+  handler: async (ctx, args) => {
+    await requireOwnedArticle(ctx, args.id);
+    const annotations = await ctx.db
+      .query("annotations")
+      .withIndex("by_article", (q) => q.eq("articleId", args.id))
+      .collect();
+    for (const annotation of annotations) {
+      await ctx.db.delete(annotation._id);
+    }
+    await ctx.db.delete(args.id);
+  },
+});
+
+export const createPending = internalMutation({
+  args: {
+    userId: v.string(),
+    url: v.string(),
+    kind: v.union(v.literal("web"), v.literal("pdf")),
+    title: v.string(),
+    savedAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("articles", { ...args, status: "pending" });
+  },
+});
+
+export const complete = internalMutation({
+  args: {
+    articleId: v.id("articles"),
+    // The api worker passes the requesting user's id so a retry can never
+    // rewrite somebody else's article.
+    expectedUserId: v.string(),
+    title: v.string(),
+    byline: v.optional(v.string()),
+    siteName: v.optional(v.string()),
+    excerpt: v.optional(v.string()),
+    blocksJson: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { articleId, expectedUserId, ...fields } = args;
+    const article = await ctx.db.get(articleId);
+    if (!article || article.userId !== expectedUserId) {
+      throw new Error("Article not found");
+    }
+    await ctx.db.patch(articleId, {
+      ...fields,
+      status: "ready",
+      error: undefined,
+    });
+  },
+});
+
+export const fail = internalMutation({
+  args: {
+    articleId: v.id("articles"),
+    expectedUserId: v.string(),
+    error: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const article = await ctx.db.get(args.articleId);
+    if (!article || article.userId !== args.expectedUserId) {
+      throw new Error("Article not found");
+    }
+    await ctx.db.patch(args.articleId, {
+      status: "failed",
+      error: args.error,
+    });
+  },
+});

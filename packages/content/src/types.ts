@@ -1,4 +1,5 @@
-// Core shared types for Marginalia.
+// Core shared types for Inkwell: article content blocks and annotation
+// geometry. Pure TypeScript — safe for React Native, Workers, and the web.
 
 /** An inline run of text with optional styling. */
 export type Span = {
@@ -28,38 +29,16 @@ export type Block =
   | { type: "code"; text: string }
   | { type: "rule" };
 
-/** A saved, reader-ready article. */
-export type Article = {
-  id: string;
-  url: string;
+/**
+ * Reader-ready article content payload. Persistence-level fields (ids, url,
+ * status, userId, savedAt) live in the Convex schema, not here.
+ */
+export type ArticleContent = {
   title: string;
   byline?: string;
   siteName?: string;
   excerpt?: string;
-  /** ISO 8601 timestamp of when the article was saved. */
-  savedAt: string;
   blocks: Block[];
-};
-
-/** Lightweight index entry shown in the library list. */
-export type ArticleSummary = {
-  id: string;
-  url: string;
-  title: string;
-  siteName?: string;
-  excerpt?: string;
-  savedAt: string;
-};
-
-/** Raw result posted back from the extraction WebView. */
-export type ExtractionResult = {
-  url: string;
-  title: string;
-  byline?: string;
-  siteName?: string;
-  excerpt?: string;
-  /** Readability's cleaned article HTML (absolute URLs). */
-  contentHtml: string;
 };
 
 // ---- Annotations ----
@@ -95,8 +74,12 @@ export type NoteAnnotation = {
   text: string;
 };
 
+/**
+ * One annotation set for one article. Which article it belongs to is the
+ * persistence layer's concern (Convex row / storage key), not part of the
+ * content payload.
+ */
 export type Annotations = {
-  articleId: string;
   /** Content column width (px) when these annotations were made. */
   contentWidth: number;
   strokes: Stroke[];
@@ -104,11 +87,7 @@ export type Annotations = {
   notes: NoteAnnotation[];
 };
 
-export const emptyAnnotations = (
-  articleId: string,
-  contentWidth: number
-): Annotations => ({
-  articleId,
+export const emptyAnnotations = (contentWidth: number): Annotations => ({
   contentWidth,
   strokes: [],
   boxes: [],

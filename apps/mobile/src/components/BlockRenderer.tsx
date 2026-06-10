@@ -1,10 +1,10 @@
+import type { Block, Span } from "@inkwell/content";
 import { Image } from "expo-image";
 import * as WebBrowser from "expo-web-browser";
 import React, { memo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { colors, mono, serif } from "../lib/theme";
-import type { Block, Span } from "../lib/types";
 
 import { BrushStroke } from "./BrushStroke";
 

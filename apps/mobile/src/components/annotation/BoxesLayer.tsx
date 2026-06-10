@@ -1,10 +1,10 @@
 // Key-section boxes, rendered as positioned views inside the content
 // container (so they scroll naturally with the article).
+import type { BoxAnnotation } from "@inkwell/content";
 import React, { memo } from "react";
 import { StyleSheet, View } from "react-native";
 
 import { colors } from "../../lib/theme";
-import type { BoxAnnotation } from "../../lib/types";
 
 function Box({ box, scale }: { box: BoxAnnotation; scale: number }) {
   return (

@@ -1,0 +1,11 @@
+// inkwell-web: assets-only worker serving the built SPA. No `main` — the
+// API lives in the separate inkwell-api worker (apps/api).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "inkwell-web",
+  "compatibility_date": "2026-06-09",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}

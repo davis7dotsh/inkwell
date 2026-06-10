@@ -1,4 +1,18 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { api } from "@inkwell/backend/convex/_generated/api";
+import type { Id } from "@inkwell/backend/convex/_generated/dataModel";
+import {
+  buildExportMarkdown,
+  emptyAnnotations,
+  type Annotations,
+  type Block,
+  type BlockLayout,
+  type BoxAnnotation,
+  type NoteAnnotation,
+  type Point,
+  type Stroke,
+} from "@inkwell/content";
+import { useMutation, useQuery } from "convex/react";
 import { useLocalSearchParams } from "expo-router";
 import React, {
   useCallback,
@@ -30,13 +44,7 @@ import { NoteEditorModal } from "../../components/annotation/NoteEditorModal";
 import { NotesLayer } from "../../components/annotation/NotesLayer";
 import { StrokesCanvas } from "../../components/annotation/StrokesCanvas";
 import { Toolbar, type Tool } from "../../components/annotation/Toolbar";
-import { buildExportMarkdown, type BlockLayout } from "../../lib/exportMarkdown";
-import {
-  getAnnotations,
-  getArticle,
-  newId,
-  saveAnnotations,
-} from "../../lib/storage";
+import { newId } from "../../lib/ids";
 import {
   CONTENT_PADDING,
   HIGHLIGHTER_COLOR,
@@ -47,23 +55,20 @@ import {
   penColors,
   serif,
 } from "../../lib/theme";
-import {
-  emptyAnnotations,
-  type Annotations,
-  type Article,
-  type BoxAnnotation,
-  type NoteAnnotation,
-  type Point,
-  type Stroke,
-} from "../../lib/types";
 
 type UndoOp = { kind: "stroke" | "box" | "note"; id: string };
 
 export default function ArticleScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const articleId = id as Id<"articles">;
   const { width: windowWidth } = useWindowDimensions();
 
-  const [article, setArticle] = useState<Article | null>(null);
+  const article = useQuery(api.articles.get, { id: articleId });
+  const remoteAnnotations = useQuery(api.annotations.get, { articleId });
+  const saveAnnotations = useMutation(api.annotations.save);
+
+  // Local annotation state is the source of truth while the screen is open;
+  // the live query only seeds it once on load.
   const [annotations, setAnnotations] = useState<Annotations | null>(null);
   const [tool, setTool] = useState<Tool>("read");
   const [penColor, setPenColor] = useState<string>(penColors[0]);
@@ -75,6 +80,24 @@ export default function ArticleScreen() {
     | null
   >(null);
   const [undoStack, setUndoStack] = useState<UndoOp[]>([]);
+
+  const blocks = useMemo<Block[]>(
+    () =>
+      article?.blocksJson ? (JSON.parse(article.blocksJson) as Block[]) : [],
+    [article?.blocksJson]
+  );
+
+  // undefined = still loading, null = no annotations row yet.
+  const loadedAnnotations = useMemo<Annotations | null | undefined>(() => {
+    if (remoteAnnotations === undefined) return undefined;
+    if (remoteAnnotations === null) return null;
+    return {
+      contentWidth: remoteAnnotations.contentWidth,
+      strokes: JSON.parse(remoteAnnotations.strokesJson) as Stroke[],
+      boxes: JSON.parse(remoteAnnotations.boxesJson) as BoxAnnotation[],
+      notes: JSON.parse(remoteAnnotations.notesJson) as NoteAnnotation[],
+    };
+  }, [remoteAnnotations]);
 
   const contentWidth = Math.min(
     MAX_CONTENT_WIDTH,
@@ -97,6 +120,7 @@ export default function ArticleScreen() {
   const noteSizesRef = useRef(new Map<string, { w: number; h: number }>());
   const layoutsRef = useRef(new Map<number, BlockLayout>());
   const annotationsRef = useRef<Annotations | null>(null);
+  const dirtyRef = useRef(false);
   useEffect(() => {
     stateRef.current = { tool, penColor, scale, offsetX };
     annotationsRef.current = annotations;
@@ -104,38 +128,51 @@ export default function ArticleScreen() {
 
   // ---- load & persist ----
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const loaded = await getArticle(id);
-      const anns =
-        (await getAnnotations(id)) ?? emptyAnnotations(id, contentWidth);
-      if (cancelled) return;
-      setArticle(loaded);
-      setAnnotations(anns);
-    })();
-    return () => {
-      cancelled = true;
-    };
+    if (loadedAnnotations === undefined) return;
+    // Seed once; later live updates don't clobber in-progress local edits.
+    setAnnotations(
+      (current) => current ?? loadedAnnotations ?? emptyAnnotations(contentWidth)
+    );
     // contentWidth intentionally omitted: only used to seed new annotations.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [loadedAnnotations]);
+
+  const persistAnnotations = useCallback(
+    (a: Annotations) => {
+      void saveAnnotations({
+        articleId,
+        contentWidth: a.contentWidth,
+        strokesJson: JSON.stringify(a.strokes),
+        boxesJson: JSON.stringify(a.boxes),
+        notesJson: JSON.stringify(a.notes),
+      });
+    },
+    [articleId, saveAnnotations]
+  );
 
   useEffect(() => {
-    if (!annotations) return;
-    const timer = setTimeout(() => void saveAnnotations(annotations), 600);
+    if (!annotations || !dirtyRef.current) return;
+    const timer = setTimeout(() => persistAnnotations(annotations), 600);
     return () => clearTimeout(timer);
-  }, [annotations]);
+  }, [annotations, persistAnnotations]);
 
   useEffect(
     () => () => {
-      if (annotationsRef.current) void saveAnnotations(annotationsRef.current);
+      if (annotationsRef.current && dirtyRef.current) {
+        persistAnnotations(annotationsRef.current);
+      }
     },
-    []
+    [persistAnnotations]
   );
 
   // ---- annotation mutations ----
   const update = useCallback((fn: (a: Annotations) => Annotations) => {
-    setAnnotations((a) => (a ? fn(a) : a));
+    setAnnotations((a) => {
+      if (!a) return a;
+      const next = fn(a);
+      if (next !== a) dirtyRef.current = true;
+      return next;
+    });
   }, []);
 
   const pushUndo = useCallback((op: UndoOp) => {
@@ -389,13 +426,23 @@ export default function ArticleScreen() {
   const onExport = useCallback(() => {
     if (!article || !annotationsRef.current) return;
     const markdown = buildExportMarkdown(
-      article,
+      {
+        title: article.title,
+        byline: article.byline,
+        siteName: article.siteName,
+        excerpt: article.excerpt,
+        blocks,
+        url: article.url,
+        savedAt: article.savedAt,
+      },
       annotationsRef.current,
       layoutsRef.current,
       stateRef.current.scale
     );
     void Share.share({ message: markdown });
-  }, [article]);
+  }, [article, blocks]);
+
+  const ready = article !== undefined && article.status === "ready";
 
   const savedDate = article
     ? new Date(article.savedAt).toLocaleDateString(undefined, {
@@ -410,7 +457,7 @@ export default function ArticleScreen() {
       <ScreenHeader
         title={article?.siteName ?? ""}
         right={
-          article ? (
+          ready ? (
             <Pressable onPress={onExport} hitSlop={10}>
               <MaterialCommunityIcons
                 name="export-variant"
@@ -421,13 +468,15 @@ export default function ArticleScreen() {
           ) : null
         }
       />
-      {!article || !annotations ? (
+      {article !== undefined && article.status === "failed" ? (
         <View style={styles.center}>
-          {article === null && annotations !== null ? (
-            <Text style={styles.missing}>Article not found.</Text>
-          ) : (
-            <ActivityIndicator color={colors.accent} />
-          )}
+          <Text style={styles.missing}>
+            {article.error ?? "This article failed to save."}
+          </Text>
+        </View>
+      ) : !ready || !annotations ? (
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.accent} />
         </View>
       ) : (
         <View style={styles.readerArea}>
@@ -451,10 +500,7 @@ export default function ArticleScreen() {
                 opacity={0.75}
                 style={{ marginBottom: 26 }}
               />
-              <BlockRenderer
-                blocks={article.blocks}
-                onBlockLayout={onBlockLayout}
-              />
+              <BlockRenderer blocks={blocks} onBlockLayout={onBlockLayout} />
               <BoxesLayer
                 boxes={annotations.boxes}
                 previewBox={previewBox}
@@ -520,10 +566,13 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 40,
   },
   missing: {
     fontSize: 16,
+    lineHeight: 23,
     color: colors.inkSecondary,
+    textAlign: "center",
   },
   scrollContent: {
     paddingTop: 28,

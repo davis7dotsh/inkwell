@@ -1,10 +1,10 @@
 // Pinned typed notes, rendered as sticky-note bubbles inside the content
 // container. Bubble sizes are reported back for eraser/tap hit-testing.
+import type { NoteAnnotation } from "@inkwell/content";
 import React, { memo } from "react";
 import { Pressable, StyleSheet, Text } from "react-native";
 
 import { colors } from "../../lib/theme";
-import type { NoteAnnotation } from "../../lib/types";
 
 type Props = {
   notes: NoteAnnotation[];

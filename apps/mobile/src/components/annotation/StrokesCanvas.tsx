@@ -1,13 +1,11 @@
 // Viewport-sized Skia canvas that renders ink strokes. The canvas itself
 // never scrolls; a Reanimated-driven group transform counter-translates by
 // the scroll offset so strokes stay glued to the article content.
+import { strokeToSvgPath, type Stroke } from "@inkwell/content";
 import { Canvas, Group, Path } from "@shopify/react-native-skia";
 import React, { memo, useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import { useDerivedValue, type SharedValue } from "react-native-reanimated";
-
-import { strokeToSvgPath } from "../../lib/strokePath";
-import type { Stroke } from "../../lib/types";
 
 function StrokePath({ stroke }: { stroke: Stroke }) {
   const path = useMemo(() => strokeToSvgPath(stroke.points), [stroke.points]);

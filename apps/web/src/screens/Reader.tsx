@@ -1,0 +1,205 @@
+// Reader: read-only web rendering of a saved article plus the iPad markups.
+// Blocks come from articles.get (blocksJson), annotations stream live from
+// annotations.get and are drawn scaled over the content column.
+import { api } from "@inkwell/backend/convex/_generated/api";
+import type { Id } from "@inkwell/backend/convex/_generated/dataModel";
+import type { Annotations, Block } from "@inkwell/content";
+import { useQuery } from "convex/react";
+import React, { useCallback, useMemo, useState, type ReactNode } from "react";
+import { Link, useParams } from "react-router-dom";
+
+import { MarksOverlay, StrokesOverlay } from "../components/AnnotationsOverlay";
+import { BlockRenderer } from "../components/BlockRenderer";
+import { BrushStroke } from "../components/BrushStroke";
+import { colors, MAX_CONTENT_WIDTH } from "../lib/theme";
+
+function ReaderBar({ siteName }: { siteName?: string }) {
+  return (
+    <header className="reader-bar">
+      <Link to="/" className="back-link">
+        ← Library
+      </Link>
+      <span className="reader-site">{siteName ?? ""}</span>
+      <span />
+    </header>
+  );
+}
+
+function CenterState({ children }: { children: ReactNode }) {
+  return (
+    <div className="reader">
+      <ReaderBar />
+      <div className="center-state">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Convex queries throw from the hook on bad ids or cross-user access; the
+ * boundary turns that into a calm "not found" screen.
+ */
+class ReaderBoundary extends React.Component<
+  { children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <CenterState>
+          <p>Article not found.</p>
+          <Link to="/" className="back-link">
+            Back to the library
+          </Link>
+        </CenterState>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function parseAnnotations(doc: {
+  contentWidth: number;
+  strokesJson: string;
+  boxesJson: string;
+  notesJson: string;
+}): Annotations | null {
+  try {
+    return {
+      contentWidth: doc.contentWidth,
+      strokes: JSON.parse(doc.strokesJson),
+      boxes: JSON.parse(doc.boxesJson),
+      notes: JSON.parse(doc.notesJson),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function ReaderInner({ id }: { id: Id<"articles"> }) {
+  const article = useQuery(api.articles.get, { id });
+  const annotationDoc = useQuery(
+    api.annotations.get,
+    article ? { articleId: article._id } : "skip"
+  );
+
+  const blocks = useMemo<Block[]>(() => {
+    if (!article?.blocksJson) return [];
+    try {
+      return JSON.parse(article.blocksJson) as Block[];
+    } catch {
+      return [];
+    }
+  }, [article?.blocksJson]);
+
+  const annotations = useMemo<Annotations | null>(
+    () => (annotationDoc ? parseAnnotations(annotationDoc) : null),
+    [annotationDoc]
+  );
+
+  // The annotation scale tracks the column's rendered width (≤ 700px).
+  const [columnWidth, setColumnWidth] = useState<number | null>(null);
+  const columnRef = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width) setColumnWidth(width);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  if (article === undefined) {
+    return (
+      <CenterState>
+        <span className="pulse-dot" />
+      </CenterState>
+    );
+  }
+
+  if (article.status === "pending") {
+    return (
+      <CenterState>
+        <span className="chip chip-pending">
+          <span className="chip-dot" />
+          Saving…
+        </span>
+        <p className="center-state-hint">
+          Still preparing this article — it will appear here the moment it's
+          ready.
+        </p>
+      </CenterState>
+    );
+  }
+
+  if (article.status === "failed") {
+    return (
+      <CenterState>
+        <p>This article failed to save.</p>
+        <p className="center-state-hint">
+          {article.error ?? "Unknown error."} You can retry it from the
+          library.
+        </p>
+        <Link to="/" className="back-link">
+          Back to the library
+        </Link>
+      </CenterState>
+    );
+  }
+
+  const savedDate = new Date(article.savedAt).toLocaleDateString(undefined, {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+  const meta = [article.byline, article.siteName, savedDate]
+    .filter(Boolean)
+    .join("  ·  ");
+
+  return (
+    <div className="reader">
+      <ReaderBar siteName={article.siteName} />
+      <div className="reader-content">
+        <article className="content-column" ref={columnRef}>
+          <h1 className="article-title">{article.title}</h1>
+          <p className="article-meta">{meta}</p>
+          <BrushStroke
+            width={Math.min(220, (columnWidth ?? MAX_CONTENT_WIDTH) * 0.4)}
+            height={8}
+            color={colors.wash}
+            opacity={0.75}
+            className="title-brush"
+          />
+          <BlockRenderer blocks={blocks} />
+          {annotations && columnWidth ? (
+            <MarksOverlay annotations={annotations} columnWidth={columnWidth} />
+          ) : null}
+        </article>
+        {annotations && columnWidth ? (
+          <StrokesOverlay annotations={annotations} columnWidth={columnWidth} />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export function Reader() {
+  const { id } = useParams<{ id: string }>();
+  if (!id) {
+    return (
+      <CenterState>
+        <p>Article not found.</p>
+      </CenterState>
+    );
+  }
+  return (
+    <ReaderBoundary key={id}>
+      <ReaderInner id={id as Id<"articles">} />
+    </ReaderBoundary>
+  );
+}
