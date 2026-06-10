@@ -30,8 +30,13 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import {
+  Gesture,
+  GestureDetector,
+  PointerType,
+} from "react-native-gesture-handler";
 import Animated, {
+  runOnJS,
   useAnimatedScrollHandler,
   useSharedValue,
 } from "react-native-reanimated";
@@ -45,6 +50,7 @@ import { NotesLayer } from "../../components/annotation/NotesLayer";
 import { StrokesCanvas } from "../../components/annotation/StrokesCanvas";
 import { Toolbar, type Tool } from "../../components/annotation/Toolbar";
 import { newId } from "../../lib/ids";
+import { loadStylusSeen, persistStylusSeen } from "../../lib/stylus";
 import {
   CONTENT_PADDING,
   HIGHLIGHTER_COLOR,
@@ -111,9 +117,27 @@ export default function ArticleScreen() {
     scrollY.value = event.contentOffset.y;
   });
 
+  // Apple Pencil: once a stylus touch has ever been seen on this device,
+  // fingers scroll while the pencil draws. Until then, fingers draw.
+  const [hasStylus, setHasStylus] = useState(false);
+  const hasStylusSV = useSharedValue(false);
+  useEffect(() => {
+    void loadStylusSeen().then((seen) => {
+      if (seen) {
+        setHasStylus(true);
+        hasStylusSV.value = true;
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const markStylusSeen = useCallback(() => {
+    setHasStylus(true);
+    persistStylusSeen();
+  }, []);
+
   // Refs so the (stable) gesture callbacks never see stale values. Updated in
   // an effect (not during render) to stay React-Compiler-safe.
-  const stateRef = useRef({ tool, penColor, scale, offsetX });
+  const stateRef = useRef({ tool, penColor, scale, offsetX, hasStylus });
   const anchorRef = useRef<Point | null>(null);
   const activeStrokeRef = useRef<Stroke | null>(null);
   const previewBoxRef = useRef<BoxAnnotation | null>(null);
@@ -122,7 +146,7 @@ export default function ArticleScreen() {
   const annotationsRef = useRef<Annotations | null>(null);
   const dirtyRef = useRef(false);
   useEffect(() => {
-    stateRef.current = { tool, penColor, scale, offsetX };
+    stateRef.current = { tool, penColor, scale, offsetX, hasStylus };
     annotationsRef.current = annotations;
   });
 
@@ -198,11 +222,12 @@ export default function ArticleScreen() {
     });
   }, [update]);
 
-  // ---- gesture handling (all on the JS thread via runOnJS) ----
+  // ---- gesture handling ----
+  // The draw detector wraps the scroll CONTENT, so x/y arrive in content
+  // space (scroll offset already baked in); only the column offset applies.
   const toPoint = useCallback((x: number, y: number): Point => {
     const { scale: s, offsetX: ox } = stateRef.current;
-    return { x: (x - ox) / s, y: (y + scrollY.value) / s };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return { x: (x - ox) / s, y: y / s };
   }, []);
 
   const eraseAt = useCallback(
@@ -352,27 +377,86 @@ export default function ArticleScreen() {
     [toPoint]
   );
 
+  // Native handle for the ScrollView so the draw pan can hard-block
+  // scrolling (palms included) while a pencil stroke is active.
+  const nativeScroll = useMemo(() => Gesture.Native(), []);
+
+  const isDrawTool =
+    tool === "pen" || tool === "highlighter" || tool === "box" || tool === "eraser";
+
+  // IMPORTANT: these callbacks run as worklets (no .runOnJS(true)) because
+  // the StateManager's activate()/fail() are silent no-ops on the JS thread.
+  // Stylus touches activate instantly (zero-slop ink); finger touches fail
+  // the pan so the ancestor ScrollView takes the gesture — unless no stylus
+  // has ever been seen, in which case fingers draw like before.
   const panGesture = useMemo(
     () =>
       Gesture.Pan()
-        .runOnJS(true)
-        .minDistance(0)
+        .enabled(isDrawTool)
         .maxPointers(1)
-        .onStart((e) => onPanStart(e.x, e.y))
-        .onUpdate((e) => onPanUpdate(e.x, e.y))
-        .onEnd(() => onPanEnd())
-        .onFinalize(() => onPanEnd()),
-    [onPanStart, onPanUpdate, onPanEnd]
+        .manualActivation(true)
+        .blocksExternalGesture(nativeScroll)
+        .onTouchesDown((e, manager) => {
+          "worklet";
+          if (e.numberOfTouches > 1) {
+            manager.fail();
+            return;
+          }
+          if (e.pointerType === PointerType.STYLUS) {
+            if (!hasStylusSV.value) {
+              hasStylusSV.value = true;
+              runOnJS(markStylusSeen)();
+            }
+            manager.activate();
+          } else if (hasStylusSV.value) {
+            manager.fail();
+          } else {
+            manager.activate();
+          }
+        })
+        .onStart((e) => {
+          "worklet";
+          runOnJS(onPanStart)(e.x, e.y);
+        })
+        .onUpdate((e) => {
+          "worklet";
+          runOnJS(onPanUpdate)(e.x, e.y);
+        })
+        .onEnd(() => {
+          "worklet";
+          runOnJS(onPanEnd)();
+        })
+        .onFinalize(() => {
+          "worklet";
+          runOnJS(onPanEnd)();
+        }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isDrawTool, nativeScroll, markStylusSeen, onPanStart, onPanUpdate, onPanEnd]
   );
 
   const tapGesture = useMemo(
     () =>
       Gesture.Tap()
+        .enabled(tool === "note")
         .runOnJS(true)
         .onEnd((e, success) => {
-          if (success) onNoteTap(e.x, e.y);
+          // Tap uses no StateManager, so the JS thread is fine here. With a
+          // stylus on record, only the pencil places notes.
+          if (!success) return;
+          if (
+            stateRef.current.hasStylus &&
+            e.pointerType !== PointerType.STYLUS
+          ) {
+            return;
+          }
+          onNoteTap(e.x, e.y);
         }),
-    [onNoteTap]
+    [tool, onNoteTap]
+  );
+
+  const drawGestures = useMemo(
+    () => Gesture.Race(panGesture, tapGesture),
+    [panGesture, tapGesture]
   );
 
   // ---- note editor actions ----
@@ -480,13 +564,15 @@ export default function ArticleScreen() {
         </View>
       ) : (
         <View style={styles.readerArea}>
-          <Animated.ScrollView
-            onScroll={scrollHandler}
-            scrollEventThrottle={16}
-            scrollEnabled={tool === "read"}
-            contentContainerStyle={styles.scrollContent}
-          >
-            <View style={{ width: contentWidth, alignSelf: "center" }}>
+          <GestureDetector gesture={nativeScroll}>
+            <Animated.ScrollView
+              onScroll={scrollHandler}
+              scrollEventThrottle={16}
+              scrollEnabled={tool === "read" || hasStylus}
+            >
+              <GestureDetector gesture={drawGestures}>
+                <View collapsable={false} style={styles.scrollContent}>
+                  <View style={{ width: contentWidth, alignSelf: "center" }}>
               <Text style={styles.title}>{article.title}</Text>
               <Text style={styles.meta}>
                 {[article.byline, article.siteName, savedDate]
@@ -516,8 +602,11 @@ export default function ArticleScreen() {
                 onPressNote={onPressNote}
                 onNoteLayout={onNoteLayout}
               />
-            </View>
-          </Animated.ScrollView>
+                  </View>
+                </View>
+              </GestureDetector>
+            </Animated.ScrollView>
+          </GestureDetector>
 
           <StrokesCanvas
             strokes={annotations.strokes}
@@ -526,14 +615,6 @@ export default function ArticleScreen() {
             offsetX={offsetX}
             scale={scale}
           />
-
-          {tool !== "read" && (
-            <GestureDetector
-              gesture={tool === "note" ? tapGesture : panGesture}
-            >
-              <View style={StyleSheet.absoluteFill} />
-            </GestureDetector>
-          )}
 
           <Toolbar
             tool={tool}
