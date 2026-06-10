@@ -12,3 +12,4 @@ allowBuilds:
   bufferutil: true
   core-js: true
   utf-8-validate: true
+  unrs-resolver: true

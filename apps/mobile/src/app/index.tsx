@@ -121,7 +121,7 @@ function ArticleCard({
               size={14}
               color={colors.danger}
             />
-            <Text style={styles.chipFailedText}>Couldn't save</Text>
+            <Text style={styles.chipFailedText}>Couldn&apos;t save</Text>
           </View>
           <Pressable onPress={() => onRetry(item._id)} hitSlop={8}>
             <Text style={styles.retryText}>Retry</Text>
@@ -302,8 +302,8 @@ export default function LibraryScreen() {
                 color={colors.inkFaint}
               />
               <Text style={styles.emptyText}>
-                Nothing saved yet. Paste a URL above — it'll be waiting here
-                on every device.
+                Nothing saved yet. Paste a URL above — it&apos;ll be waiting
+                here on every device.
               </Text>
             </View>
           ) : null
