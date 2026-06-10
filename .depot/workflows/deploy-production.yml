@@ -56,7 +56,7 @@ jobs:
       - name: Deploy Convex (prod) and build web app
         working-directory: packages/backend
         env:
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY_PROD }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
           VITE_API_URL: https://api.inkwellapp.net
         run: >
           pnpm exec convex deploy -y
