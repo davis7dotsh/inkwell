@@ -6,7 +6,7 @@ import {
   subscribeToToasts,
   type ToastMessage,
 } from "../lib/toast";
-import { colors } from "../lib/theme";
+import { makeThemedStyles, useTheme } from "../lib/theme";
 
 import { GlassSurface } from "./glass";
 
@@ -14,6 +14,8 @@ const TOAST_DURATION_MS = 7000;
 
 export function ToastViewport() {
   const insets = useSafeAreaInsets();
+  const { scheme, c } = useTheme();
+  const styles = themed[scheme];
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
   useEffect(() => {
@@ -38,7 +40,7 @@ export function ToastViewport() {
         style={styles.toastWrap}
       >
         <GlassSurface
-          tintColor={toast.kind === "error" ? "#F9E4E1" : undefined}
+          tintColor={toast.kind === "error" ? c.errorSurface : undefined}
           style={styles.toast}
           fallbackStyle={
             toast.kind === "error" ? styles.errorToast : styles.infoToast
@@ -51,46 +53,48 @@ export function ToastViewport() {
   );
 }
 
-const styles = StyleSheet.create({
-  viewport: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 1000,
-    alignItems: "center",
-    paddingHorizontal: 18,
-  },
-  toastWrap: {
-    width: "100%",
-    maxWidth: 520,
-  },
-  toast: {
-    width: "100%",
-    borderRadius: 16,
-    borderCurve: "continuous",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  errorToast: {
-    backgroundColor: "#FFF1EF",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#D98C82",
-    shadowColor: "#000000",
-    shadowOpacity: 0.16,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 5 },
-  },
-  infoToast: {
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    shadowColor: "#000000",
-    shadowOpacity: 0.16,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 5 },
-  },
-  text: {
-    color: colors.ink,
-    fontSize: 14,
-    lineHeight: 19,
-    fontWeight: "600",
-  },
-});
+const themed = makeThemedStyles((c) =>
+  StyleSheet.create({
+    viewport: {
+      ...StyleSheet.absoluteFillObject,
+      zIndex: 1000,
+      alignItems: "center",
+      paddingHorizontal: 18,
+    },
+    toastWrap: {
+      width: "100%",
+      maxWidth: 520,
+    },
+    toast: {
+      width: "100%",
+      borderRadius: 16,
+      borderCurve: "continuous",
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+    },
+    errorToast: {
+      backgroundColor: c.errorSurface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.errorBorder,
+      shadowColor: "#000000",
+      shadowOpacity: 0.16,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 5 },
+    },
+    infoToast: {
+      backgroundColor: c.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.hairline,
+      shadowColor: "#000000",
+      shadowOpacity: 0.16,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 5 },
+    },
+    text: {
+      color: c.ink,
+      fontSize: 14,
+      lineHeight: 19,
+      fontWeight: "600",
+    },
+  })
+);

@@ -8,7 +8,7 @@ import {
   View,
 } from "react-native";
 
-import { colors } from "../../lib/theme";
+import { makeThemedStyles, useTheme } from "../../lib/theme";
 
 type Props = {
   visible: boolean;
@@ -28,6 +28,8 @@ export function NoteEditorModal({
   onDelete,
   onCancel,
 }: Props) {
+  const { scheme, c } = useTheme();
+  const styles = themed[scheme];
   const [text, setText] = useState(initialText);
   useEffect(() => {
     if (visible) setText(initialText);
@@ -52,7 +54,7 @@ export function NoteEditorModal({
             multiline
             autoFocus
             placeholder="Write a note…"
-            placeholderTextColor={colors.inkFaint}
+            placeholderTextColor={c.inkFaint}
           />
           <View style={styles.row}>
             {isEditing ? (
@@ -77,61 +79,63 @@ export function NoteEditorModal({
   );
 }
 
-const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: "rgba(14, 46, 82, 0.35)",
-    alignItems: "center",
-    justifyContent: "flex-start",
-    paddingTop: 130,
-    padding: 24,
-  },
-  card: {
-    width: "100%",
-    maxWidth: 440,
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    borderCurve: "continuous",
-    padding: 18,
-    gap: 14,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.ink,
-  },
-  input: {
-    minHeight: 96,
-    maxHeight: 220,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 15,
-    lineHeight: 21,
-    color: colors.ink,
-    backgroundColor: colors.background,
-    textAlignVertical: "top",
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  button: {
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 18,
-    borderCurve: "continuous",
-  },
-  saveButton: {
-    backgroundColor: colors.accent,
-  },
-  buttonText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: colors.inkSecondary,
-  },
-  saveText: { color: "#FFFFFF" },
-  deleteText: { color: colors.danger },
-});
+const themed = makeThemedStyles((c) =>
+  StyleSheet.create({
+    backdrop: {
+      flex: 1,
+      backgroundColor: c.backdrop,
+      alignItems: "center",
+      justifyContent: "flex-start",
+      paddingTop: 130,
+      padding: 24,
+    },
+    card: {
+      width: "100%",
+      maxWidth: 440,
+      backgroundColor: c.surface,
+      borderRadius: 20,
+      borderCurve: "continuous",
+      padding: 18,
+      gap: 14,
+    },
+    title: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: c.ink,
+    },
+    input: {
+      minHeight: 96,
+      maxHeight: 220,
+      borderWidth: 1,
+      borderColor: c.hairline,
+      borderRadius: 10,
+      padding: 12,
+      fontSize: 15,
+      lineHeight: 21,
+      color: c.ink,
+      backgroundColor: c.background,
+      textAlignVertical: "top",
+    },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    button: {
+      paddingHorizontal: 16,
+      paddingVertical: 9,
+      borderRadius: 18,
+      borderCurve: "continuous",
+    },
+    saveButton: {
+      backgroundColor: c.accent,
+    },
+    buttonText: {
+      fontSize: 15,
+      fontWeight: "600",
+      color: c.inkSecondary,
+    },
+    saveText: { color: c.onAccent },
+    deleteText: { color: c.danger },
+  })
+);

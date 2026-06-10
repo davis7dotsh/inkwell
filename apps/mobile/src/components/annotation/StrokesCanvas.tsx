@@ -7,13 +7,17 @@ import React, { memo, useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import { useDerivedValue, type SharedValue } from "react-native-reanimated";
 
-function StrokePath({ stroke }: { stroke: Stroke }) {
+import { displayInkColor, useTheme } from "../../lib/theme";
+
+// Stored stroke colors are canonical (light-theme inks); isDark swaps in the
+// night-legible variants at render time only.
+function StrokePath({ stroke, isDark }: { stroke: Stroke; isDark: boolean }) {
   const path = useMemo(() => strokeToSvgPath(stroke.points), [stroke.points]);
   if (!path) return null;
   return (
     <Path
       path={path}
-      color={stroke.color}
+      color={displayInkColor(stroke.color, isDark)}
       style="stroke"
       strokeWidth={stroke.width}
       strokeCap="round"
@@ -25,13 +29,15 @@ function StrokePath({ stroke }: { stroke: Stroke }) {
 /** Committed strokes, memoized so live drawing only re-renders the active path. */
 const CommittedStrokes = memo(function CommittedStrokes({
   strokes,
+  isDark,
 }: {
   strokes: Stroke[];
+  isDark: boolean;
 }) {
   return (
     <>
       {strokes.map((stroke) => (
-        <StrokePath key={stroke.id} stroke={stroke} />
+        <StrokePath key={stroke.id} stroke={stroke} isDark={isDark} />
       ))}
     </>
   );
@@ -54,6 +60,7 @@ export function StrokesCanvas({
   offsetX,
   scale,
 }: Props) {
+  const { isDark } = useTheme();
   const scrollTransform = useDerivedValue(() => [
     { translateY: -scrollY.value },
   ]);
@@ -62,8 +69,10 @@ export function StrokesCanvas({
       <Canvas style={StyleSheet.absoluteFill}>
         <Group transform={scrollTransform}>
           <Group transform={[{ translateX: offsetX }, { scale }]}>
-            <CommittedStrokes strokes={strokes} />
-            {activeStroke ? <StrokePath stroke={activeStroke} /> : null}
+            <CommittedStrokes strokes={strokes} isDark={isDark} />
+            {activeStroke ? (
+              <StrokePath stroke={activeStroke} isDark={isDark} />
+            ) : null}
           </Group>
         </Group>
       </Canvas>

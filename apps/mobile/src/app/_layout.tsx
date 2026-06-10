@@ -17,7 +17,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { SignInScreen } from "../components/SignInScreen";
 import { ToastViewport } from "../components/ToastViewport";
 import { createClerkTokenCache } from "../lib/clerkTokenCache";
-import { colors, serif } from "../lib/theme";
+import { makeThemedStyles, serif, useTheme } from "../lib/theme";
 import { showError } from "../lib/toast";
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
@@ -46,6 +46,8 @@ function getClerkErrorCode(payload: unknown) {
 /** Spinner sign-in/app gate. Convex must validate the Clerk token, so gate on
  * useConvexAuth(), not Clerk's isSignedIn. */
 function AuthGate() {
+  const { scheme, c } = useTheme();
+  const styles = themed[scheme];
   const clerk = useAuth();
   const convexAuth = useConvexAuth();
   const [clerkProbe, setClerkProbe] = useState("pending");
@@ -134,7 +136,7 @@ function AuthGate() {
   if (convexAuth.isLoading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color={colors.accent} />
+        <ActivityIndicator color={c.accent} />
         <Text style={styles.loadingText}>
           {clerk.isLoaded ? "Connecting to Inkwell…" : "Starting sign-in…"}
         </Text>
@@ -149,7 +151,7 @@ function AuthGate() {
       screenOptions={{
         // Screens render their own safe-area-aware headers (ScreenHeader).
         headerShown: false,
-        contentStyle: { backgroundColor: colors.background },
+        contentStyle: { backgroundColor: c.background },
       }}
     />
   );
@@ -157,6 +159,8 @@ function AuthGate() {
 
 /** Shown instead of crashing when the EXPO_PUBLIC_ env vars aren't set. */
 function ConfigNeededScreen() {
+  const { scheme } = useTheme();
+  const styles = themed[scheme];
   const missing = [
     !publishableKey && "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY",
     !convexUrl && "EXPO_PUBLIC_CONVEX_URL",
@@ -182,7 +186,7 @@ export default function RootLayout() {
   if (!publishableKey || !convex) {
     return (
       <View style={{ flex: 1 }}>
-        <StatusBar style="dark" />
+        <StatusBar style="auto" />
         <ConfigNeededScreen />
       </View>
     );
@@ -195,7 +199,7 @@ export default function RootLayout() {
       <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
         <SafeAreaProvider>
           <GestureHandlerRootView style={{ flex: 1 }}>
-            <StatusBar style="dark" />
+            <StatusBar style="auto" />
             <AuthGate />
             <ToastViewport />
           </GestureHandlerRootView>
@@ -205,87 +209,89 @@ export default function RootLayout() {
   );
 }
 
-const styles = StyleSheet.create({
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.background,
-    gap: 12,
-  },
-  loadingText: {
-    color: colors.inkSecondary,
-    fontSize: 14,
-  },
-  startupError: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.background,
-    paddingHorizontal: 30,
-    gap: 14,
-  },
-  diagnostic: {
-    width: "100%",
-    maxWidth: 420,
-    padding: 14,
-    borderRadius: 10,
-    backgroundColor: colors.surface,
-    color: colors.inkSecondary,
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  retryButton: {
-    minWidth: 180,
-    alignItems: "center",
-    borderRadius: 12,
-    backgroundColor: colors.accent,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-  },
-  retryButtonText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  secondaryButton: {
-    minWidth: 180,
-    alignItems: "center",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-  },
-  secondaryButtonText: {
-    color: colors.ink,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  configScreen: {
-    flex: 1,
-    backgroundColor: colors.background,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 36,
-    gap: 12,
-  },
-  configTitle: {
-    fontFamily: serif,
-    fontSize: 30,
-    fontWeight: "700",
-    color: colors.ink,
-  },
-  configText: {
-    fontSize: 14.5,
-    lineHeight: 21,
-    color: colors.inkSecondary,
-    textAlign: "center",
-  },
-  configVar: {
-    fontSize: 13.5,
-    color: colors.accent,
-    fontWeight: "600",
-  },
-});
+const themed = makeThemedStyles((c) =>
+  StyleSheet.create({
+    center: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: c.background,
+      gap: 12,
+    },
+    loadingText: {
+      color: c.inkSecondary,
+      fontSize: 14,
+    },
+    startupError: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: c.background,
+      paddingHorizontal: 30,
+      gap: 14,
+    },
+    diagnostic: {
+      width: "100%",
+      maxWidth: 420,
+      padding: 14,
+      borderRadius: 10,
+      backgroundColor: c.surface,
+      color: c.inkSecondary,
+      fontSize: 13,
+      lineHeight: 19,
+    },
+    retryButton: {
+      minWidth: 180,
+      alignItems: "center",
+      borderRadius: 12,
+      backgroundColor: c.accent,
+      paddingHorizontal: 18,
+      paddingVertical: 12,
+    },
+    retryButtonText: {
+      color: c.onAccent,
+      fontSize: 15,
+      fontWeight: "700",
+    },
+    secondaryButton: {
+      minWidth: 180,
+      alignItems: "center",
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: c.hairline,
+      backgroundColor: c.surface,
+      paddingHorizontal: 18,
+      paddingVertical: 12,
+    },
+    secondaryButtonText: {
+      color: c.ink,
+      fontSize: 14,
+      fontWeight: "600",
+    },
+    configScreen: {
+      flex: 1,
+      backgroundColor: c.background,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 36,
+      gap: 12,
+    },
+    configTitle: {
+      fontFamily: serif,
+      fontSize: 30,
+      fontWeight: "700",
+      color: c.ink,
+    },
+    configText: {
+      fontSize: 14.5,
+      lineHeight: 21,
+      color: c.inkSecondary,
+      textAlign: "center",
+    },
+    configVar: {
+      fontSize: 13.5,
+      color: c.accent,
+      fontWeight: "600",
+    },
+  })
+);

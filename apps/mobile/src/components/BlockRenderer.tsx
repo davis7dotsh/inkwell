@@ -4,11 +4,13 @@ import * as WebBrowser from "expo-web-browser";
 import React, { memo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
-import { colors, mono, serif } from "../lib/theme";
+import { makeThemedStyles, mono, serif, useTheme } from "../lib/theme";
 
 import { BrushStroke } from "./BrushStroke";
 
 function SpanText({ spans }: { spans: Span[] }) {
+  const { scheme } = useTheme();
+  const styles = themed[scheme];
   return (
     <>
       {spans.map((span, i) => {
@@ -53,6 +55,8 @@ function ArticleImage({
   // an oversized natural width with maxWidth + aspectRatio leaves Yoga's
   // height at the unclamped value, reserving a huge blank box under wide
   // hero images. Images narrower than the column render at natural size.
+  const { scheme } = useTheme();
+  const styles = themed[scheme];
   const [aspect, setAspect] = useState(
     width && height ? width / height : 16 / 9
   );
@@ -85,6 +89,8 @@ function ArticleImage({
 }
 
 function BlockView({ block, contentWidth }: { block: Block; contentWidth: number }) {
+  const { scheme, c } = useTheme();
+  const styles = themed[scheme];
   switch (block.type) {
     case "heading":
       return (
@@ -140,7 +146,7 @@ function BlockView({ block, contentWidth }: { block: Block; contentWidth: number
     case "rule":
       return (
         <View style={styles.rule}>
-          <BrushStroke width={150} height={7} color={colors.wash} opacity={0.6} />
+          <BrushStroke width={150} height={7} color={c.wash} opacity={0.6} />
         </View>
       );
   }
@@ -182,79 +188,81 @@ export const BlockRenderer = memo(function BlockRenderer({
   );
 });
 
-const styles = StyleSheet.create({
-  paragraph: {
-    fontFamily: serif,
-    fontSize: 18,
-    lineHeight: 30,
-    color: colors.ink,
-    marginBottom: 18,
-  },
-  heading: {
-    color: colors.ink,
-    marginTop: 14,
-    marginBottom: 12,
-  },
-  bold: { fontWeight: "700" },
-  italic: { fontStyle: "italic" },
-  inlineCode: {
-    fontFamily: mono,
-    fontSize: 15,
-    backgroundColor: colors.codeBackground,
-  },
-  link: {
-    color: colors.link,
-    textDecorationLine: "underline",
-    textDecorationColor: colors.linkUnderline,
-  },
-  quote: {
-    borderLeftWidth: 3,
-    borderLeftColor: colors.accent,
-    paddingLeft: 16,
-    marginBottom: 18,
-  },
-  quoteText: {
-    fontStyle: "italic",
-    color: colors.inkSecondary,
-    marginBottom: 0,
-  },
-  list: { marginBottom: 18 },
-  listItem: { flexDirection: "row", marginBottom: 8 },
-  bullet: {
-    fontFamily: serif,
-    fontSize: 18,
-    lineHeight: 30,
-    color: colors.accent,
-    width: 26,
-  },
-  listItemText: { flex: 1, marginBottom: 0 },
-  figure: { marginBottom: 18 },
-  caption: {
-    fontFamily: serif,
-    fontStyle: "italic",
-    fontSize: 14,
-    lineHeight: 20,
-    color: colors.inkFaint,
-    marginTop: 8,
-    textAlign: "center",
-  },
-  codeBlock: {
-    backgroundColor: colors.codeBackground,
-    borderRadius: 8,
-    padding: 14,
-    marginBottom: 18,
-  },
-  codeText: {
-    fontFamily: mono,
-    fontSize: 13.5,
-    lineHeight: 20,
-    color: colors.ink,
-  },
-  rule: {
-    marginVertical: 18,
-    alignItems: "center",
-  },
-});
+const themed = makeThemedStyles((c) =>
+  StyleSheet.create({
+    paragraph: {
+      fontFamily: serif,
+      fontSize: 18,
+      lineHeight: 30,
+      color: c.ink,
+      marginBottom: 18,
+    },
+    heading: {
+      color: c.ink,
+      marginTop: 14,
+      marginBottom: 12,
+    },
+    bold: { fontWeight: "700" },
+    italic: { fontStyle: "italic" },
+    inlineCode: {
+      fontFamily: mono,
+      fontSize: 15,
+      backgroundColor: c.codeBackground,
+    },
+    link: {
+      color: c.link,
+      textDecorationLine: "underline",
+      textDecorationColor: c.linkUnderline,
+    },
+    quote: {
+      borderLeftWidth: 3,
+      borderLeftColor: c.accent,
+      paddingLeft: 16,
+      marginBottom: 18,
+    },
+    quoteText: {
+      fontStyle: "italic",
+      color: c.inkSecondary,
+      marginBottom: 0,
+    },
+    list: { marginBottom: 18 },
+    listItem: { flexDirection: "row", marginBottom: 8 },
+    bullet: {
+      fontFamily: serif,
+      fontSize: 18,
+      lineHeight: 30,
+      color: c.accent,
+      width: 26,
+    },
+    listItemText: { flex: 1, marginBottom: 0 },
+    figure: { marginBottom: 18 },
+    caption: {
+      fontFamily: serif,
+      fontStyle: "italic",
+      fontSize: 14,
+      lineHeight: 20,
+      color: c.inkFaint,
+      marginTop: 8,
+      textAlign: "center",
+    },
+    codeBlock: {
+      backgroundColor: c.codeBackground,
+      borderRadius: 8,
+      padding: 14,
+      marginBottom: 18,
+    },
+    codeText: {
+      fontFamily: mono,
+      fontSize: 13.5,
+      lineHeight: 20,
+      color: c.ink,
+    },
+    rule: {
+      marginVertical: 18,
+      alignItems: "center",
+    },
+  })
+);
 
 const styles_h = StyleSheet.create({
   h1: { fontFamily: serif, fontSize: 30, lineHeight: 38, fontWeight: "700" },

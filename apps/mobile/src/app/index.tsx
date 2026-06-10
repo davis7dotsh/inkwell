@@ -20,6 +20,7 @@ import {
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { BackdropWash } from "../components/BackdropWash";
 import { BrushStroke } from "../components/BrushStroke";
 import {
   GlassIconButton,
@@ -27,7 +28,7 @@ import {
   glassAvailable,
 } from "../components/glass";
 import { apiClient } from "../lib/api";
-import { colors, serif } from "../lib/theme";
+import { makeThemedStyles, serif, useTheme } from "../lib/theme";
 import { showError } from "../lib/toast";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -54,6 +55,8 @@ function ArticleCard({
   onDelete: (id: Id<"articles">) => void;
   onRetry: (id: Id<"articles">) => void;
 }) {
+  const { scheme, c } = useTheme();
+  const styles = themed[scheme];
   const date = new Date(item.savedAt).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
@@ -109,7 +112,7 @@ function ArticleCard({
       {item.status === "pending" ? (
         <View style={styles.statusRow}>
           <View style={[styles.chip, styles.chipPending]}>
-            <ActivityIndicator size="small" color={colors.accent} />
+            <ActivityIndicator size="small" color={c.accent} />
             <Text style={styles.chipPendingText}>Saving…</Text>
           </View>
         </View>
@@ -119,7 +122,7 @@ function ArticleCard({
             <MaterialCommunityIcons
               name="alert-circle-outline"
               size={14}
-              color={colors.danger}
+              color={c.danger}
             />
             <Text style={styles.chipFailedText}>Couldn&apos;t save</Text>
           </View>
@@ -144,6 +147,8 @@ function ArticleCard({
 
 export default function LibraryScreen() {
   const insets = useSafeAreaInsets();
+  const { scheme, c } = useTheme();
+  const styles = themed[scheme];
   const { getToken, signOut } = useAuth();
   const articles = useQuery(api.articles.list);
   const removeArticle = useMutation(api.articles.remove);
@@ -228,6 +233,7 @@ export default function LibraryScreen() {
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top + 18 }]}>
+      <BackdropWash />
       <View style={styles.titleRow}>
         <Text style={styles.appTitle}>Inkwell</Text>
         <GlassIconButton
@@ -236,13 +242,13 @@ export default function LibraryScreen() {
           accessibilityLabel="Sign out"
           size={38}
           iconSize={18}
-          iconColor={colors.inkSecondary}
+          iconColor={c.inkSecondary}
         />
       </View>
       <BrushStroke
         width={118}
         height={9}
-        color={colors.wash}
+        color={c.wash}
         style={{ marginTop: 4 }}
       />
       <Text style={styles.appSubtitle}>
@@ -255,7 +261,7 @@ export default function LibraryScreen() {
           value={url}
           onChangeText={setUrl}
           placeholder="Paste an article URL…"
-          placeholderTextColor={colors.inkFaint}
+          placeholderTextColor={c.inkFaint}
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="url"
@@ -268,7 +274,7 @@ export default function LibraryScreen() {
           accessibilityLabel="Paste from clipboard"
           size={44}
           iconSize={19}
-          iconColor={colors.inkSecondary}
+          iconColor={c.inkSecondary}
         />
         <Pressable
           onPress={onSubmit}
@@ -277,7 +283,7 @@ export default function LibraryScreen() {
         >
           <GlassSurface
             isInteractive
-            tintColor={colors.accent}
+            tintColor={c.accent}
             style={styles.addButton}
             fallbackStyle={styles.addButtonFallback}
           >
@@ -299,7 +305,7 @@ export default function LibraryScreen() {
               <MaterialCommunityIcons
                 name="book-open-page-variant-outline"
                 size={44}
-                color={colors.inkFaint}
+                color={c.inkFaint}
               />
               <Text style={styles.emptyText}>
                 Nothing saved yet. Paste a URL above — it&apos;ll be waiting
@@ -313,166 +319,168 @@ export default function LibraryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.background,
-    paddingHorizontal: 20,
-  },
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  appTitle: {
-    fontFamily: serif,
-    fontSize: 34,
-    fontWeight: "700",
-    color: colors.ink,
-  },
-  appSubtitle: {
-    fontSize: 14,
-    color: colors.inkSecondary,
-    marginTop: 8,
-    marginBottom: 18,
-  },
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 18,
-  },
-  input: {
-    flex: 1,
-    height: 44,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderRadius: 22,
-    borderCurve: "continuous",
-    paddingHorizontal: 16,
-    fontSize: 15,
-    color: colors.ink,
-  },
-  addButton: {
-    height: 44,
-    borderRadius: 22,
-    borderCurve: "continuous",
-    paddingHorizontal: 18,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  addButtonFallback: {
-    backgroundColor: colors.accent,
-  },
-  addButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "600",
-    fontSize: 15,
-  },
-  list: {
-    paddingBottom: 40,
-    gap: 12,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    borderCurve: "continuous",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    padding: 16,
-  },
-  deleteActionWrap: {
-    justifyContent: "center",
-    paddingLeft: 12,
-  },
-  deleteAction: {
-    flex: 1,
-    width: 88,
-    borderRadius: 16,
-    borderCurve: "continuous",
-    backgroundColor: colors.danger,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-  },
-  deleteActionText: {
-    color: "#FFFFFF",
-    fontSize: 12.5,
-    fontWeight: "600",
-  },
-  cardPressed: {
-    opacity: 0.7,
-  },
-  cardTitle: {
-    fontFamily: serif,
-    fontSize: 19,
-    lineHeight: 25,
-    fontWeight: "700",
-    color: colors.ink,
-  },
-  cardMeta: {
-    fontSize: 12.5,
-    color: colors.inkFaint,
-    marginTop: 5,
-  },
-  cardExcerpt: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: colors.inkSecondary,
-    marginTop: 7,
-  },
-  statusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginTop: 9,
-  },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    borderRadius: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-  },
-  chipPending: {
-    backgroundColor: colors.accentSoft,
-  },
-  chipPendingText: {
-    fontSize: 12.5,
-    fontWeight: "600",
-    color: colors.accent,
-  },
-  chipFailed: {
-    backgroundColor: "rgba(176, 65, 62, 0.08)",
-  },
-  chipFailedText: {
-    fontSize: 12.5,
-    fontWeight: "600",
-    color: colors.danger,
-  },
-  retryText: {
-    fontSize: 13.5,
-    fontWeight: "600",
-    color: colors.accent,
-  },
-  errorDetail: {
-    fontSize: 12.5,
-    lineHeight: 17,
-    color: colors.inkFaint,
-    marginTop: 6,
-  },
-  empty: {
-    alignItems: "center",
-    paddingTop: 70,
-    gap: 14,
-  },
-  emptyText: {
-    fontSize: 14.5,
-    lineHeight: 21,
-    color: colors.inkSecondary,
-    textAlign: "center",
-    maxWidth: 280,
-  },
-});
+const themed = makeThemedStyles((c) =>
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: c.background,
+      paddingHorizontal: 20,
+    },
+    titleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    appTitle: {
+      fontFamily: serif,
+      fontSize: 34,
+      fontWeight: "700",
+      color: c.ink,
+    },
+    appSubtitle: {
+      fontSize: 14,
+      color: c.inkSecondary,
+      marginTop: 8,
+      marginBottom: 18,
+    },
+    inputRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      marginBottom: 18,
+    },
+    input: {
+      flex: 1,
+      height: 44,
+      backgroundColor: c.surface,
+      borderWidth: 1,
+      borderColor: c.hairline,
+      borderRadius: 22,
+      borderCurve: "continuous",
+      paddingHorizontal: 16,
+      fontSize: 15,
+      color: c.ink,
+    },
+    addButton: {
+      height: 44,
+      borderRadius: 22,
+      borderCurve: "continuous",
+      paddingHorizontal: 18,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    addButtonFallback: {
+      backgroundColor: c.accent,
+    },
+    addButtonText: {
+      color: c.onAccent,
+      fontWeight: "600",
+      fontSize: 15,
+    },
+    list: {
+      paddingBottom: 40,
+      gap: 12,
+    },
+    card: {
+      backgroundColor: c.surface,
+      borderRadius: 16,
+      borderCurve: "continuous",
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.hairline,
+      padding: 16,
+    },
+    deleteActionWrap: {
+      justifyContent: "center",
+      paddingLeft: 12,
+    },
+    deleteAction: {
+      flex: 1,
+      width: 88,
+      borderRadius: 16,
+      borderCurve: "continuous",
+      backgroundColor: c.dangerSolid,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 4,
+    },
+    deleteActionText: {
+      color: "#FFFFFF",
+      fontSize: 12.5,
+      fontWeight: "600",
+    },
+    cardPressed: {
+      opacity: 0.7,
+    },
+    cardTitle: {
+      fontFamily: serif,
+      fontSize: 19,
+      lineHeight: 25,
+      fontWeight: "700",
+      color: c.ink,
+    },
+    cardMeta: {
+      fontSize: 12.5,
+      color: c.inkFaint,
+      marginTop: 5,
+    },
+    cardExcerpt: {
+      fontSize: 14,
+      lineHeight: 20,
+      color: c.inkSecondary,
+      marginTop: 7,
+    },
+    statusRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      marginTop: 9,
+    },
+    chip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      borderRadius: 8,
+      paddingHorizontal: 9,
+      paddingVertical: 4,
+    },
+    chipPending: {
+      backgroundColor: c.accentSoft,
+    },
+    chipPendingText: {
+      fontSize: 12.5,
+      fontWeight: "600",
+      color: c.accent,
+    },
+    chipFailed: {
+      backgroundColor: c.dangerSoft,
+    },
+    chipFailedText: {
+      fontSize: 12.5,
+      fontWeight: "600",
+      color: c.danger,
+    },
+    retryText: {
+      fontSize: 13.5,
+      fontWeight: "600",
+      color: c.accent,
+    },
+    errorDetail: {
+      fontSize: 12.5,
+      lineHeight: 17,
+      color: c.inkFaint,
+      marginTop: 6,
+    },
+    empty: {
+      alignItems: "center",
+      paddingTop: 70,
+      gap: 14,
+    },
+    emptyText: {
+      fontSize: 14.5,
+      lineHeight: 21,
+      color: c.inkSecondary,
+      textAlign: "center",
+      maxWidth: 280,
+    },
+  })
+);

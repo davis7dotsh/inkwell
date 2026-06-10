@@ -6,7 +6,7 @@ import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { colors } from "../lib/theme";
+import { makeThemedStyles, useTheme } from "../lib/theme";
 
 import { GlassSurface, glassAvailable } from "./glass";
 
@@ -18,6 +18,8 @@ type Props = {
 
 export function ScreenHeader({ title, right }: Props) {
   const insets = useSafeAreaInsets();
+  const { scheme, c } = useTheme();
+  const styles = themed[scheme];
   const goBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -44,7 +46,7 @@ export function ScreenHeader({ title, right }: Props) {
               <MaterialCommunityIcons
                 name="chevron-left"
                 size={26}
-                color={colors.accent}
+                color={c.accent}
               />
               <Text style={styles.backLabel}>Library</Text>
             </GlassSurface>
@@ -61,55 +63,57 @@ export function ScreenHeader({ title, right }: Props) {
 
 const SIDE_WIDTH = 110;
 
-const styles = StyleSheet.create({
-  wrap: {
-    backgroundColor: colors.background,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.hairline,
-  },
-  row: {
-    height: 56,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-  },
-  side: {
-    width: SIDE_WIDTH,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  back: {
-    flexDirection: "row",
-    alignItems: "center",
-    height: 40,
-    borderRadius: 20,
-    borderCurve: "continuous",
-    paddingLeft: 4,
-    paddingRight: 14,
-  },
-  backFallback: {
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-  },
-  backLabel: {
-    fontSize: 16,
-    color: colors.accent,
-    fontWeight: "500",
-    marginLeft: -1,
-  },
-  title: {
-    flex: 1,
-    textAlign: "center",
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.ink,
-  },
-  right: {
-    justifyContent: "flex-end",
-    gap: 10,
-  },
-  pressed: {
-    opacity: 0.6,
-  },
-});
+const themed = makeThemedStyles((c) =>
+  StyleSheet.create({
+    wrap: {
+      backgroundColor: c.background,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.hairline,
+    },
+    row: {
+      height: 56,
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 12,
+    },
+    side: {
+      width: SIDE_WIDTH,
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    back: {
+      flexDirection: "row",
+      alignItems: "center",
+      height: 40,
+      borderRadius: 20,
+      borderCurve: "continuous",
+      paddingLeft: 4,
+      paddingRight: 14,
+    },
+    backFallback: {
+      backgroundColor: c.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.hairline,
+    },
+    backLabel: {
+      fontSize: 16,
+      color: c.accent,
+      fontWeight: "500",
+      marginLeft: -1,
+    },
+    title: {
+      flex: 1,
+      textAlign: "center",
+      fontSize: 16,
+      fontWeight: "600",
+      color: c.ink,
+    },
+    right: {
+      justifyContent: "flex-end",
+      gap: 10,
+    },
+    pressed: {
+      opacity: 0.6,
+    },
+  })
+);

@@ -15,9 +15,10 @@ import {
   View,
 } from "react-native";
 
-import { colors, serif } from "../lib/theme";
+import { makeThemedStyles, serif, useTheme } from "../lib/theme";
 import { showError } from "../lib/toast";
 
+import { BackdropWash } from "./BackdropWash";
 import { BrushStroke } from "./BrushStroke";
 import { GlassSurface, glassAvailable } from "./glass";
 
@@ -39,6 +40,8 @@ const PROVIDERS: Provider[] = [
 
 export function SignInScreen() {
   const { startSSOFlow } = useSSO();
+  const { scheme, c } = useTheme();
+  const styles = themed[scheme];
   const [busy, setBusy] = useState<Provider["strategy"] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,12 +85,13 @@ export function SignInScreen() {
 
   return (
     <View style={styles.screen}>
+      <BackdropWash />
       <View style={styles.card}>
         <Text style={styles.title}>Inkwell</Text>
         <BrushStroke
           width={118}
           height={9}
-          color={colors.wash}
+          color={c.wash}
           style={{ alignSelf: "center", marginTop: 2 }}
         />
         <Text style={styles.subtitle}>
@@ -110,13 +114,13 @@ export function SignInScreen() {
               fallbackStyle={styles.buttonFallback}
             >
               {busy === provider.strategy ? (
-                <ActivityIndicator color={colors.ink} />
+                <ActivityIndicator color={c.ink} />
               ) : (
                 <>
                   <MaterialCommunityIcons
                     name={provider.icon}
                     size={20}
-                    color={colors.ink}
+                    color={c.ink}
                   />
                   <Text style={styles.buttonText}>{provider.label}</Text>
                 </>
@@ -131,59 +135,61 @@ export function SignInScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.background,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
-  },
-  card: {
-    width: "100%",
-    maxWidth: 380,
-    gap: 12,
-  },
-  title: {
-    fontFamily: serif,
-    fontSize: 34,
-    fontWeight: "700",
-    color: colors.ink,
-    textAlign: "center",
-  },
-  subtitle: {
-    fontSize: 14,
-    color: colors.inkSecondary,
-    textAlign: "center",
-    marginTop: 6,
-    marginBottom: 14,
-  },
-  button: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    borderRadius: 24,
-    borderCurve: "continuous",
-    height: 48,
-  },
-  buttonFallback: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-  },
-  buttonPressed: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    fontSize: 15.5,
-    fontWeight: "600",
-    color: colors.ink,
-  },
-  error: {
-    fontSize: 13.5,
-    color: colors.danger,
-    textAlign: "center",
-    marginTop: 8,
-  },
-});
+const themed = makeThemedStyles((c) =>
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: c.background,
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 24,
+    },
+    card: {
+      width: "100%",
+      maxWidth: 380,
+      gap: 12,
+    },
+    title: {
+      fontFamily: serif,
+      fontSize: 34,
+      fontWeight: "700",
+      color: c.ink,
+      textAlign: "center",
+    },
+    subtitle: {
+      fontSize: 14,
+      color: c.inkSecondary,
+      textAlign: "center",
+      marginTop: 6,
+      marginBottom: 14,
+    },
+    button: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 10,
+      borderRadius: 24,
+      borderCurve: "continuous",
+      height: 48,
+    },
+    buttonFallback: {
+      backgroundColor: c.surface,
+      borderWidth: 1,
+      borderColor: c.hairline,
+    },
+    buttonPressed: {
+      opacity: 0.7,
+    },
+    buttonText: {
+      fontSize: 15.5,
+      fontWeight: "600",
+      color: c.ink,
+    },
+    error: {
+      fontSize: 13.5,
+      color: c.danger,
+      textAlign: "center",
+      marginTop: 8,
+    },
+  })
+);

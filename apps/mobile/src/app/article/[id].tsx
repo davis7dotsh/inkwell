@@ -59,9 +59,10 @@ import {
   HIGHLIGHTER_WIDTH,
   MAX_CONTENT_WIDTH,
   PEN_WIDTH,
-  colors,
+  makeThemedStyles,
   penColors,
   serif,
+  useTheme,
 } from "../../lib/theme";
 
 type UndoOp = { kind: "stroke" | "box" | "note"; id: string };
@@ -70,6 +71,8 @@ export default function ArticleScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const articleId = id as Id<"articles">;
   const { width: windowWidth } = useWindowDimensions();
+  const { scheme, c } = useTheme();
+  const styles = themed[scheme];
 
   const article = useQuery(api.articles.get, { id: articleId });
   const remoteAnnotations = useQuery(api.annotations.get, { articleId });
@@ -602,7 +605,7 @@ export default function ArticleScreen() {
         </View>
       ) : !ready || !annotations ? (
         <View style={styles.center}>
-          <ActivityIndicator color={colors.accent} />
+          <ActivityIndicator color={c.accent} />
         </View>
       ) : (
         <View style={styles.readerArea}>
@@ -639,7 +642,7 @@ export default function ArticleScreen() {
               <BrushStroke
                 width={Math.min(220, contentWidth * 0.4)}
                 height={8}
-                color={colors.wash}
+                color={c.wash}
                 opacity={0.75}
                 style={{ marginBottom: 26 }}
               />
@@ -696,56 +699,58 @@ export default function ArticleScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  readerArea: {
-    flex: 1,
-  },
-  progressTrack: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 3,
-    zIndex: 10,
-  },
-  progressFill: {
-    height: 3,
-    backgroundColor: colors.accent,
-    transformOrigin: "left",
-    borderTopRightRadius: 2,
-    borderBottomRightRadius: 2,
-  },
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 40,
-  },
-  missing: {
-    fontSize: 16,
-    lineHeight: 23,
-    color: colors.inkSecondary,
-    textAlign: "center",
-  },
-  scrollContent: {
-    paddingTop: 28,
-    paddingBottom: 160,
-  },
-  title: {
-    fontFamily: serif,
-    fontSize: 32,
-    lineHeight: 40,
-    fontWeight: "700",
-    color: colors.ink,
-    marginBottom: 12,
-  },
-  meta: {
-    fontSize: 13,
-    color: colors.inkFaint,
-    marginBottom: 14,
-  },
-});
+const themed = makeThemedStyles((c) =>
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: c.background,
+    },
+    readerArea: {
+      flex: 1,
+    },
+    progressTrack: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      height: 3,
+      zIndex: 10,
+    },
+    progressFill: {
+      height: 3,
+      backgroundColor: c.accent,
+      transformOrigin: "left",
+      borderTopRightRadius: 2,
+      borderBottomRightRadius: 2,
+    },
+    center: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 40,
+    },
+    missing: {
+      fontSize: 16,
+      lineHeight: 23,
+      color: c.inkSecondary,
+      textAlign: "center",
+    },
+    scrollContent: {
+      paddingTop: 28,
+      paddingBottom: 160,
+    },
+    title: {
+      fontFamily: serif,
+      fontSize: 32,
+      lineHeight: 40,
+      fontWeight: "700",
+      color: c.ink,
+      marginBottom: 12,
+    },
+    meta: {
+      fontSize: 13,
+      color: c.inkFaint,
+      marginBottom: 14,
+    },
+  })
+);
