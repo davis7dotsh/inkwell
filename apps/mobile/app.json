@@ -8,9 +8,10 @@
     "scheme": "inkwell",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
+      "icon": "./assets/images/icon.png",
       "supportsTablet": true,
-      "bundleIdentifier": "sh.davis7.inkwell"
+      "bundleIdentifier": "sh.davis7.inkwell",
+      "appleTeamId": "4UQML39V9S"
     },
     "android": {
       "adaptiveIcon": {
@@ -35,7 +36,9 @@
           "android": {
             "image": "./assets/images/splash-icon.png",
             "imageWidth": 76
-          }
+          },
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 180
         }
       ],
       "expo-font",
