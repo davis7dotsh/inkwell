@@ -8,6 +8,8 @@ import {
 } from "../lib/toast";
 import { colors } from "../lib/theme";
 
+import { GlassSurface } from "./glass";
+
 const TOAST_DURATION_MS = 7000;
 
 export function ToastViewport() {
@@ -33,12 +35,17 @@ export function ToastViewport() {
       <Pressable
         accessibilityRole="alert"
         onPress={() => setToast(null)}
-        style={[
-          styles.toast,
-          toast.kind === "error" ? styles.errorToast : styles.infoToast,
-        ]}
+        style={styles.toastWrap}
       >
-        <Text style={styles.text}>{toast.message}</Text>
+        <GlassSurface
+          tintColor={toast.kind === "error" ? "#F9E4E1" : undefined}
+          style={styles.toast}
+          fallbackStyle={
+            toast.kind === "error" ? styles.errorToast : styles.infoToast
+          }
+        >
+          <Text style={styles.text}>{toast.message}</Text>
+        </GlassSurface>
       </Pressable>
     </View>
   );
@@ -51,25 +58,34 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 18,
   },
-  toast: {
+  toastWrap: {
     width: "100%",
     maxWidth: 520,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
+  },
+  toast: {
+    width: "100%",
+    borderRadius: 16,
+    borderCurve: "continuous",
     paddingHorizontal: 14,
     paddingVertical: 12,
+  },
+  errorToast: {
+    backgroundColor: "#FFF1EF",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#D98C82",
     shadowColor: "#000000",
     shadowOpacity: 0.16,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 5 },
   },
-  errorToast: {
-    backgroundColor: "#FFF1EF",
-    borderColor: "#D98C82",
-  },
   infoToast: {
     backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairline,
+    shadowColor: "#000000",
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
   },
   text: {
     color: colors.ink,

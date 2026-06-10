@@ -394,9 +394,32 @@ button {
   backdrop-filter: blur(6px);
 }
 
-.reader-site {
-  font-size: 13px;
-  color: var(--ink-faint);
+.reader-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  max-width: 55vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+.scroll-progress-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  pointer-events: none;
+}
+
+.scroll-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+  transform: scaleX(0);
+  transform-origin: left;
 }
 
 /* The 28px top padding mirrors the mobile scroll content's paddingTop, so

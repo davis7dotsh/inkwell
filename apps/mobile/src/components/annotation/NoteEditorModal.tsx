@@ -90,7 +90,8 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 440,
     backgroundColor: colors.surface,
-    borderRadius: 16,
+    borderRadius: 20,
+    borderCurve: "continuous",
     padding: 18,
     gap: 14,
   },
@@ -118,9 +119,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   button: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 9,
-    borderRadius: 10,
+    borderRadius: 18,
+    borderCurve: "continuous",
   },
   saveButton: {
     backgroundColor: colors.accent,
@@ -131,5 +133,5 @@ const styles = StyleSheet.create({
     color: colors.inkSecondary,
   },
   saveText: { color: "#FFFFFF" },
-  deleteText: { color: "#B91C1C" },
+  deleteText: { color: colors.danger },
 });

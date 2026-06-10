@@ -19,6 +19,7 @@ import { colors, serif } from "../lib/theme";
 import { showError } from "../lib/toast";
 
 import { BrushStroke } from "./BrushStroke";
+import { GlassSurface, glassAvailable } from "./glass";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -96,25 +97,31 @@ export function SignInScreen() {
         {PROVIDERS.map((provider) => (
           <Pressable
             key={provider.strategy}
-            style={({ pressed }) => [
-              styles.button,
-              pressed && styles.buttonPressed,
-            ]}
+            style={({ pressed }) =>
+              pressed && !glassAvailable && styles.buttonPressed
+            }
             disabled={busy !== null}
+            accessibilityRole="button"
             onPress={() => void signInWith(provider.strategy)}
           >
-            {busy === provider.strategy ? (
-              <ActivityIndicator color={colors.ink} />
-            ) : (
-              <>
-                <MaterialCommunityIcons
-                  name={provider.icon}
-                  size={20}
-                  color={colors.ink}
-                />
-                <Text style={styles.buttonText}>{provider.label}</Text>
-              </>
-            )}
+            <GlassSurface
+              isInteractive
+              style={styles.button}
+              fallbackStyle={styles.buttonFallback}
+            >
+              {busy === provider.strategy ? (
+                <ActivityIndicator color={colors.ink} />
+              ) : (
+                <>
+                  <MaterialCommunityIcons
+                    name={provider.icon}
+                    size={20}
+                    color={colors.ink}
+                  />
+                  <Text style={styles.buttonText}>{provider.label}</Text>
+                </>
+              )}
+            </GlassSurface>
           </Pressable>
         ))}
 
@@ -156,14 +163,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
+    borderRadius: 24,
+    borderCurve: "continuous",
+    height: 48,
+  },
+  buttonFallback: {
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.hairline,
-    borderRadius: 12,
-    paddingVertical: 13,
   },
   buttonPressed: {
-    backgroundColor: colors.mist,
+    opacity: 0.7,
   },
   buttonText: {
     fontSize: 15.5,
@@ -172,7 +182,7 @@ const styles = StyleSheet.create({
   },
   error: {
     fontSize: 13.5,
-    color: "#B3402E",
+    color: colors.danger,
     textAlign: "center",
     marginTop: 8,
   },

@@ -1,4 +1,3 @@
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@inkwell/backend/convex/_generated/api";
 import type { Id } from "@inkwell/backend/convex/_generated/dataModel";
 import {
@@ -13,6 +12,8 @@ import {
   type Stroke,
 } from "@inkwell/content";
 import { useMutation, useQuery } from "convex/react";
+import { File, Paths } from "expo-file-system";
+import * as Linking from "expo-linking";
 import { useLocalSearchParams } from "expo-router";
 import React, {
   useCallback,
@@ -23,7 +24,6 @@ import React, {
 } from "react";
 import {
   ActivityIndicator,
-  Pressable,
   Share,
   StyleSheet,
   Text,
@@ -38,11 +38,13 @@ import {
 import Animated, {
   runOnJS,
   useAnimatedScrollHandler,
+  useAnimatedStyle,
   useSharedValue,
 } from "react-native-reanimated";
 
 import { BlockRenderer } from "../../components/BlockRenderer";
 import { BrushStroke } from "../../components/BrushStroke";
+import { GlassIconButton } from "../../components/glass";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { BoxesLayer } from "../../components/annotation/BoxesLayer";
 import { NoteEditorModal } from "../../components/annotation/NoteEditorModal";
@@ -113,8 +115,21 @@ export default function ArticleScreen() {
   const scale = annotations ? contentWidth / annotations.contentWidth : 1;
 
   const scrollY = useSharedValue(0);
+  const scrollContentHeight = useSharedValue(0);
+  const scrollViewportHeight = useSharedValue(0);
   const scrollHandler = useAnimatedScrollHandler((event) => {
     scrollY.value = event.contentOffset.y;
+    scrollContentHeight.value = event.contentSize.height;
+    scrollViewportHeight.value = event.layoutMeasurement.height;
+  });
+
+  // Reading progress: scaleX is cheaper than animating width, and the bar
+  // tracks the scroll on the UI thread.
+  const progressBarStyle = useAnimatedStyle(() => {
+    const scrollable = scrollContentHeight.value - scrollViewportHeight.value;
+    const progress =
+      scrollable > 0 ? Math.min(1, Math.max(0, scrollY.value / scrollable)) : 0;
+    return { transform: [{ scaleX: progress }] };
   });
 
   // Apple Pencil: once a stylus touch has ever been seen on this device,
@@ -506,7 +521,13 @@ export default function ArticleScreen() {
     layoutsRef.current.set(index, layout);
   }, []);
 
-  // ---- export ----
+  // ---- header actions ----
+  const onOpenOriginal = useCallback(() => {
+    if (article?.url) void Linking.openURL(article.url);
+  }, [article?.url]);
+
+  // Exports a real .md file (named after the article) so the share sheet
+  // offers AirDrop / Save to Files / app handoff instead of a wall of text.
   const onExport = useCallback(() => {
     if (!article || !annotationsRef.current) return;
     const markdown = buildExportMarkdown(
@@ -523,7 +544,23 @@ export default function ArticleScreen() {
       layoutsRef.current,
       stateRef.current.scale
     );
-    void Share.share({ message: markdown });
+    let fileUrl: string | null = null;
+    try {
+      const name =
+        article.title.replace(/[\\/:*?"<>|\n\r]+/g, " ").trim().slice(0, 80) ||
+        "article";
+      const file = new File(Paths.cache, `${name}.md`);
+      if (file.exists) file.delete();
+      file.write(markdown);
+      fileUrl = file.uri;
+    } catch {
+      // Couldn't write the file — fall back to sharing the raw text.
+    }
+    void Share.share(
+      fileUrl
+        ? { url: fileUrl, title: article.title }
+        : { message: markdown }
+    );
   }, [article, blocks]);
 
   const ready = article !== undefined && article.status === "ready";
@@ -539,16 +576,21 @@ export default function ArticleScreen() {
   return (
     <View style={styles.screen}>
       <ScreenHeader
-        title={article?.siteName ?? ""}
+        title={article?.title ?? ""}
         right={
           ready ? (
-            <Pressable onPress={onExport} hitSlop={10}>
-              <MaterialCommunityIcons
-                name="export-variant"
-                size={22}
-                color={colors.accent}
+            <>
+              <GlassIconButton
+                icon="apple-safari"
+                onPress={onOpenOriginal}
+                accessibilityLabel="Open original article in browser"
               />
-            </Pressable>
+              <GlassIconButton
+                icon="file-export-outline"
+                onPress={onExport}
+                accessibilityLabel="Export markup as Markdown"
+              />
+            </>
           ) : null
         }
       />
@@ -564,11 +606,26 @@ export default function ArticleScreen() {
         </View>
       ) : (
         <View style={styles.readerArea}>
+          <View style={styles.progressTrack} pointerEvents="none">
+            <Animated.View
+              style={[
+                styles.progressFill,
+                { width: windowWidth },
+                progressBarStyle,
+              ]}
+            />
+          </View>
           <GestureDetector gesture={nativeScroll}>
             <Animated.ScrollView
               onScroll={scrollHandler}
               scrollEventThrottle={16}
               scrollEnabled={tool === "read" || hasStylus}
+              onContentSizeChange={(_w, h) => {
+                scrollContentHeight.value = h;
+              }}
+              onLayout={(e) => {
+                scrollViewportHeight.value = e.nativeEvent.layout.height;
+              }}
             >
               <GestureDetector gesture={drawGestures}>
                 <View collapsable={false} style={styles.scrollContent}>
@@ -646,6 +703,21 @@ const styles = StyleSheet.create({
   },
   readerArea: {
     flex: 1,
+  },
+  progressTrack: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    zIndex: 10,
+  },
+  progressFill: {
+    height: 3,
+    backgroundColor: colors.accent,
+    transformOrigin: "left",
+    borderTopRightRadius: 2,
+    borderBottomRightRadius: 2,
   },
   center: {
     flex: 1,

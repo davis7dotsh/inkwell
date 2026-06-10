@@ -8,9 +8,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors } from "../lib/theme";
 
+import { GlassSurface, glassAvailable } from "./glass";
+
 type Props = {
   title?: string;
-  /** Rendered at the trailing edge (e.g. an export button). */
+  /** Rendered at the trailing edge (e.g. open/export buttons). */
   right?: React.ReactNode;
 };
 
@@ -26,28 +28,38 @@ export function ScreenHeader({ title, right }: Props) {
   return (
     <View style={[styles.wrap, { paddingTop: insets.top }]}>
       <View style={styles.row}>
-        <Pressable
-          onPress={goBack}
-          hitSlop={10}
-          style={({ pressed }) => [styles.back, pressed && { opacity: 0.6 }]}
-        >
-          <MaterialCommunityIcons
-            name="chevron-left"
-            size={28}
-            color={colors.accent}
-          />
-          <Text style={styles.backLabel}>Library</Text>
-        </Pressable>
+        <View style={styles.side}>
+          <Pressable
+            onPress={goBack}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Back to library"
+            style={({ pressed }) => pressed && !glassAvailable && styles.pressed}
+          >
+            <GlassSurface
+              isInteractive
+              style={styles.back}
+              fallbackStyle={styles.backFallback}
+            >
+              <MaterialCommunityIcons
+                name="chevron-left"
+                size={26}
+                color={colors.accent}
+              />
+              <Text style={styles.backLabel}>Library</Text>
+            </GlassSurface>
+          </Pressable>
+        </View>
         <Text style={styles.title} numberOfLines={1}>
           {title ?? ""}
         </Text>
-        <View style={styles.right}>{right}</View>
+        <View style={[styles.side, styles.right]}>{right}</View>
       </View>
     </View>
   );
 }
 
-const SIDE_WIDTH = 96;
+const SIDE_WIDTH = 110;
 
 const styles = StyleSheet.create({
   wrap: {
@@ -56,20 +68,35 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.hairline,
   },
   row: {
-    height: 50,
+    height: 56,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
   },
-  back: {
+  side: {
     width: SIDE_WIDTH,
     flexDirection: "row",
     alignItems: "center",
   },
+  back: {
+    flexDirection: "row",
+    alignItems: "center",
+    height: 40,
+    borderRadius: 20,
+    borderCurve: "continuous",
+    paddingLeft: 4,
+    paddingRight: 14,
+  },
+  backFallback: {
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairline,
+  },
   backLabel: {
     fontSize: 16,
     color: colors.accent,
-    marginLeft: -2,
+    fontWeight: "500",
+    marginLeft: -1,
   },
   title: {
     flex: 1,
@@ -79,8 +106,10 @@ const styles = StyleSheet.create({
     color: colors.ink,
   },
   right: {
-    width: SIDE_WIDTH,
-    alignItems: "flex-end",
-    paddingRight: 6,
+    justifyContent: "flex-end",
+    gap: 10,
+  },
+  pressed: {
+    opacity: 0.6,
   },
 });

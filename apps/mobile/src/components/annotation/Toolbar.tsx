@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors, penColors } from "../../lib/theme";
+import { GlassSurface } from "../glass";
 
 export type Tool = "read" | "pen" | "highlighter" | "box" | "note" | "eraser";
 
@@ -43,7 +44,10 @@ export function Toolbar({
       pointerEvents="box-none"
     >
       {tool === "pen" && (
-        <View style={[styles.pill, styles.colorRow]}>
+        <GlassSurface
+          style={[styles.pill, styles.colorRow]}
+          fallbackStyle={styles.pillFallback}
+        >
           {penColors.map((color) => (
             <Pressable
               key={color}
@@ -55,9 +59,9 @@ export function Toolbar({
               ]}
             />
           ))}
-        </View>
+        </GlassSurface>
       )}
-      <View style={styles.pill}>
+      <GlassSurface style={styles.pill} fallbackStyle={styles.pillFallback}>
         {TOOLS.map(({ tool: t, icon }) => (
           <Pressable
             key={t}
@@ -83,7 +87,7 @@ export function Toolbar({
             color={canUndo ? colors.inkSecondary : colors.hairline}
           />
         </Pressable>
-      </View>
+      </GlassSurface>
     </View>
   );
 }
@@ -99,11 +103,14 @@ const styles = StyleSheet.create({
   pill: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.surface,
     borderRadius: 28,
+    borderCurve: "continuous",
     paddingHorizontal: 8,
     paddingVertical: 6,
     gap: 2,
+  },
+  pillFallback: {
+    backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairline,
     shadowColor: "#0E2E52",

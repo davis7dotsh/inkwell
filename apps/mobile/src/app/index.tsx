@@ -17,15 +17,20 @@ import {
   TextInput,
   View,
 } from "react-native";
+import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BrushStroke } from "../components/BrushStroke";
+import {
+  GlassIconButton,
+  GlassSurface,
+  glassAvailable,
+} from "../components/glass";
 import { apiClient } from "../lib/api";
 import { colors, serif } from "../lib/theme";
 import { showError } from "../lib/toast";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
-const FAILED_COLOR = "#B0413E"; // seal red (matches the pen palette)
 
 type ArticleListItem = FunctionReturnType<typeof api.articles.list>[number];
 
@@ -53,22 +58,47 @@ function ArticleCard({
     month: "short",
     day: "numeric",
   });
+  const confirmDelete = (onCancel?: () => void) =>
+    Alert.alert("Delete article?", item.title, [
+      { text: "Cancel", style: "cancel", onPress: onCancel },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => onDelete(item._id),
+      },
+    ]);
   return (
+    <ReanimatedSwipeable
+      friction={2}
+      rightThreshold={36}
+      overshootRight={false}
+      renderRightActions={(_progress, _translation, methods) => (
+        <View style={styles.deleteActionWrap}>
+          <Pressable
+            onPress={() => confirmDelete(methods.close)}
+            accessibilityRole="button"
+            accessibilityLabel={`Delete ${item.title}`}
+            style={({ pressed }) => [
+              styles.deleteAction,
+              pressed && { opacity: 0.85 },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="trash-can-outline"
+              size={22}
+              color="#FFFFFF"
+            />
+            <Text style={styles.deleteActionText}>Delete</Text>
+          </Pressable>
+        </View>
+      )}
+    >
     <Pressable
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
       onPress={() => {
         if (item.status === "ready") router.push(`/article/${item._id}`);
       }}
-      onLongPress={() =>
-        Alert.alert("Delete article?", item.title, [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Delete",
-            style: "destructive",
-            onPress: () => onDelete(item._id),
-          },
-        ])
-      }
+      onLongPress={() => confirmDelete()}
     >
       <Text style={styles.cardTitle} numberOfLines={2}>
         {item.title}
@@ -89,7 +119,7 @@ function ArticleCard({
             <MaterialCommunityIcons
               name="alert-circle-outline"
               size={14}
-              color={FAILED_COLOR}
+              color={colors.danger}
             />
             <Text style={styles.chipFailedText}>Couldn't save</Text>
           </View>
@@ -108,6 +138,7 @@ function ArticleCard({
         </Text>
       ) : null}
     </Pressable>
+    </ReanimatedSwipeable>
   );
 }
 
@@ -199,17 +230,14 @@ export default function LibraryScreen() {
     <View style={[styles.screen, { paddingTop: insets.top + 18 }]}>
       <View style={styles.titleRow}>
         <Text style={styles.appTitle}>Inkwell</Text>
-        <Pressable
+        <GlassIconButton
+          icon="logout-variant"
           onPress={() => void signOut()}
-          hitSlop={8}
-          style={styles.signOutButton}
-        >
-          <MaterialCommunityIcons
-            name="logout-variant"
-            size={20}
-            color={colors.inkFaint}
-          />
-        </Pressable>
+          accessibilityLabel="Sign out"
+          size={38}
+          iconSize={18}
+          iconColor={colors.inkSecondary}
+        />
       </View>
       <BrushStroke
         width={118}
@@ -234,15 +262,27 @@ export default function LibraryScreen() {
           returnKeyType="go"
           onSubmitEditing={onSubmit}
         />
-        <Pressable onPress={onPaste} style={styles.iconButton} hitSlop={6}>
-          <MaterialCommunityIcons
-            name="content-paste"
-            size={20}
-            color={colors.inkSecondary}
-          />
-        </Pressable>
-        <Pressable onPress={onSubmit} style={styles.addButton}>
-          <Text style={styles.addButtonText}>Save</Text>
+        <GlassIconButton
+          icon="content-paste"
+          onPress={() => void onPaste()}
+          accessibilityLabel="Paste from clipboard"
+          size={44}
+          iconSize={19}
+          iconColor={colors.inkSecondary}
+        />
+        <Pressable
+          onPress={onSubmit}
+          accessibilityRole="button"
+          style={({ pressed }) => pressed && !glassAvailable && styles.cardPressed}
+        >
+          <GlassSurface
+            isInteractive
+            tintColor={colors.accent}
+            style={styles.addButton}
+            fallbackStyle={styles.addButtonFallback}
+          >
+            <Text style={styles.addButtonText}>Save</Text>
+          </GlassSurface>
         </Pressable>
       </View>
 
@@ -290,9 +330,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: colors.ink,
   },
-  signOutButton: {
-    padding: 6,
-  },
   appSubtitle: {
     fontSize: 14,
     color: colors.inkSecondary,
@@ -307,23 +344,26 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
+    height: 44,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.hairline,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    borderRadius: 22,
+    borderCurve: "continuous",
+    paddingHorizontal: 16,
     fontSize: 15,
     color: colors.ink,
   },
-  iconButton: {
-    padding: 8,
-  },
   addButton: {
+    height: 44,
+    borderRadius: 22,
+    borderCurve: "continuous",
+    paddingHorizontal: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addButtonFallback: {
     backgroundColor: colors.accent,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 11,
   },
   addButtonText: {
     color: "#FFFFFF",
@@ -336,10 +376,30 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: 14,
+    borderRadius: 16,
+    borderCurve: "continuous",
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairline,
     padding: 16,
+  },
+  deleteActionWrap: {
+    justifyContent: "center",
+    paddingLeft: 12,
+  },
+  deleteAction: {
+    flex: 1,
+    width: 88,
+    borderRadius: 16,
+    borderCurve: "continuous",
+    backgroundColor: colors.danger,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+  },
+  deleteActionText: {
+    color: "#FFFFFF",
+    fontSize: 12.5,
+    fontWeight: "600",
   },
   cardPressed: {
     opacity: 0.7,
@@ -390,7 +450,7 @@ const styles = StyleSheet.create({
   chipFailedText: {
     fontSize: 12.5,
     fontWeight: "600",
-    color: FAILED_COLOR,
+    color: colors.danger,
   },
   retryText: {
     fontSize: 13.5,

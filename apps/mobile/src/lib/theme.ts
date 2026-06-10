@@ -25,6 +25,7 @@ export const colors = {
   noteText: "#0E2E52",
   wash: "#8FB8DE",
   mist: "#E4EEF7",
+  danger: "#B0413E", // seal red — destructive actions, failures
 };
 
 export const serif = Platform.select({ ios: "Georgia", default: "serif" });
