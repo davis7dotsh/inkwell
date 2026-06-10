@@ -5,8 +5,8 @@
 // buttons) · stroke blue #3D7BC0 (accents, links, ink) · wash #8FB8DE
 // (highlights) · mist #E4EEF7 (selected states, cards) · paper #F7F8F6.
 //
-// Dark — "night study": deep blue-slate paper (never jet black), lifted
-// blues so the same brush language reads at night.
+// Dark — "night study": deep NEUTRAL gray paper (never jet black, never
+// blue-cast), with the brush blues lifted so they read as accents at night.
 import { Platform, StyleSheet, useColorScheme } from "react-native";
 
 const light = {
@@ -40,18 +40,18 @@ const light = {
 export type Palette = typeof light;
 
 const dark: Palette = {
-  background: "#15191F", // deep blue-slate, easy on night eyes
-  surface: "#1D232C",
-  ink: "#E3EAF2",
-  inkSecondary: "#9FB0C2",
-  inkFaint: "#6E8095",
-  hairline: "#2A323D",
+  background: "#17181A", // deep neutral gray, easy on night eyes
+  surface: "#1E2022",
+  ink: "#E7E9EC",
+  inkSecondary: "#A4ABB4",
+  inkFaint: "#737A84",
+  hairline: "#2B2E32",
   accent: "#6FA3DC", // brush blue, lifted
   onAccent: "#0E2238", // deep ink label on the lifted blue
   accentSoft: "#1E2C3D",
   link: "#7FB2E8",
   linkUnderline: "#3D5A7A",
-  codeBackground: "#1A2129",
+  codeBackground: "#1D2024",
   boxStroke: "#5E97D0",
   boxFill: "rgba(94, 151, 208, 0.10)",
   noteBackground: "#1E2C3D",

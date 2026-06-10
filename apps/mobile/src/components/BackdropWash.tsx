@@ -1,7 +1,6 @@
-// Faint hand-painted ink swashes scattered on the paper — the same brush
-// gesture as the logo underline, scaled up and laid at slight angles. Gives
-// liquid glass real edges to refract without resorting to gradients (which
-// band on iPad panels and read generic).
+// A quiet ink motif tucked into the bottom-right corner — the logo's brush
+// gesture stacked in parallel strokes that fade as they climb away from the
+// corner. The rest of the page stays clean paper.
 import { Canvas, Group, Path } from "@shopify/react-native-skia";
 import React from "react";
 import { StyleSheet, useWindowDimensions } from "react-native";
@@ -21,47 +20,53 @@ const LINE =
   " C 30 7.0 14 7.8 2.6 7.4" +
   " C 1.4 7.2 1.2 6.7 2 6.4 Z";
 
-type Swash = {
+type Row = {
   path: string;
-  x: number; // left edge, fraction of window width
-  y: number; // top edge, fraction of window height
-  w: number; // painted width, fraction of window width
+  /** Painted width as a fraction of the window width. */
+  w: number;
   /** Height relative to width — lower is thinner. */
   aspect: number;
-  rotate: number; // degrees
+  /** Gap above the bottom edge, as a fraction of the shortest side. */
+  lift: number;
+  /** Extra inset from the right edge, fraction of window width. */
+  inset: number;
   opacity: number;
 };
 
-// Hand-placed: a bold sweep up by the header actions, a quiet line across
-// the middle, and a wide soft band low on the page. Fractions keep the
-// composition stable across iPad orientations.
-const SWASHES: Swash[] = [
-  { path: RIBBON, x: 0.5, y: 0.07, w: 0.55, aspect: 0.075, rotate: -7, opacity: 0.3 },
-  { path: LINE, x: -0.08, y: 0.42, w: 0.5, aspect: 0.06, rotate: 4, opacity: 0.22 },
-  { path: RIBBON, x: 0.45, y: 0.82, w: 0.62, aspect: 0.08, rotate: -3, opacity: 0.16 },
-  { path: LINE, x: 0.02, y: 0.9, w: 0.34, aspect: 0.055, rotate: 6, opacity: 0.14 },
+// Stacked from the corner upward: each stroke a little shorter, a little
+// farther from the edge, and fainter — the pattern dissolves into the paper.
+const ROWS: Row[] = [
+  { path: RIBBON, w: 0.3, aspect: 0.08, lift: 0.035, inset: -0.03, opacity: 0.34 },
+  { path: LINE, w: 0.26, aspect: 0.06, lift: 0.085, inset: -0.01, opacity: 0.24 },
+  { path: RIBBON, w: 0.21, aspect: 0.075, lift: 0.135, inset: 0.015, opacity: 0.16 },
+  { path: LINE, w: 0.16, aspect: 0.055, lift: 0.185, inset: 0.04, opacity: 0.09 },
 ];
+
+const TILT = (-8 * Math.PI) / 180;
 
 export function BackdropWash() {
   const { width, height } = useWindowDimensions();
   const { c } = useTheme();
+  const short = Math.min(width, height);
   return (
     <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-      {SWASHES.map((s, i) => {
-        const w = s.w * width;
-        const h = w * s.aspect;
+      {ROWS.map((row, i) => {
+        const w = row.w * width;
+        const h = w * row.aspect;
+        const x = width - w - row.inset * width;
+        const y = height - row.lift * short - h;
         return (
           <Group
             key={i}
             transform={[
-              { translateX: s.x * width },
-              { translateY: s.y * height },
-              { rotate: (s.rotate * Math.PI) / 180 },
+              { translateX: x },
+              { translateY: y },
+              { rotate: TILT },
               { scaleX: w / 100 },
               { scaleY: h / 12 },
             ]}
           >
-            <Path path={s.path} color={c.wash} opacity={s.opacity} />
+            <Path path={row.path} color={c.wash} opacity={row.opacity} />
           </Group>
         );
       })}
