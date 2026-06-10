@@ -19,6 +19,7 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+      VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
 
     steps:
       - name: Check out repository
@@ -65,7 +66,10 @@ jobs:
 
       - name: Deploy production api Worker
         working-directory: apps/api
-        run: pnpm exec wrangler deploy
+        run: >
+          pnpm exec wrangler deploy
+          --var CLERK_PUBLISHABLE_KEY:$VITE_CLERK_PUBLISHABLE_KEY
+          --var CONVEX_SITE_URL:https://judicious-mastiff-652.convex.site
 
       - name: Deploy production web Worker
         working-directory: apps/web

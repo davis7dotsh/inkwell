@@ -70,5 +70,8 @@ jobs:
         run: pnpm exec wrangler deploy --env dev
 
       - name: Deploy staging web Worker
+        # No --env here: the Cloudflare vite-plugin redirects this deploy
+        # through dist/wrangler.json, which is already resolved for the dev
+        # environment by CLOUDFLARE_ENV=dev during the build step above.
         working-directory: apps/web
         run: pnpm exec wrangler deploy
