@@ -21,7 +21,7 @@
   // Filled at deploy time; secrets (FIRECRAWL_API_KEY, CLERK_SECRET_KEY,
   // WORKER_SHARED_SECRET) go through `wrangler secret put`.
   "vars": {
-    "CLERK_PUBLISHABLE_KEY": "pk_test_aGFwcHktc2hlZXAtODcuY2xlcmsuYWNjb3VudHMuZGV2JA",
+    "CLERK_PUBLISHABLE_KEY": "pk_live_Y2xlcmsuaW5rd2VsbGFwcC5uZXQk",
     "CONVEX_SITE_URL": "https://judicious-mastiff-652.convex.site"
   }
 }

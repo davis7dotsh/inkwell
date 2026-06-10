@@ -22,13 +22,15 @@ import { BrushStroke } from "./BrushStroke";
 WebBrowser.maybeCompleteAuthSession();
 
 type Provider = {
-  strategy: "oauth_apple" | "oauth_github" | "oauth_google";
+  strategy: "oauth_github" | "oauth_google";
   label: string;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
 };
 
+// GitHub + Google — the providers configured on both Clerk instances.
+// (Apple Sign-In requires a paid Apple Developer account; add it here and in
+// the Clerk dashboard if that ever changes.)
 const PROVIDERS: Provider[] = [
-  { strategy: "oauth_apple", label: "Continue with Apple", icon: "apple" },
   { strategy: "oauth_github", label: "Continue with GitHub", icon: "github" },
   { strategy: "oauth_google", label: "Continue with Google", icon: "google" },
 ];
