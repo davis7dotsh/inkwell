@@ -41,3 +41,9 @@ example
 # generated native folders
 /ios
 /android
+
+# build outputs / worker dev
+dist/
+.wrangler/
+.dev.vars
+.vite/

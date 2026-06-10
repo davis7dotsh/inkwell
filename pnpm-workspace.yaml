@@ -1,4 +1,14 @@
+packages:
+  - apps/*
+  - packages/*
+
 allowBuilds:
   '@shopify/react-native-skia': true
   esbuild: true
   msgpackr-extract: true
+  workerd: true
+  sharp: true
+  browser-tabs-lock: true
+  bufferutil: true
+  core-js: true
+  utf-8-validate: true

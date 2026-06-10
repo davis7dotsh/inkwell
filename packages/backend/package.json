@@ -1,0 +1,17 @@
+{
+  "name": "@inkwell/backend",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "convex dev",
+    "codegen": "convex codegen",
+    "deploy": "convex deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "convex": "^1.40.0"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}

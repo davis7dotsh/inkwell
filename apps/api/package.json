@@ -1,0 +1,26 @@
+{
+  "name": "@inkwell/api",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@clerk/hono": "^0.1.33",
+    "@hono/zod-validator": "^0.8.0",
+    "@inkwell/content": "workspace:*",
+    "hono": "^4.12.24",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260608.1",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.8",
+    "wrangler": "^4.98.0"
+  }
+}

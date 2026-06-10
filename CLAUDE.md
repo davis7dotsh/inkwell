@@ -1,9 +1,15 @@
-# Expo HAS CHANGED
+# Inkwell monorepo
 
-Read the exact versioned docs at https://docs.expo.dev/versions/v54.0.0/ before writing any code.
+pnpm workspaces:
+- `apps/mobile` — Expo app (SDK 54, pinned). **Read apps/mobile/CLAUDE.md before touching it.**
+- `apps/web` — React SPA on a Cloudflare Worker (Vite + static assets)
+- `apps/api` — Hono worker (Firecrawl scraping, Clerk auth, writes to Convex)
+- `packages/content` — shared Block model + parsers (pure TS, RN-free)
+- `packages/backend` — Convex schema/functions
 
-(This project is pinned to SDK 54 because that's the newest Expo Go on the
-App Store — see README. Do not upgrade the SDK without checking the App
-Store's Expo Go "Supported SDK" first.)
+Architecture + workstream plan: `PLAN.md`. Version-critical API patterns
+(Clerk Core 3 names, Hono RPC rules, Convex HTTP actions, Firecrawl v2):
+`PLAN-integration-notes.md`. Read both before significant work.
 
-- use pnpm for the package manager in this project
+Secrets live in root `.env.local` (gitignored); `.env.example` documents
+every variable and where it lands per app.
