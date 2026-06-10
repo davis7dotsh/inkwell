@@ -3,6 +3,18 @@
   "name": "inkwell-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-06-09",
+  "env": {
+    "dev": {
+      "name": "inkwell-api-dev",
+      "workers_dev": true,
+      "vars": {
+        "CLERK_PUBLISHABLE_KEY": "pk_test_aGFwcHktc2hlZXAtODcuY2xlcmsuYWNjb3VudHMuZGV2JA",
+        "CONVEX_SITE_URL": "https://abundant-grouse-159.convex.site"
+      }
+    }
+  },
+  "workers_dev": true,
+  "routes": [{ "pattern": "api.inkwellapp.net", "custom_domain": true }],
   "observability": {
     "enabled": true
   },
@@ -10,6 +22,6 @@
   // WORKER_SHARED_SECRET) go through `wrangler secret put`.
   "vars": {
     "CLERK_PUBLISHABLE_KEY": "pk_test_aGFwcHktc2hlZXAtODcuY2xlcmsuYWNjb3VudHMuZGV2JA",
-    "CONVEX_SITE_URL": "https://abundant-grouse-159.convex.site"
+    "CONVEX_SITE_URL": "https://judicious-mastiff-652.convex.site"
   }
 }

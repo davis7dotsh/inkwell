@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "deploy": "pnpm build && wrangler deploy",
-    "typecheck": "tsc --noEmit"
+    "deploy": "vite build && wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "deploy:staging": "CLOUDFLARE_ENV=dev vite build && wrangler deploy"
   },
   "dependencies": {
     "@clerk/react": "^6.7.3",
