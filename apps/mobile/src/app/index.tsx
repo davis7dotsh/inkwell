@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BrushStroke } from "../components/BrushStroke";
 import { apiClient } from "../lib/api";
 import { colors, serif } from "../lib/theme";
+import { showError } from "../lib/toast";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 const FAILED_COLOR = "#B0413E"; // seal red (matches the pen palette)
@@ -141,9 +142,11 @@ export default function LibraryScreen() {
         if (!res.ok) throw new Error(`The server said ${res.status}.`);
         // The pending card arrives via the live query — nothing else to do.
       } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        showError(`Couldn't save: ${message}`);
         Alert.alert(
           "Couldn't save",
-          e instanceof Error ? e.message : String(e)
+          message
         );
         setUrl(normalized); // hand the URL back for another go
       }
@@ -180,9 +183,11 @@ export default function LibraryScreen() {
           );
           if (!res.ok) throw new Error(`The server said ${res.status}.`);
         } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          showError(`Couldn't retry: ${message}`);
           Alert.alert(
             "Couldn't retry",
-            e instanceof Error ? e.message : String(e)
+            message
           );
         }
       })();

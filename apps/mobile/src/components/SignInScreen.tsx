@@ -16,6 +16,7 @@ import {
 } from "react-native";
 
 import { colors, serif } from "../lib/theme";
+import { showError } from "../lib/toast";
 
 import { BrushStroke } from "./BrushStroke";
 
@@ -63,11 +64,14 @@ export function SignInScreen() {
           return; // useConvexAuth flips and the gate swaps screens.
         }
         if (authSessionResult?.type === "cancel") return;
-        setError(
-          "Sign-in didn't complete. If this account is new, try again — or use another provider."
-        );
+        const message =
+          "Sign-in didn't complete. If this account is new, try again — or use another provider.";
+        setError(message);
+        showError(message);
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        const message = e instanceof Error ? e.message : String(e);
+        setError(message);
+        showError(message);
       } finally {
         setBusy(null);
       }

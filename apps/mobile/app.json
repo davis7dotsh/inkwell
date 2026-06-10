@@ -44,7 +44,14 @@
       "expo-font",
       "expo-sqlite",
       "expo-web-browser",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "@clerk/expo",
+        {
+          "appleSignIn": false,
+          "keychainService": "sh.davis7.inkwell.production"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
