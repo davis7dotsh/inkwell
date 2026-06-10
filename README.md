@@ -1,70 +1,53 @@
 # Inkwell
 
-Save articles from the web, read them in a clean serif reader, and mark them up
-with your Apple Pencil — ink, highlighter, boxes around key sections, and
-pinned notes. Export your markups as Markdown to paste into an LLM.
-
-Built with Expo SDK 54 / React Native 0.81 / pnpm. (Pinned to SDK 54 because
-that's the newest Expo Go on the App Store.)
+Save articles and PDFs from anywhere, read them in a clean serif reader, and
+mark them up with your Apple Pencil — ink, highlighter, boxes around key
+sections, pinned notes. Everything syncs live: save a link at your desk and
+it's waiting on the iPad before you sit down.
 
 Ink-wash palette: deep ink `#0E2E52` · brush blue `#1B4F8A` · stroke blue
 `#3D7BC0` · wash `#8FB8DE` · mist `#E4EEF7` · paper `#F7F8F6`.
 
-## Run it
+## Architecture
+
+pnpm monorepo:
+
+| Package | What it is |
+|---|---|
+| `apps/mobile` | Expo app (SDK 54 — pinned to the App Store's Expo Go; see apps/mobile/CLAUDE.md). Reader + Apple Pencil annotation, Clerk SSO sign-in, Convex live queries. |
+| `apps/web` | React SPA on a Cloudflare Worker (Vite + static assets). Save console, live library, read-only reader that shows your iPad markups. |
+| `apps/api` | Hono worker. Clerk-authed RPC; scrapes via Firecrawl v2 (web pages and PDFs), normalizes to blocks, writes to Convex through shared-secret HTTP actions. |
+| `packages/content` | Shared content model: Block types, htmlToBlocks, markdownToBlocks, Firecrawl normalizer, Markdown export, stroke geometry. |
+| `packages/backend` | Convex schema + functions (articles, annotations) with Clerk auth. |
+
+Save flow: client → `POST /articles` (202 immediately) → worker scrapes in
+`waitUntil` → article flips pending→ready in Convex → every signed-in device
+updates live. Annotations save with a debounced Convex mutation and follow
+you across devices.
+
+Full design doc: PLAN.md · API/version specifics: PLAN-integration-notes.md.
+
+## Develop
 
 ```bash
 pnpm install
-pnpm start        # then press i for the iOS simulator, or scan the QR in Expo Go on iPad
+pnpm --filter @inkwell/backend dev   # convex dev (functions + codegen)
+pnpm api                              # wrangler dev (needs apps/api/.dev.vars)
+pnpm web                              # vite dev
+pnpm mobile                           # expo start (scan QR in Expo Go)
+pnpm test && pnpm typecheck           # all gates
 ```
 
-The first launch seeds a sample article that explains the tools. Paste any
-article URL on the library screen to save the real thing.
+Secrets: copy `.env.example` → `.env.local` (root) and per-app
+`.env.example`s; never committed.
 
-## How it works
-
-**Extraction** — a hidden `WebView` loads the URL (so client-rendered pages
-work), then a vendored copy of Mozilla Readability is injected and posts the
-cleaned article HTML back (`src/components/ExtractorWebView.tsx`,
-`src/lib/extractScript.ts`). Re-vendor with `pnpm vendor:readability`.
-
-**Reader** — the article HTML is parsed once at save time by
-`src/lib/htmlToBlocks.ts` (htmlparser2, pure JS) into a typed `Block[]` model,
-rendered natively by `src/components/BlockRenderer.tsx`. No WebView at read
-time; articles are stored offline.
-
-**Annotation** — all coordinates live in "content space" (relative to the text
-column, scaled by the column width recorded at creation), so markups stay
-anchored across rotation and screen sizes:
-
-- ink/highlighter strokes render on a viewport-fixed Skia canvas
-  counter-translated by the scroll offset via Reanimated
-  (`src/components/annotation/StrokesCanvas.tsx`);
-- boxes and note bubbles are plain views inside the scroll content;
-- a gesture capture layer (active when a tool is selected) turns pans into
-  strokes/boxes and taps into notes; the eraser hit-tests everything.
-
-**Persistence** — `expo-sqlite/kv-store`, one key per article + per annotation
-set (`src/lib/storage.ts`). Annotations autosave ~600 ms after each change.
-
-**Export** — the share button builds Markdown from the markups: boxed sections
-quote the article text they enclose (block layouts are measured at render
-time), highlights quote covered passages, notes keep nearby context
-(`src/lib/exportMarkdown.ts`).
-
-## Tests
+## Deploy
 
 ```bash
-pnpm tsx scripts/test-parser.ts          # HTML → blocks parser fixtures
-pnpm tsx scripts/test-extract-script.mjs # injected-JS syntax check
-pnpm tsc --noEmit
+pnpm --filter @inkwell/backend exec convex dev --once   # push functions (dev)
+cd apps/api && pnpm exec wrangler deploy                # api worker
+cd apps/web && pnpm build && pnpm exec wrangler deploy  # web app
 ```
-
-## Known v1 limits
-
-- Web pages only — no PDFs yet.
-- Pen strokes export as positions/counts, not text (no handwriting OCR).
-- Tools are mode-based via the toolbar; no pencil-vs-finger detection yet.
-- LLM chat is intentionally out of scope for v1 — use the Markdown export.
 
 ## License
 
