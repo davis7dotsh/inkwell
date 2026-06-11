@@ -14,7 +14,7 @@ pnpm monorepo:
 
 | Package | What it is |
 |---|---|
-| `apps/mobile` | Expo app (SDK 54 — pinned to the App Store's Expo Go; see apps/mobile/CLAUDE.md). Reader + Apple Pencil annotation, Clerk SSO sign-in, Convex live queries. |
+| `apps/mobile` | Expo app (SDK 56; Expo Go unavailable — use dev-client builds, see apps/mobile/CLAUDE.md). Reader + Apple Pencil annotation, Clerk SSO sign-in, Convex live queries. |
 | `apps/web` | React SPA on a Cloudflare Worker (Vite + static assets). Save console, live library, read-only reader that shows your iPad markups. |
 | `apps/api` | Hono worker. Clerk-authed RPC; scrapes via Firecrawl v2 (web pages and PDFs), normalizes to blocks, writes to Convex through shared-secret HTTP actions. |
 | `packages/content` | Shared content model: Block types, htmlToBlocks, markdownToBlocks, Firecrawl normalizer, Markdown export, stroke geometry. |
@@ -34,7 +34,7 @@ pnpm install
 pnpm --filter @inkwell/backend dev   # convex dev (functions + codegen)
 pnpm api                              # wrangler dev (needs apps/api/.dev.vars)
 pnpm web                              # vite dev
-pnpm mobile                           # expo start (scan QR in Expo Go)
+pnpm mobile                           # expo start (Metro for dev-client builds)
 pnpm test && pnpm typecheck           # all gates
 ```
 

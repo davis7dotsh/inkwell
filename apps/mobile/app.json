@@ -11,7 +11,10 @@
       "icon": "./assets/images/icon.png",
       "supportsTablet": true,
       "bundleIdentifier": "sh.davis7.inkwell",
-      "appleTeamId": "4UQML39V9S"
+      "appleTeamId": "4UQML39V9S",
+      "infoPlist": {
+        "CFBundleDisplayName": "$(INKWELL_DISPLAY_NAME)"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -28,6 +31,7 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "./plugins/withDevVariant",
       "expo-router",
       [
         "expo-splash-screen",
