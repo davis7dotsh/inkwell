@@ -1,10 +1,8 @@
 // Read-only display of iPad markups over the web reader column. All stored
 // coordinates are in annotation "content space" (see @inkwell/content
-// types.ts) and scale by renderedColumnWidth / annotations.contentWidth.
-//
-// The two layers mirror the mobile reader's coordinate frames exactly:
-// strokes anchor to the scroll-content origin (READER_TOP_PADDING above the
-// column top), while boxes and notes anchor to the column's own top-left.
+// types.ts) — anchored to the column's top-left — and scale by
+// renderedColumnWidth / annotations.contentWidth. Both layers render inside
+// the content column so they share its origin, exactly like mobile.
 import type { Annotations } from "@inkwell/content";
 import { strokeToSvgPath } from "@inkwell/content";
 import React from "react";
@@ -24,20 +22,15 @@ type Props = {
 };
 
 /**
- * Ink strokes as one SVG. Rendered as a sibling of the content column inside
- * the relatively-positioned reader content area (`.strokes-overlay` centers
- * it to the column; height stretches with the article).
+ * Ink strokes as one SVG. Rendered inside the content column
+ * (`.strokes-overlay` stretches with it; ink may overflow the bounds).
  */
 export function StrokesOverlay({ annotations, columnWidth }: Props) {
   const { isDark } = useTheme();
   const scale = annotationScale(annotations, columnWidth);
   if (annotations.strokes.length === 0) return null;
   return (
-    <svg
-      className="strokes-overlay"
-      style={{ width: columnWidth }}
-      aria-hidden="true"
-    >
+    <svg className="strokes-overlay" aria-hidden="true">
       <g transform={`scale(${scale})`}>
         {annotations.strokes.map((stroke) => {
           const d = strokeToSvgPath(stroke.points);
@@ -61,8 +54,7 @@ export function StrokesOverlay({ annotations, columnWidth }: Props) {
 
 /**
  * Key-section boxes and sticky-note bubbles, absolutely positioned inside
- * the content column (so they share its origin, exactly like mobile's
- * BoxesLayer/NotesLayer). Box inset/outset paddings match mobile.
+ * the content column. Box inset/outset paddings match mobile.
  */
 export function MarksOverlay({ annotations, columnWidth }: Props) {
   const scale = annotationScale(annotations, columnWidth);

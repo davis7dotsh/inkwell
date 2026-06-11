@@ -259,12 +259,18 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
             )}
           </footer>
           {annotations && columnWidth ? (
-            <MarksOverlay annotations={annotations} columnWidth={columnWidth} />
+            <>
+              <MarksOverlay
+                annotations={annotations}
+                columnWidth={columnWidth}
+              />
+              <StrokesOverlay
+                annotations={annotations}
+                columnWidth={columnWidth}
+              />
+            </>
           ) : null}
         </article>
-        {annotations && columnWidth ? (
-          <StrokesOverlay annotations={annotations} columnWidth={columnWidth} />
-        ) : null}
       </div>
     </div>
   );

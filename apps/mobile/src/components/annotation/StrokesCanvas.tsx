@@ -49,6 +49,8 @@ type Props = {
   scrollY: SharedValue<number>;
   /** Horizontal offset of the content column inside the viewport. */
   offsetX: number;
+  /** Vertical offset of the content column inside the scroll content. */
+  offsetY: number;
   /** annotation space -> current render space. */
   scale: number;
 };
@@ -58,6 +60,7 @@ export function StrokesCanvas({
   activeStroke,
   scrollY,
   offsetX,
+  offsetY,
   scale,
 }: Props) {
   const { isDark } = useTheme();
@@ -68,7 +71,13 @@ export function StrokesCanvas({
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       <Canvas style={StyleSheet.absoluteFill}>
         <Group transform={scrollTransform}>
-          <Group transform={[{ translateX: offsetX }, { scale }]}>
+          <Group
+            transform={[
+              { translateX: offsetX },
+              { translateY: offsetY },
+              { scale },
+            ]}
+          >
             <CommittedStrokes strokes={strokes} isDark={isDark} />
             {activeStroke ? (
               <StrokePath stroke={activeStroke} isDark={isDark} />

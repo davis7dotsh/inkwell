@@ -58,6 +58,7 @@ import { loadStylusSeen, persistStylusSeen } from "../../lib/stylus";
 import {
   CONTENT_PADDING,
   HIGHLIGHTER_COLOR,
+  READER_TOP_PADDING,
   HIGHLIGHTER_WIDTH,
   MAX_CONTENT_WIDTH,
   PEN_WIDTH,
@@ -67,7 +68,71 @@ import {
   useTheme,
 } from "../../lib/theme";
 
-type UndoOp = { kind: "stroke" | "box" | "note"; id: string };
+type UndoOp =
+  | { kind: "stroke" | "box" | "note"; id: string }
+  | {
+      kind: "move";
+      target: "stroke" | "box" | "note";
+      id: string;
+      dx: number;
+      dy: number;
+    };
+
+/** An annotation grabbed for repositioning, with its pre-drag geometry. */
+type MoveTarget =
+  | { kind: "stroke"; original: Stroke }
+  | { kind: "box"; original: BoxAnnotation }
+  | { kind: "note"; original: NoteAnnotation };
+
+/**
+ * Returns `a` with the grabbed annotation offset by (dx, dy) from its
+ * pre-drag geometry — absolute against the snapshot, so repeated drag
+ * updates never accumulate drift.
+ */
+function moveAnnotation(
+  a: Annotations,
+  target: MoveTarget,
+  dx: number,
+  dy: number
+): Annotations {
+  switch (target.kind) {
+    case "stroke": {
+      const moved = {
+        ...target.original,
+        points: target.original.points.map((q) => ({
+          x: q.x + dx,
+          y: q.y + dy,
+        })),
+      };
+      return {
+        ...a,
+        strokes: a.strokes.map((s) => (s.id === moved.id ? moved : s)),
+      };
+    }
+    case "box": {
+      const moved = {
+        ...target.original,
+        x: target.original.x + dx,
+        y: target.original.y + dy,
+      };
+      return {
+        ...a,
+        boxes: a.boxes.map((b) => (b.id === moved.id ? moved : b)),
+      };
+    }
+    case "note": {
+      const moved = {
+        ...target.original,
+        x: target.original.x + dx,
+        y: target.original.y + dy,
+      };
+      return {
+        ...a,
+        notes: a.notes.map((n) => (n.id === moved.id ? moved : n)),
+      };
+    }
+  }
+}
 
 export default function ArticleScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -172,6 +237,17 @@ export default function ArticleScreen() {
   // an effect (not during render) to stay React-Compiler-safe.
   const stateRef = useRef({ tool, penColor, scale, offsetX, hasStylus });
   const anchorRef = useRef<Point | null>(null);
+  // Read-mode pencil drag in flight: the grabbed annotation, the grab point,
+  // and the total content-space delta applied so far.
+  const moveRef = useRef<{
+    target: MoveTarget;
+    from: Point;
+    dx: number;
+    dy: number;
+  } | null>(null);
+  // Hit-test answer relay for the gesture worklet: -1 = pending on the JS
+  // thread, 1 = drag an annotation, 0 = miss (hand the touch to the scroll).
+  const moveHitSV = useSharedValue(0);
   const activeStrokeRef = useRef<Stroke | null>(null);
   const previewBoxRef = useRef<BoxAnnotation | null>(null);
   const noteSizesRef = useRef(new Map<string, { w: number; h: number }>());
@@ -236,31 +312,58 @@ export default function ArticleScreen() {
     setUndoStack((s) => [...s, op]);
   }, []);
 
+  /** Shifts one annotation by (dx, dy) — used to undo a move. */
+  const translateAnnotation = useCallback(
+    (kind: "stroke" | "box" | "note", id: string, dx: number, dy: number) => {
+      update((a) => {
+        if (kind === "stroke") {
+          const original = a.strokes.find((s) => s.id === id);
+          return original ? moveAnnotation(a, { kind, original }, dx, dy) : a;
+        }
+        if (kind === "box") {
+          const original = a.boxes.find((b) => b.id === id);
+          return original ? moveAnnotation(a, { kind, original }, dx, dy) : a;
+        }
+        const original = a.notes.find((n) => n.id === id);
+        return original ? moveAnnotation(a, { kind, original }, dx, dy) : a;
+      });
+    },
+    [update]
+  );
+
   const undo = useCallback(() => {
     setUndoStack((stack) => {
       const op = stack[stack.length - 1];
       if (!op) return stack;
-      update((a) => ({
-        ...a,
-        strokes:
-          op.kind === "stroke"
-            ? a.strokes.filter((s) => s.id !== op.id)
-            : a.strokes,
-        boxes:
-          op.kind === "box" ? a.boxes.filter((b) => b.id !== op.id) : a.boxes,
-        notes:
-          op.kind === "note" ? a.notes.filter((n) => n.id !== op.id) : a.notes,
-      }));
+      if (op.kind === "move") {
+        translateAnnotation(op.target, op.id, -op.dx, -op.dy);
+      } else {
+        update((a) => ({
+          ...a,
+          strokes:
+            op.kind === "stroke"
+              ? a.strokes.filter((s) => s.id !== op.id)
+              : a.strokes,
+          boxes:
+            op.kind === "box" ? a.boxes.filter((b) => b.id !== op.id) : a.boxes,
+          notes:
+            op.kind === "note"
+              ? a.notes.filter((n) => n.id !== op.id)
+              : a.notes,
+        }));
+      }
       return stack.slice(0, -1);
     });
-  }, [update]);
+  }, [translateAnnotation, update]);
 
   // ---- gesture handling ----
-  // The draw detector wraps the scroll CONTENT, so x/y arrive in content
-  // space (scroll offset already baked in); only the column offset applies.
+  // The draw detector wraps the scroll CONTENT, so x/y arrive with the
+  // scroll offset already baked in. Annotation space is anchored to the
+  // content column's top-left, so strip the column offset and the scroll
+  // content's top padding before unscaling.
   const toPoint = useCallback((x: number, y: number): Point => {
     const { scale: s, offsetX: ox } = stateRef.current;
-    return { x: (x - ox) / s, y: y / s };
+    return { x: (x - ox) / s, y: (y - READER_TOP_PADDING) / s };
   }, []);
 
   const eraseAt = useCallback(
@@ -311,6 +414,67 @@ export default function ArticleScreen() {
     [update]
   );
 
+  // Which annotation a read-mode pencil touch grabs. Later items render on
+  // top, so each list is searched newest-first: note bubbles, then ink
+  // strokes (eraser-style point distance), then boxes by their dashed border
+  // (interiors stay scrollable — boxes wrap whole sections).
+  const findMoveTarget = useCallback((p: Point): MoveTarget | null => {
+    const a = annotationsRef.current;
+    if (!a) return null;
+    const { scale: s } = stateRef.current;
+    const note = [...a.notes].reverse().find((n) => {
+      const size = noteSizesRef.current.get(n.id);
+      if (!size) return false;
+      return (
+        p.x >= n.x &&
+        p.x <= n.x + size.w / s &&
+        p.y >= n.y &&
+        p.y <= n.y + size.h / s
+      );
+    });
+    if (note) return { kind: "note", original: note };
+    const strokeThreshold = 20 / s;
+    const stroke = [...a.strokes]
+      .reverse()
+      .find(
+        (st) =>
+          Math.min(
+            ...st.points.map((q) => Math.hypot(q.x - p.x, q.y - p.y))
+          ) <= strokeThreshold
+      );
+    if (stroke) return { kind: "stroke", original: stroke };
+    const borderThreshold = 24 / s;
+    const box = [...a.boxes].reverse().find((b) => {
+      const nearX =
+        Math.abs(p.x - b.x) < borderThreshold ||
+        Math.abs(p.x - (b.x + b.w)) < borderThreshold;
+      const nearY =
+        Math.abs(p.y - b.y) < borderThreshold ||
+        Math.abs(p.y - (b.y + b.h)) < borderThreshold;
+      const withinX =
+        p.x > b.x - borderThreshold && p.x < b.x + b.w + borderThreshold;
+      const withinY =
+        p.y > b.y - borderThreshold && p.y < b.y + b.h + borderThreshold;
+      return (nearX && withinY) || (nearY && withinX);
+    });
+    if (box) return { kind: "box", original: box };
+    return null;
+  }, []);
+
+  // Runs on the JS thread while the gesture worklet holds the touch
+  // undetermined; answers through moveHitSV so the worklet can activate
+  // (drag) or fail (let the pencil scroll).
+  const evaluateMoveHit = useCallback(
+    (x: number, y: number) => {
+      const p = toPoint(x, y);
+      const target = findMoveTarget(p);
+      moveRef.current = target ? { target, from: p, dx: 0, dy: 0 } : null;
+      moveHitSV.value = target ? 1 : 0;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [findMoveTarget, toPoint]
+  );
+
   const onPanStart = useCallback(
     (x: number, y: number) => {
       const { tool: t, penColor: color, scale: s } = stateRef.current;
@@ -341,7 +505,13 @@ export default function ArticleScreen() {
     (x: number, y: number) => {
       const { tool: t } = stateRef.current;
       const p = toPoint(x, y);
-      if (t === "pen" || t === "highlighter") {
+      if (t === "read") {
+        const m = moveRef.current;
+        if (!m) return;
+        m.dx = p.x - m.from.x;
+        m.dy = p.y - m.from.y;
+        update((a) => moveAnnotation(a, m.target, m.dx, m.dy));
+      } else if (t === "pen" || t === "highlighter") {
         const current = activeStrokeRef.current;
         if (!current) return;
         const next = { ...current, points: [...current.points, p] };
@@ -363,12 +533,26 @@ export default function ArticleScreen() {
         eraseAt(p);
       }
     },
-    [eraseAt, toPoint]
+    [eraseAt, toPoint, update]
   );
 
   const onPanEnd = useCallback(() => {
     const { tool: t, scale: s } = stateRef.current;
-    if (t === "pen" || t === "highlighter") {
+    if (t === "read") {
+      // moveHitSV is reset by the worklet on the next touch-down; resetting
+      // it here (async, JS thread) could clobber that touch's pending state.
+      const m = moveRef.current;
+      moveRef.current = null;
+      if (m && (m.dx !== 0 || m.dy !== 0)) {
+        pushUndo({
+          kind: "move",
+          target: m.target.kind,
+          id: m.target.original.id,
+          dx: m.dx,
+          dy: m.dy,
+        });
+      }
+    } else if (t === "pen" || t === "highlighter") {
       const stroke = activeStrokeRef.current;
       activeStrokeRef.current = null;
       setActiveStroke(null);
@@ -416,16 +600,22 @@ export default function ArticleScreen() {
 
   const isDrawTool =
     tool === "pen" || tool === "highlighter" || tool === "box" || tool === "eraser";
+  const isReadMode = tool === "read";
 
   // IMPORTANT: these callbacks run as worklets (no .runOnJS(true)) because
   // the StateManager's activate()/fail() are silent no-ops on the JS thread.
   // Stylus touches activate instantly (zero-slop ink); finger touches fail
   // the pan so the ancestor ScrollView takes the gesture — unless no stylus
   // has ever been seen, in which case fingers draw like before.
+  //
+  // In read mode the pencil can grab an existing annotation and drag it to
+  // reposition: the worklet parks the touch (manual activation) while the JS
+  // thread hit-tests, then moveHitSV tells it to activate (drag) or fail
+  // (the pencil scrolls like before). Fingers always scroll.
   const panGesture = useMemo(
     () =>
       Gesture.Pan()
-        .enabled(isDrawTool)
+        .enabled(isDrawTool || isReadMode)
         .maxPointers(1)
         .manualActivation(true)
         .blocksExternalGesture(nativeScroll)
@@ -435,16 +625,42 @@ export default function ArticleScreen() {
             manager.fail();
             return;
           }
-          if (e.pointerType === PointerType.STYLUS) {
-            if (!hasStylusSV.value) {
-              hasStylusSV.value = true;
-              runOnJS(markStylusSeen)();
+          const isStylus = e.pointerType === PointerType.STYLUS;
+          if (isStylus && !hasStylusSV.value) {
+            hasStylusSV.value = true;
+            runOnJS(markStylusSeen)();
+          }
+          if (isReadMode) {
+            if (!isStylus) {
+              manager.fail();
+              return;
             }
+            moveHitSV.value = -1;
+            const touch = e.allTouches[0];
+            runOnJS(evaluateMoveHit)(touch.x, touch.y);
+            return;
+          }
+          if (isStylus || !hasStylusSV.value) {
             manager.activate();
-          } else if (hasStylusSV.value) {
-            manager.fail();
           } else {
+            manager.fail();
+          }
+        })
+        .onTouchesMove((_e, manager) => {
+          "worklet";
+          if (!isReadMode) return;
+          if (moveHitSV.value === 1) {
             manager.activate();
+          } else if (moveHitSV.value === 0) {
+            manager.fail();
+          }
+        })
+        .onTouchesUp((_e, manager) => {
+          "worklet";
+          // Pencil lifted before the hit test answered (or on a miss): release
+          // the touch. An activated drag ends through the normal pan flow.
+          if (isReadMode && moveHitSV.value !== 1) {
+            manager.fail();
           }
         })
         .onStart((e) => {
@@ -464,7 +680,16 @@ export default function ArticleScreen() {
           runOnJS(onPanEnd)();
         }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isDrawTool, nativeScroll, markStylusSeen, onPanStart, onPanUpdate, onPanEnd]
+    [
+      isDrawTool,
+      isReadMode,
+      nativeScroll,
+      markStylusSeen,
+      evaluateMoveHit,
+      onPanStart,
+      onPanUpdate,
+      onPanEnd,
+    ]
   );
 
   const tapGesture = useMemo(
@@ -730,6 +955,7 @@ export default function ArticleScreen() {
             activeStroke={activeStroke}
             scrollY={scrollY}
             offsetX={offsetX}
+            offsetY={READER_TOP_PADDING}
             scale={scale}
           />
 
@@ -793,7 +1019,7 @@ const themed = makeThemedStyles((c) =>
       textAlign: "center",
     },
     scrollContent: {
-      paddingTop: 28,
+      paddingTop: READER_TOP_PADDING,
       paddingBottom: 160,
     },
     title: {
