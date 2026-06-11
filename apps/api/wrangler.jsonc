@@ -7,6 +7,9 @@
     "dev": {
       "name": "inkwell-api-dev",
       "workers_dev": true,
+      // Empty routes: without this, env.dev inherits the top-level custom
+      // domain and a staging deploy steals api.inkwellapp.net from prod.
+      "routes": [],
       "vars": {
         "CLERK_PUBLISHABLE_KEY": "pk_test_aGFwcHktc2hlZXAtODcuY2xlcmsuYWNjb3VudHMuZGV2JA",
         "CONVEX_SITE_URL": "https://abundant-grouse-159.convex.site"

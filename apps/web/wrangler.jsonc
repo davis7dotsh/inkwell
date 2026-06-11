@@ -8,6 +8,9 @@
     "dev": {
       "name": "inkwell-web-dev",
       "workers_dev": true,
+      // Empty routes: without this, env.dev inherits the top-level custom
+      // domain and a staging deploy steals inkwellapp.net from prod.
+      "routes": [],
       "assets": { "directory": "./dist", "not_found_handling": "single-page-application" }
     }
   },
