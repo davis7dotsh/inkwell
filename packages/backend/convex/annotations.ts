@@ -23,6 +23,7 @@ export const save = mutation({
     strokesJson: v.string(),
     boxesJson: v.string(),
     notesJson: v.string(),
+    memosJson: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const article = await requireOwnedArticle(ctx, args.articleId);
@@ -37,6 +38,7 @@ export const save = mutation({
         strokesJson: args.strokesJson,
         boxesJson: args.boxesJson,
         notesJson: args.notesJson,
+        memosJson: args.memosJson ?? "[]",
         updatedAt,
       });
     } else {
@@ -47,6 +49,7 @@ export const save = mutation({
         strokesJson: args.strokesJson,
         boxesJson: args.boxesJson,
         notesJson: args.notesJson,
+        memosJson: args.memosJson ?? "[]",
         updatedAt,
       });
     }

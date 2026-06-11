@@ -4,10 +4,11 @@
 // the real implementation at runtime.
 import nodeAssert from "node:assert/strict";
 
+import { buildExportMarkdown } from "../src/exportMarkdown";
 import { htmlToBlocks } from "../src/htmlToBlocks";
 import { markdownToBlocks } from "../src/markdownToBlocks";
 import { firecrawlToArticle } from "../src/normalize";
-import type { Block, Span } from "../src/types";
+import { emptyAnnotations, type Block, type Span } from "../src/types";
 
 type Assert = {
   (value: unknown, message?: string): void;
@@ -661,4 +662,71 @@ assert.throws(
 );
 
 console.log("firecrawlToArticle tests passed");
+
+// ════════════════════════════════════════════════════════════════════
+// buildExportMarkdown — voice memos
+// ════════════════════════════════════════════════════════════════════
+{
+  const memoArticle = {
+    title: "Memo Article",
+    url: "https://example.com/memo",
+    savedAt: 1750000000000,
+    blocks: [
+      { type: "paragraph", spans: [{ text: "First paragraph." }] },
+      { type: "paragraph", spans: [{ text: "Second paragraph." }] },
+    ] as Block[],
+  };
+  const layouts = new Map([
+    [0, { y: 0, height: 100 }],
+    [1, { y: 120, height: 100 }],
+  ]);
+  const annotations = {
+    ...emptyAnnotations(800),
+    memos: [
+      {
+        id: "m2",
+        x: 10,
+        y: 150,
+        durationMs: 12000,
+        transcript: "Check this claim against the appendix.",
+        status: "uploaded" as const,
+        createdAt: 1750000001000,
+      },
+      {
+        id: "m1",
+        x: 10,
+        y: 10,
+        durationMs: 4000,
+        transcript: "   ",
+        status: "local" as const,
+        createdAt: 1750000002000,
+      },
+    ],
+  };
+  const markdown = buildExportMarkdown(memoArticle, annotations, layouts, 1);
+  assert.ok(markdown.includes("## Voice memos"), "memo section present");
+  assert.ok(
+    markdown.includes(
+      `- 🎤 "Check this claim against the appendix." — near: "Second paragraph."`
+    ),
+    "memo transcript exported with nearby block context"
+  );
+  assert.equal(
+    markdown.match(/- 🎤/g)?.length,
+    1,
+    "empty-transcript memos are skipped"
+  );
+  const noMemos = buildExportMarkdown(
+    memoArticle,
+    emptyAnnotations(800),
+    layouts,
+    1
+  );
+  assert.ok(
+    !noMemos.includes("## Voice memos"),
+    "no memo section without memos"
+  );
+  console.log("buildExportMarkdown memo tests passed");
+}
+
 console.log("\nALL CONTENT TESTS PASSED");

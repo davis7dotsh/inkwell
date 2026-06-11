@@ -36,6 +36,10 @@ export default defineSchema({
     strokesJson: v.string(), // JSON-encoded arrays (ink can be large)
     boxesJson: v.string(),
     notesJson: v.string(),
+    // Optional: rows written before voice memos existed lack it; clients
+    // treat undefined as "[]". Audio lives in R2 keyed by (user, article,
+    // memo id) — this carries only placement + transcript + upload status.
+    memosJson: v.optional(v.string()),
     updatedAt: v.number(),
   }).index("by_article", ["articleId"]),
 });

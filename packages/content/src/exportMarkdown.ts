@@ -147,6 +147,21 @@ export function buildExportMarkdown(
     lines.push("");
   }
 
+  const spokenMemos = annotations.memos.filter(
+    (m) => m.transcript.trim().length > 0
+  );
+  if (spokenMemos.length > 0) {
+    lines.push(`## Voice memos`);
+    lines.push("");
+    for (const memo of [...spokenMemos].sort((a, b) => a.y - b.y)) {
+      const near = nearestBlock(layouts, memo.y * scale);
+      const context =
+        near != null ? ` — near: "${truncate(blockText(article.blocks[near]))}"` : "";
+      lines.push(`- 🎤 "${memo.transcript.trim()}"${context}`);
+    }
+    lines.push("");
+  }
+
   const penStrokes = annotations.strokes.filter((s) => s.tool === "pen");
   if (penStrokes.length > 0) {
     lines.push(`## Handwritten marks`);

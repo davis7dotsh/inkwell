@@ -1,3 +1,4 @@
+import { useAuth } from "@clerk/expo";
 import { api } from "@inkwell/backend/convex/_generated/api";
 import type { Id } from "@inkwell/backend/convex/_generated/dataModel";
 import {
@@ -10,6 +11,7 @@ import {
   type NoteAnnotation,
   type Point,
   type Stroke,
+  type VoiceMemoAnnotation,
 } from "@inkwell/content";
 import { useMutation, useQuery } from "convex/react";
 import { File, Paths } from "expo-file-system";
@@ -49,12 +51,23 @@ import { BrushStroke } from "../../components/BrushStroke";
 import { GlassIconButton } from "../../components/glass";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { BoxesLayer } from "../../components/annotation/BoxesLayer";
+import { MemoPlayerModal } from "../../components/annotation/MemoPlayerModal";
+import { MemoRecorderPanel } from "../../components/annotation/MemoRecorderPanel";
+import { MemosLayer } from "../../components/annotation/MemosLayer";
 import { NoteEditorModal } from "../../components/annotation/NoteEditorModal";
 import { NotesLayer } from "../../components/annotation/NotesLayer";
 import { StrokesCanvas } from "../../components/annotation/StrokesCanvas";
 import { Toolbar, type Tool } from "../../components/annotation/Toolbar";
 import { newId } from "../../lib/ids";
 import { loadStylusSeen, persistStylusSeen } from "../../lib/stylus";
+import { showError } from "../../lib/toast";
+import {
+  deleteMemoAudio,
+  memoFile,
+  storeRecording,
+  transcribeMemo,
+  uploadMemoAudio,
+} from "../../lib/voiceMemos";
 import {
   CONTENT_PADDING,
   HIGHLIGHTER_COLOR,
@@ -68,11 +81,13 @@ import {
   useTheme,
 } from "../../lib/theme";
 
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
+
 type UndoOp =
-  | { kind: "stroke" | "box" | "note"; id: string }
+  | { kind: "stroke" | "box" | "note" | "memo"; id: string }
   | {
       kind: "move";
-      target: "stroke" | "box" | "note";
+      target: "stroke" | "box" | "note" | "memo";
       id: string;
       dx: number;
       dy: number;
@@ -82,7 +97,11 @@ type UndoOp =
 type MoveTarget =
   | { kind: "stroke"; original: Stroke }
   | { kind: "box"; original: BoxAnnotation }
-  | { kind: "note"; original: NoteAnnotation };
+  | { kind: "note"; original: NoteAnnotation }
+  | { kind: "memo"; original: VoiceMemoAnnotation };
+
+/** Voice memo capture in flight: recording at a point, then transcribing. */
+type MemoPhase = { mode: "recording"; at: Point } | { mode: "processing" };
 
 /**
  * Returns `a` with the grabbed annotation offset by (dx, dy) from its
@@ -131,6 +150,17 @@ function moveAnnotation(
         notes: a.notes.map((n) => (n.id === moved.id ? moved : n)),
       };
     }
+    case "memo": {
+      const moved = {
+        ...target.original,
+        x: target.original.x + dx,
+        y: target.original.y + dy,
+      };
+      return {
+        ...a,
+        memos: a.memos.map((m) => (m.id === moved.id ? moved : m)),
+      };
+    }
   }
 }
 
@@ -170,7 +200,10 @@ export default function ArticleScreen() {
     | { mode: "edit"; note: NoteAnnotation }
     | null
   >(null);
+  const [memoPhase, setMemoPhase] = useState<MemoPhase | null>(null);
+  const [playerMemoId, setPlayerMemoId] = useState<string | null>(null);
   const [undoStack, setUndoStack] = useState<UndoOp[]>([]);
+  const { getToken } = useAuth();
 
   const blocks = useMemo<Block[]>(
     () =>
@@ -187,6 +220,10 @@ export default function ArticleScreen() {
       strokes: JSON.parse(remoteAnnotations.strokesJson) as Stroke[],
       boxes: JSON.parse(remoteAnnotations.boxesJson) as BoxAnnotation[],
       notes: JSON.parse(remoteAnnotations.notesJson) as NoteAnnotation[],
+      // Rows written before voice memos existed lack the column.
+      memos: JSON.parse(
+        remoteAnnotations.memosJson ?? "[]"
+      ) as VoiceMemoAnnotation[],
     };
   }, [remoteAnnotations]);
 
@@ -253,12 +290,15 @@ export default function ArticleScreen() {
   const activeStrokeRef = useRef<Stroke | null>(null);
   const previewBoxRef = useRef<BoxAnnotation | null>(null);
   const noteSizesRef = useRef(new Map<string, { w: number; h: number }>());
+  const memoSizesRef = useRef(new Map<string, { w: number; h: number }>());
   const layoutsRef = useRef(new Map<number, BlockLayout>());
   const annotationsRef = useRef<Annotations | null>(null);
+  const memoPhaseRef = useRef<MemoPhase | null>(null);
   const dirtyRef = useRef(false);
   useEffect(() => {
     stateRef.current = { tool, penColor, scale, offsetX, hasStylus };
     annotationsRef.current = annotations;
+    memoPhaseRef.current = memoPhase;
   });
 
   // ---- load & persist ----
@@ -280,6 +320,7 @@ export default function ArticleScreen() {
         strokesJson: JSON.stringify(a.strokes),
         boxesJson: JSON.stringify(a.boxes),
         notesJson: JSON.stringify(a.notes),
+        memosJson: JSON.stringify(a.memos),
       });
     },
     [articleId, saveAnnotations]
@@ -314,9 +355,102 @@ export default function ArticleScreen() {
     setUndoStack((s) => [...s, op]);
   }, []);
 
+  // ---- voice memos: audio pipeline ----
+  /** Best-effort removal of a deleted memo's audio (local cache + R2). */
+  const cleanupMemoAudio = useCallback(
+    async (memoId: string) => {
+      const token = await getToken().catch(() => null);
+      await deleteMemoAudio({ apiUrl: API_URL, token, articleId, memoId });
+    },
+    [articleId, getToken]
+  );
+
+  /** Background audio upload; flips the memo to "uploaded" when it lands. */
+  const uploadMemo = useCallback(
+    async (memoId: string) => {
+      if (!API_URL) return;
+      const token = await getToken().catch(() => null);
+      if (!token) return;
+      const ok = await uploadMemoAudio({
+        apiUrl: API_URL,
+        token,
+        articleId,
+        memoId,
+      });
+      if (ok) {
+        update((a) => ({
+          ...a,
+          memos: a.memos.map((m) =>
+            m.id === memoId ? { ...m, status: "uploaded" as const } : m
+          ),
+        }));
+      }
+    },
+    [articleId, getToken, update]
+  );
+
+  // Re-uploads any memo whose audio never left this device (e.g. recorded
+  // offline) — once per screen visit, after annotations have seeded.
+  const retriedUploadsRef = useRef(false);
+  useEffect(() => {
+    if (retriedUploadsRef.current || !annotations) return;
+    retriedUploadsRef.current = true;
+    for (const memo of annotations.memos) {
+      if (memo.status === "local" && memoFile(memo.id).exists) {
+        void uploadMemo(memo.id);
+      }
+    }
+  }, [annotations, uploadMemo]);
+
+  const onMemoRecorded = useCallback(
+    async (at: Point, recording: { uri: string; durationMs: number }) => {
+      setMemoPhase({ mode: "processing" });
+      try {
+        const memoId = newId();
+        const file = storeRecording(recording.uri, memoId);
+        // On-device SpeechAnalyzer; "" when unavailable — never blocks.
+        const transcript = await transcribeMemo(file);
+        const memo: VoiceMemoAnnotation = {
+          id: memoId,
+          x: at.x,
+          y: at.y,
+          durationMs: recording.durationMs,
+          transcript,
+          status: "local",
+          createdAt: Date.now(),
+        };
+        update((a) => ({ ...a, memos: [...a.memos, memo] }));
+        pushUndo({ kind: "memo", id: memoId });
+        void uploadMemo(memoId);
+      } catch {
+        showError("Couldn't save the voice memo.");
+      } finally {
+        setMemoPhase(null);
+      }
+    },
+    [pushUndo, update, uploadMemo]
+  );
+
+  const onDeleteMemo = useCallback(
+    (memo: VoiceMemoAnnotation) => {
+      update((a) => ({
+        ...a,
+        memos: a.memos.filter((m) => m.id !== memo.id),
+      }));
+      setPlayerMemoId(null);
+      void cleanupMemoAudio(memo.id);
+    },
+    [cleanupMemoAudio, update]
+  );
+
   /** Shifts one annotation by (dx, dy) — used to undo a move. */
   const translateAnnotation = useCallback(
-    (kind: "stroke" | "box" | "note", id: string, dx: number, dy: number) => {
+    (
+      kind: "stroke" | "box" | "note" | "memo",
+      id: string,
+      dx: number,
+      dy: number
+    ) => {
       update((a) => {
         if (kind === "stroke") {
           const original = a.strokes.find((s) => s.id === id);
@@ -324,6 +458,10 @@ export default function ArticleScreen() {
         }
         if (kind === "box") {
           const original = a.boxes.find((b) => b.id === id);
+          return original ? moveAnnotation(a, { kind, original }, dx, dy) : a;
+        }
+        if (kind === "memo") {
+          const original = a.memos.find((m) => m.id === id);
           return original ? moveAnnotation(a, { kind, original }, dx, dy) : a;
         }
         const original = a.notes.find((n) => n.id === id);
@@ -352,11 +490,17 @@ export default function ArticleScreen() {
             op.kind === "note"
               ? a.notes.filter((n) => n.id !== op.id)
               : a.notes,
+          memos:
+            op.kind === "memo"
+              ? a.memos.filter((m) => m.id !== op.id)
+              : a.memos,
         }));
+        // Undoing a memo's creation also drops its recording.
+        if (op.kind === "memo") void cleanupMemoAudio(op.id);
       }
       return stack.slice(0, -1);
     });
-  }, [translateAnnotation, update]);
+  }, [cleanupMemoAudio, translateAnnotation, update]);
 
   // ---- gesture handling ----
   // The draw detector wraps the scroll CONTENT, so x/y arrive with the
@@ -424,6 +568,17 @@ export default function ArticleScreen() {
     const a = annotationsRef.current;
     if (!a) return null;
     const { scale: s } = stateRef.current;
+    const memo = [...a.memos].reverse().find((m) => {
+      const size = memoSizesRef.current.get(m.id);
+      if (!size) return false;
+      return (
+        p.x >= m.x &&
+        p.x <= m.x + size.w / s &&
+        p.y >= m.y &&
+        p.y <= m.y + size.h / s
+      );
+    });
+    if (memo) return { kind: "memo", original: memo };
     const note = [...a.notes].reverse().find((n) => {
       const size = noteSizesRef.current.get(n.id);
       if (!size) return false;
@@ -610,6 +765,32 @@ export default function ArticleScreen() {
     [toPoint]
   );
 
+  // Memo-tool tap: an existing chip opens its player; empty space starts a
+  // recording at that point (one take at a time).
+  const onMemoTap = useCallback(
+    (x: number, y: number) => {
+      if (memoPhaseRef.current) return;
+      const { scale: s } = stateRef.current;
+      const p = toPoint(x, y);
+      const existing = annotationsRef.current?.memos.find((m) => {
+        const size = memoSizesRef.current.get(m.id);
+        if (!size) return false;
+        return (
+          p.x >= m.x &&
+          p.x <= m.x + size.w / s &&
+          p.y >= m.y &&
+          p.y <= m.y + size.h / s
+        );
+      });
+      if (existing) {
+        setPlayerMemoId(existing.id);
+        return;
+      }
+      setMemoPhase({ mode: "recording", at: p });
+    },
+    [toPoint]
+  );
+
   // Native handle for the ScrollView so the draw pan can hard-block
   // scrolling (palms included) while a pencil stroke is active.
   const nativeScroll = useMemo(() => Gesture.Native(), []);
@@ -720,11 +901,11 @@ export default function ArticleScreen() {
   const tapGesture = useMemo(
     () =>
       Gesture.Tap()
-        .enabled(tool === "note")
+        .enabled(tool === "note" || tool === "memo")
         .runOnJS(true)
         .onEnd((e, success) => {
           // Tap uses no StateManager, so the JS thread is fine here. With a
-          // stylus on record, only the pencil places notes.
+          // stylus on record, only the pencil places notes/memos.
           if (!success) return;
           if (
             stateRef.current.hasStylus &&
@@ -732,9 +913,10 @@ export default function ArticleScreen() {
           ) {
             return;
           }
-          onNoteTap(e.x, e.y);
+          if (stateRef.current.tool === "memo") onMemoTap(e.x, e.y);
+          else onNoteTap(e.x, e.y);
         }),
-    [tool, onNoteTap]
+    [tool, onNoteTap, onMemoTap]
   );
 
   const drawGestures = useMemo(
@@ -785,6 +967,17 @@ export default function ArticleScreen() {
     noteSizesRef.current.set(noteId, size);
   }, []);
 
+  const onMemoLayout = useCallback(
+    (memoId: string, size: { w: number; h: number }) => {
+      memoSizesRef.current.set(memoId, size);
+    },
+    []
+  );
+
+  const onPressMemo = useCallback((memo: VoiceMemoAnnotation) => {
+    setPlayerMemoId(memo.id);
+  }, []);
+
   const onBlockLayout = useCallback((index: number, layout: BlockLayout) => {
     layoutsRef.current.set(index, layout);
   }, []);
@@ -832,6 +1025,12 @@ export default function ArticleScreen() {
         : { message: markdown }
     );
   }, [article, blocks]);
+
+  // Live view of the memo being played, so upload-status changes (synced
+  // badge) reach an open player modal.
+  const playerMemo = playerMemoId
+    ? (annotations?.memos.find((m) => m.id === playerMemoId) ?? null)
+    : null;
 
   const ready = article !== undefined && article.status === "ready";
   const isRead = article !== undefined && article.readStatus === "read";
@@ -941,6 +1140,12 @@ export default function ArticleScreen() {
                 onPressNote={onPressNote}
                 onNoteLayout={onNoteLayout}
               />
+              <MemosLayer
+                memos={annotations.memos}
+                scale={scale}
+                onPressMemo={onPressMemo}
+                onMemoLayout={onMemoLayout}
+              />
               <View style={styles.readFooter}>
                 <Pressable
                   onPress={onToggleRead}
@@ -1001,6 +1206,34 @@ export default function ArticleScreen() {
             onDelete={deleteNote}
             onCancel={() => setNoteEditor(null)}
           />
+
+          {memoPhase?.mode === "recording" ? (
+            <MemoRecorderPanel
+              onComplete={(recording) =>
+                void onMemoRecorded(memoPhase.at, recording)
+              }
+              onCancel={(message) => {
+                setMemoPhase(null);
+                if (message) showError(message);
+              }}
+            />
+          ) : null}
+          {memoPhase?.mode === "processing" ? (
+            <View style={styles.transcribingWrap} pointerEvents="none">
+              <View style={styles.transcribingPill}>
+                <ActivityIndicator size="small" color={c.accent} />
+                <Text style={styles.transcribingText}>Transcribing…</Text>
+              </View>
+            </View>
+          ) : null}
+          {playerMemo ? (
+            <MemoPlayerModal
+              memo={playerMemo}
+              articleId={articleId}
+              onDelete={onDeleteMemo}
+              onClose={() => setPlayerMemoId(null)}
+            />
+          ) : null}
         </View>
       )}
     </View>
@@ -1090,6 +1323,35 @@ const themed = makeThemedStyles((c) =>
     readFooterHint: {
       fontSize: 13,
       color: c.inkFaint,
+    },
+    transcribingWrap: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: 34,
+      alignItems: "center",
+    },
+    transcribingPill: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      backgroundColor: c.surface,
+      borderWidth: 1,
+      borderColor: c.hairline,
+      borderRadius: 22,
+      borderCurve: "continuous",
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      shadowColor: "#0E2E52",
+      shadowOpacity: 0.18,
+      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 6 },
+      elevation: 8,
+    },
+    transcribingText: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: c.inkSecondary,
     },
   })
 );

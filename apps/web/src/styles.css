@@ -932,6 +932,86 @@ h4.article-heading {
   overflow: hidden;
 }
 
+/* ---- voice memos (interactive, unlike the read-only layers above) ---- */
+
+.memos-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.memo-annotation {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.memo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--mist);
+  border: 1px solid var(--wash);
+  border-radius: 14px;
+  border-bottom-left-radius: 3px;
+  padding: 5px 9px;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  cursor: pointer;
+  box-shadow: 0 2px 6px var(--note-shadow);
+}
+
+.memo-chip svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--link);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.memo-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 5;
+  width: 300px;
+  background: var(--surface);
+  border: 1px solid var(--wash);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 6px 18px var(--note-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.memo-popover audio {
+  width: 100%;
+  height: 36px;
+}
+
+.memo-transcript {
+  font-family: var(--sans);
+  font-size: 13.5px;
+  line-height: 19px;
+  color: var(--ink);
+  margin: 0;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.memo-hint {
+  font-family: var(--sans);
+  font-size: 12.5px;
+  line-height: 17px;
+  color: var(--ink-faint);
+  margin: 0;
+}
+
 @media (max-width: 640px) {
   .library {
     padding-inline: 20px;
