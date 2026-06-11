@@ -6,16 +6,20 @@ import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { colors } from "../lib/theme";
+import { makeThemedStyles, useTheme } from "../lib/theme";
+
+import { GlassSurface, glassAvailable } from "./glass";
 
 type Props = {
   title?: string;
-  /** Rendered at the trailing edge (e.g. an export button). */
+  /** Rendered at the trailing edge (e.g. open/export buttons). */
   right?: React.ReactNode;
 };
 
 export function ScreenHeader({ title, right }: Props) {
   const insets = useSafeAreaInsets();
+  const { scheme, c } = useTheme();
+  const styles = themed[scheme];
   const goBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -26,61 +30,90 @@ export function ScreenHeader({ title, right }: Props) {
   return (
     <View style={[styles.wrap, { paddingTop: insets.top }]}>
       <View style={styles.row}>
-        <Pressable
-          onPress={goBack}
-          hitSlop={10}
-          style={({ pressed }) => [styles.back, pressed && { opacity: 0.6 }]}
-        >
-          <MaterialCommunityIcons
-            name="chevron-left"
-            size={28}
-            color={colors.accent}
-          />
-          <Text style={styles.backLabel}>Library</Text>
-        </Pressable>
+        <View style={styles.side}>
+          <Pressable
+            onPress={goBack}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Back to library"
+            style={({ pressed }) => pressed && !glassAvailable && styles.pressed}
+          >
+            <GlassSurface
+              isInteractive
+              style={styles.back}
+              fallbackStyle={styles.backFallback}
+            >
+              <MaterialCommunityIcons
+                name="chevron-left"
+                size={26}
+                color={c.accent}
+              />
+              <Text style={styles.backLabel}>Library</Text>
+            </GlassSurface>
+          </Pressable>
+        </View>
         <Text style={styles.title} numberOfLines={1}>
           {title ?? ""}
         </Text>
-        <View style={styles.right}>{right}</View>
+        <View style={[styles.side, styles.right]}>{right}</View>
       </View>
     </View>
   );
 }
 
-const SIDE_WIDTH = 96;
+const SIDE_WIDTH = 110;
 
-const styles = StyleSheet.create({
-  wrap: {
-    backgroundColor: colors.background,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.hairline,
-  },
-  row: {
-    height: 50,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-  },
-  back: {
-    width: SIDE_WIDTH,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  backLabel: {
-    fontSize: 16,
-    color: colors.accent,
-    marginLeft: -2,
-  },
-  title: {
-    flex: 1,
-    textAlign: "center",
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.ink,
-  },
-  right: {
-    width: SIDE_WIDTH,
-    alignItems: "flex-end",
-    paddingRight: 6,
-  },
-});
+const themed = makeThemedStyles((c) =>
+  StyleSheet.create({
+    wrap: {
+      backgroundColor: c.background,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.hairline,
+    },
+    row: {
+      height: 56,
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 12,
+    },
+    side: {
+      width: SIDE_WIDTH,
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    back: {
+      flexDirection: "row",
+      alignItems: "center",
+      height: 40,
+      borderRadius: 20,
+      borderCurve: "continuous",
+      paddingLeft: 4,
+      paddingRight: 14,
+    },
+    backFallback: {
+      backgroundColor: c.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.hairline,
+    },
+    backLabel: {
+      fontSize: 16,
+      color: c.accent,
+      fontWeight: "500",
+      marginLeft: -1,
+    },
+    title: {
+      flex: 1,
+      textAlign: "center",
+      fontSize: 16,
+      fontWeight: "600",
+      color: c.ink,
+    },
+    right: {
+      justifyContent: "flex-end",
+      gap: 10,
+    },
+    pressed: {
+      opacity: 0.6,
+    },
+  })
+);

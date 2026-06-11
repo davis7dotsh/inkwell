@@ -5,7 +5,14 @@ import { api } from "@inkwell/backend/convex/_generated/api";
 import type { Id } from "@inkwell/backend/convex/_generated/dataModel";
 import type { Annotations, Block } from "@inkwell/content";
 import { useQuery } from "convex/react";
-import React, { useCallback, useMemo, useState, type ReactNode } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { MarksOverlay, StrokesOverlay } from "../components/AnnotationsOverlay";
@@ -13,14 +20,55 @@ import { BlockRenderer } from "../components/BlockRenderer";
 import { BrushStroke } from "../components/BrushStroke";
 import { colors, MAX_CONTENT_WIDTH } from "../lib/theme";
 
-function ReaderBar({ siteName }: { siteName?: string }) {
+/** Thin reading-progress bar pinned to the bottom edge of the sticky bar.
+ * Writes the transform directly so scrolling never re-renders the reader. */
+function ScrollProgressBar() {
+  const fillRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let raf = 0;
+    const update = () => {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      const progress =
+        max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
+      if (fillRef.current) {
+        fillRef.current.style.transform = `scaleX(${progress})`;
+      }
+    };
+    const schedule = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+    };
+  }, []);
+  return (
+    <div className="scroll-progress-track" aria-hidden>
+      <div ref={fillRef} className="scroll-progress-fill" />
+    </div>
+  );
+}
+
+function ReaderBar({
+  title,
+  withProgress,
+}: {
+  title?: string;
+  withProgress?: boolean;
+}) {
   return (
     <header className="reader-bar">
       <Link to="/" className="back-link">
         ← Library
       </Link>
-      <span className="reader-site">{siteName ?? ""}</span>
+      <span className="reader-title">{title ?? ""}</span>
       <span />
+      {withProgress ? <ScrollProgressBar /> : null}
     </header>
   );
 }
@@ -163,7 +211,7 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
 
   return (
     <div className="reader">
-      <ReaderBar siteName={article.siteName} />
+      <ReaderBar title={article.title} withProgress />
       <div className="reader-content">
         <article className="content-column" ref={columnRef}>
           <h1 className="article-title">{article.title}</h1>

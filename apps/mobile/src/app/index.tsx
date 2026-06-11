@@ -6,7 +6,7 @@ import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import * as Clipboard from "expo-clipboard";
 import { router } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -17,15 +17,23 @@ import {
   TextInput,
   View,
 } from "react-native";
+import ReanimatedSwipeable, {
+  type SwipeableMethods,
+} from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { BackdropWash } from "../components/BackdropWash";
 import { BrushStroke } from "../components/BrushStroke";
+import {
+  GlassIconButton,
+  GlassSurface,
+  glassAvailable,
+} from "../components/glass";
 import { apiClient } from "../lib/api";
-import { colors, serif } from "../lib/theme";
+import { makeThemedStyles, serif, useTheme } from "../lib/theme";
 import { showError } from "../lib/toast";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
-const FAILED_COLOR = "#B0413E"; // seal red (matches the pen palette)
 
 type ArticleListItem = FunctionReturnType<typeof api.articles.list>[number];
 
@@ -44,31 +52,64 @@ function ArticleCard({
   item,
   onDelete,
   onRetry,
+  onSwipeOpen,
 }: {
   item: ArticleListItem;
   onDelete: (id: Id<"articles">) => void;
   onRetry: (id: Id<"articles">) => void;
+  /** Called as this row starts to open, so the screen can close any other. */
+  onSwipeOpen: (row: SwipeableMethods | null) => void;
 }) {
+  const { scheme, c } = useTheme();
+  const styles = themed[scheme];
+  const swipeRef = useRef<SwipeableMethods>(null);
   const date = new Date(item.savedAt).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
   });
+  const confirmDelete = (onCancel?: () => void) =>
+    Alert.alert("Delete article?", item.title, [
+      { text: "Cancel", style: "cancel", onPress: onCancel },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => onDelete(item._id),
+      },
+    ]);
   return (
+    <ReanimatedSwipeable
+      ref={swipeRef}
+      friction={2}
+      rightThreshold={36}
+      overshootRight={false}
+      onSwipeableOpenStartDrag={() => onSwipeOpen(swipeRef.current)}
+      renderRightActions={(_progress, _translation, methods) => (
+        <View style={styles.deleteActionWrap}>
+          <Pressable
+            onPress={() => confirmDelete(methods.close)}
+            accessibilityRole="button"
+            accessibilityLabel={`Delete ${item.title}`}
+            style={({ pressed }) => [
+              styles.deleteAction,
+              pressed && { opacity: 0.85 },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="trash-can-outline"
+              size={22}
+              color="#FFFFFF"
+            />
+            <Text style={styles.deleteActionText}>Delete</Text>
+          </Pressable>
+        </View>
+      )}
+    >
     <Pressable
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
       onPress={() => {
         if (item.status === "ready") router.push(`/article/${item._id}`);
       }}
-      onLongPress={() =>
-        Alert.alert("Delete article?", item.title, [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Delete",
-            style: "destructive",
-            onPress: () => onDelete(item._id),
-          },
-        ])
-      }
+      onLongPress={() => confirmDelete()}
     >
       <Text style={styles.cardTitle} numberOfLines={2}>
         {item.title}
@@ -79,7 +120,7 @@ function ArticleCard({
       {item.status === "pending" ? (
         <View style={styles.statusRow}>
           <View style={[styles.chip, styles.chipPending]}>
-            <ActivityIndicator size="small" color={colors.accent} />
+            <ActivityIndicator size="small" color={c.accent} />
             <Text style={styles.chipPendingText}>Saving…</Text>
           </View>
         </View>
@@ -89,9 +130,9 @@ function ArticleCard({
             <MaterialCommunityIcons
               name="alert-circle-outline"
               size={14}
-              color={FAILED_COLOR}
+              color={c.danger}
             />
-            <Text style={styles.chipFailedText}>Couldn't save</Text>
+            <Text style={styles.chipFailedText}>Couldn&apos;t save</Text>
           </View>
           <Pressable onPress={() => onRetry(item._id)} hitSlop={8}>
             <Text style={styles.retryText}>Retry</Text>
@@ -108,15 +149,27 @@ function ArticleCard({
         </Text>
       ) : null}
     </Pressable>
+    </ReanimatedSwipeable>
   );
 }
 
 export default function LibraryScreen() {
   const insets = useSafeAreaInsets();
+  const { scheme, c } = useTheme();
+  const styles = themed[scheme];
   const { getToken, signOut } = useAuth();
   const articles = useQuery(api.articles.list);
   const removeArticle = useMutation(api.articles.remove);
   const [url, setUrl] = useState("");
+
+  // Only one swipe row open at a time — opening a new one closes the last.
+  const openRowRef = useRef<SwipeableMethods | null>(null);
+  const onSwipeOpen = useCallback((row: SwipeableMethods | null) => {
+    if (openRowRef.current && openRowRef.current !== row) {
+      openRowRef.current.close();
+    }
+    openRowRef.current = row;
+  }, []);
 
   const onSubmit = useCallback(() => {
     const normalized = normalizeUrl(url);
@@ -197,24 +250,22 @@ export default function LibraryScreen() {
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top + 18 }]}>
+      <BackdropWash />
       <View style={styles.titleRow}>
         <Text style={styles.appTitle}>Inkwell</Text>
-        <Pressable
+        <GlassIconButton
+          icon="logout-variant"
           onPress={() => void signOut()}
-          hitSlop={8}
-          style={styles.signOutButton}
-        >
-          <MaterialCommunityIcons
-            name="logout-variant"
-            size={20}
-            color={colors.inkFaint}
-          />
-        </Pressable>
+          accessibilityLabel="Sign out"
+          size={38}
+          iconSize={18}
+          iconColor={c.inkSecondary}
+        />
       </View>
       <BrushStroke
         width={118}
         height={9}
-        color={colors.wash}
+        color={c.wash}
         style={{ marginTop: 4 }}
       />
       <Text style={styles.appSubtitle}>
@@ -227,22 +278,34 @@ export default function LibraryScreen() {
           value={url}
           onChangeText={setUrl}
           placeholder="Paste an article URL…"
-          placeholderTextColor={colors.inkFaint}
+          placeholderTextColor={c.inkFaint}
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="url"
           returnKeyType="go"
           onSubmitEditing={onSubmit}
         />
-        <Pressable onPress={onPaste} style={styles.iconButton} hitSlop={6}>
-          <MaterialCommunityIcons
-            name="content-paste"
-            size={20}
-            color={colors.inkSecondary}
-          />
-        </Pressable>
-        <Pressable onPress={onSubmit} style={styles.addButton}>
-          <Text style={styles.addButtonText}>Save</Text>
+        <GlassIconButton
+          icon="content-paste"
+          onPress={() => void onPaste()}
+          accessibilityLabel="Paste from clipboard"
+          size={44}
+          iconSize={19}
+          iconColor={c.inkSecondary}
+        />
+        <Pressable
+          onPress={onSubmit}
+          accessibilityRole="button"
+          style={({ pressed }) => pressed && !glassAvailable && styles.cardPressed}
+        >
+          <GlassSurface
+            isInteractive
+            tintColor={c.accent}
+            style={styles.addButton}
+            fallbackStyle={styles.addButtonFallback}
+          >
+            <Text style={styles.addButtonText}>Save</Text>
+          </GlassSurface>
         </Pressable>
       </View>
 
@@ -250,7 +313,12 @@ export default function LibraryScreen() {
         data={articles ?? []}
         keyExtractor={(item) => item._id}
         renderItem={({ item }) => (
-          <ArticleCard item={item} onDelete={onDelete} onRetry={onRetry} />
+          <ArticleCard
+            item={item}
+            onDelete={onDelete}
+            onRetry={onRetry}
+            onSwipeOpen={onSwipeOpen}
+          />
         )}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
@@ -259,11 +327,11 @@ export default function LibraryScreen() {
               <MaterialCommunityIcons
                 name="book-open-page-variant-outline"
                 size={44}
-                color={colors.inkFaint}
+                color={c.inkFaint}
               />
               <Text style={styles.emptyText}>
-                Nothing saved yet. Paste a URL above — it'll be waiting here
-                on every device.
+                Nothing saved yet. Paste a URL above — it&apos;ll be waiting
+                here on every device.
               </Text>
             </View>
           ) : null
@@ -273,146 +341,168 @@ export default function LibraryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.background,
-    paddingHorizontal: 20,
-  },
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  appTitle: {
-    fontFamily: serif,
-    fontSize: 34,
-    fontWeight: "700",
-    color: colors.ink,
-  },
-  signOutButton: {
-    padding: 6,
-  },
-  appSubtitle: {
-    fontSize: 14,
-    color: colors.inkSecondary,
-    marginTop: 8,
-    marginBottom: 18,
-  },
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 18,
-  },
-  input: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    fontSize: 15,
-    color: colors.ink,
-  },
-  iconButton: {
-    padding: 8,
-  },
-  addButton: {
-    backgroundColor: colors.accent,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 11,
-  },
-  addButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "600",
-    fontSize: 15,
-  },
-  list: {
-    paddingBottom: 40,
-    gap: 12,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    padding: 16,
-  },
-  cardPressed: {
-    opacity: 0.7,
-  },
-  cardTitle: {
-    fontFamily: serif,
-    fontSize: 19,
-    lineHeight: 25,
-    fontWeight: "700",
-    color: colors.ink,
-  },
-  cardMeta: {
-    fontSize: 12.5,
-    color: colors.inkFaint,
-    marginTop: 5,
-  },
-  cardExcerpt: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: colors.inkSecondary,
-    marginTop: 7,
-  },
-  statusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginTop: 9,
-  },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    borderRadius: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-  },
-  chipPending: {
-    backgroundColor: colors.accentSoft,
-  },
-  chipPendingText: {
-    fontSize: 12.5,
-    fontWeight: "600",
-    color: colors.accent,
-  },
-  chipFailed: {
-    backgroundColor: "rgba(176, 65, 62, 0.08)",
-  },
-  chipFailedText: {
-    fontSize: 12.5,
-    fontWeight: "600",
-    color: FAILED_COLOR,
-  },
-  retryText: {
-    fontSize: 13.5,
-    fontWeight: "600",
-    color: colors.accent,
-  },
-  errorDetail: {
-    fontSize: 12.5,
-    lineHeight: 17,
-    color: colors.inkFaint,
-    marginTop: 6,
-  },
-  empty: {
-    alignItems: "center",
-    paddingTop: 70,
-    gap: 14,
-  },
-  emptyText: {
-    fontSize: 14.5,
-    lineHeight: 21,
-    color: colors.inkSecondary,
-    textAlign: "center",
-    maxWidth: 280,
-  },
-});
+const themed = makeThemedStyles((c) =>
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: c.background,
+      paddingHorizontal: 20,
+    },
+    titleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    appTitle: {
+      fontFamily: serif,
+      fontSize: 34,
+      fontWeight: "700",
+      color: c.ink,
+    },
+    appSubtitle: {
+      fontSize: 14,
+      color: c.inkSecondary,
+      marginTop: 8,
+      marginBottom: 18,
+    },
+    inputRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      marginBottom: 18,
+    },
+    input: {
+      flex: 1,
+      height: 44,
+      backgroundColor: c.surface,
+      borderWidth: 1,
+      borderColor: c.hairline,
+      borderRadius: 22,
+      borderCurve: "continuous",
+      paddingHorizontal: 16,
+      fontSize: 15,
+      color: c.ink,
+    },
+    addButton: {
+      height: 44,
+      borderRadius: 22,
+      borderCurve: "continuous",
+      paddingHorizontal: 18,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    addButtonFallback: {
+      backgroundColor: c.accent,
+    },
+    addButtonText: {
+      color: c.onAccent,
+      fontWeight: "600",
+      fontSize: 15,
+    },
+    list: {
+      paddingBottom: 40,
+      gap: 12,
+    },
+    card: {
+      backgroundColor: c.surface,
+      borderRadius: 16,
+      borderCurve: "continuous",
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.hairline,
+      padding: 16,
+    },
+    deleteActionWrap: {
+      justifyContent: "center",
+      paddingLeft: 12,
+    },
+    deleteAction: {
+      flex: 1,
+      width: 88,
+      borderRadius: 16,
+      borderCurve: "continuous",
+      backgroundColor: c.dangerSolid,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 4,
+    },
+    deleteActionText: {
+      color: "#FFFFFF",
+      fontSize: 12.5,
+      fontWeight: "600",
+    },
+    cardPressed: {
+      opacity: 0.7,
+    },
+    cardTitle: {
+      fontFamily: serif,
+      fontSize: 19,
+      lineHeight: 25,
+      fontWeight: "700",
+      color: c.ink,
+    },
+    cardMeta: {
+      fontSize: 12.5,
+      color: c.inkFaint,
+      marginTop: 5,
+    },
+    cardExcerpt: {
+      fontSize: 14,
+      lineHeight: 20,
+      color: c.inkSecondary,
+      marginTop: 7,
+    },
+    statusRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      marginTop: 9,
+    },
+    chip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      borderRadius: 8,
+      paddingHorizontal: 9,
+      paddingVertical: 4,
+    },
+    chipPending: {
+      backgroundColor: c.accentSoft,
+    },
+    chipPendingText: {
+      fontSize: 12.5,
+      fontWeight: "600",
+      color: c.accent,
+    },
+    chipFailed: {
+      backgroundColor: c.dangerSoft,
+    },
+    chipFailedText: {
+      fontSize: 12.5,
+      fontWeight: "600",
+      color: c.danger,
+    },
+    retryText: {
+      fontSize: 13.5,
+      fontWeight: "600",
+      color: c.accent,
+    },
+    errorDetail: {
+      fontSize: 12.5,
+      lineHeight: 17,
+      color: c.inkFaint,
+      marginTop: 6,
+    },
+    empty: {
+      alignItems: "center",
+      paddingTop: 70,
+      gap: 14,
+    },
+    emptyText: {
+      fontSize: 14.5,
+      lineHeight: 21,
+      color: c.inkSecondary,
+      textAlign: "center",
+      maxWidth: 280,
+    },
+  })
+);

@@ -3,21 +3,36 @@ import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { colors, penColors } from "../../lib/theme";
+import {
+  displayInkColor,
+  makeThemedStyles,
+  penColors,
+  useTheme,
+} from "../../lib/theme";
+import { GlassSurface } from "../glass";
 
 export type Tool = "read" | "pen" | "highlighter" | "box" | "note" | "eraser";
 
 const TOOLS: {
   tool: Tool;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  label: string;
 }[] = [
-  { tool: "read", icon: "book-open-variant" },
-  { tool: "pen", icon: "pencil" },
-  { tool: "highlighter", icon: "marker" },
-  { tool: "box", icon: "vector-square" },
-  { tool: "note", icon: "note-plus-outline" },
-  { tool: "eraser", icon: "eraser" },
+  { tool: "read", icon: "book-open-variant", label: "Reading mode" },
+  { tool: "pen", icon: "pencil", label: "Pen" },
+  { tool: "highlighter", icon: "marker", label: "Highlighter" },
+  { tool: "box", icon: "vector-square", label: "Box" },
+  { tool: "note", icon: "note-plus-outline", label: "Note" },
+  { tool: "eraser", icon: "eraser", label: "Eraser" },
 ];
+
+// VoiceOver/TalkBack names for the stored pen inks (see penColors in theme).
+const PEN_COLOR_NAMES: Record<string, string> = {
+  "#0E2E52": "Deep ink",
+  "#1B4F8A": "Brush blue",
+  "#3D7BC0": "Stroke blue",
+  "#B0413E": "Seal red",
+};
 
 type Props = {
   tool: Tool;
@@ -37,37 +52,49 @@ export function Toolbar({
   onUndo,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const { scheme, c, isDark } = useTheme();
+  const styles = themed[scheme];
   return (
     <View
       style={[styles.wrap, { bottom: Math.max(insets.bottom, 12) + 14 }]}
       pointerEvents="box-none"
     >
       {tool === "pen" && (
-        <View style={[styles.pill, styles.colorRow]}>
+        <GlassSurface
+          style={[styles.pill, styles.colorRow]}
+          fallbackStyle={styles.pillFallback}
+        >
           {penColors.map((color) => (
             <Pressable
               key={color}
               onPress={() => onPenColorChange(color)}
+              accessibilityRole="button"
+              accessibilityLabel={`${PEN_COLOR_NAMES[color] ?? color} pen`}
+              accessibilityState={{ selected: color === penColor }}
+              hitSlop={8}
               style={[
                 styles.colorDot,
-                { backgroundColor: color },
+                { backgroundColor: displayInkColor(color, isDark) },
                 color === penColor && styles.colorDotActive,
               ]}
             />
           ))}
-        </View>
+        </GlassSurface>
       )}
-      <View style={styles.pill}>
-        {TOOLS.map(({ tool: t, icon }) => (
+      <GlassSurface style={styles.pill} fallbackStyle={styles.pillFallback}>
+        {TOOLS.map(({ tool: t, icon, label }) => (
           <Pressable
             key={t}
             onPress={() => onToolChange(t)}
+            accessibilityRole="button"
+            accessibilityLabel={label}
+            accessibilityState={{ selected: tool === t }}
             style={[styles.button, tool === t && styles.buttonActive]}
           >
             <MaterialCommunityIcons
               name={icon}
               size={22}
-              color={tool === t ? colors.accent : colors.inkSecondary}
+              color={tool === t ? c.accent : c.inkSecondary}
             />
           </Pressable>
         ))}
@@ -75,72 +102,80 @@ export function Toolbar({
         <Pressable
           onPress={onUndo}
           disabled={!canUndo}
+          accessibilityRole="button"
+          accessibilityLabel="Undo last annotation"
+          accessibilityState={{ disabled: !canUndo }}
           style={styles.button}
         >
           <MaterialCommunityIcons
             name="undo"
             size={22}
-            color={canUndo ? colors.inkSecondary : colors.hairline}
+            color={canUndo ? c.inkSecondary : c.hairline}
           />
         </Pressable>
-      </View>
+      </GlassSurface>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    alignItems: "center",
-    gap: 10,
-  },
-  pill: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderRadius: 28,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    gap: 2,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    shadowColor: "#0E2E52",
-    shadowOpacity: 0.16,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
-  },
-  button: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  buttonActive: {
-    backgroundColor: colors.accentSoft,
-  },
-  divider: {
-    width: StyleSheet.hairlineWidth,
-    height: 24,
-    backgroundColor: colors.hairline,
-    marginHorizontal: 4,
-  },
-  colorRow: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 10,
-  },
-  colorDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-  },
-  colorDotActive: {
-    borderWidth: 3,
-    borderColor: colors.accentSoft,
-    transform: [{ scale: 1.2 }],
-  },
-});
+const themed = makeThemedStyles((c) =>
+  StyleSheet.create({
+    wrap: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      alignItems: "center",
+      gap: 10,
+    },
+    pill: {
+      flexDirection: "row",
+      alignItems: "center",
+      borderRadius: 28,
+      borderCurve: "continuous",
+      paddingHorizontal: 8,
+      paddingVertical: 6,
+      gap: 2,
+    },
+    pillFallback: {
+      backgroundColor: c.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.hairline,
+      shadowColor: "#0E2E52",
+      shadowOpacity: 0.16,
+      shadowRadius: 14,
+      shadowOffset: { width: 0, height: 6 },
+      elevation: 8,
+    },
+    button: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    buttonActive: {
+      backgroundColor: c.accentSoft,
+    },
+    divider: {
+      width: StyleSheet.hairlineWidth,
+      height: 24,
+      backgroundColor: c.hairline,
+      marginHorizontal: 4,
+    },
+    colorRow: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      gap: 10,
+    },
+    colorDot: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+    },
+    colorDotActive: {
+      borderWidth: 3,
+      borderColor: c.background,
+      transform: [{ scale: 1.2 }],
+    },
+  })
+);

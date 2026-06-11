@@ -14,7 +14,9 @@
     "expo-clipboard": "~8.0.8",
     "expo-constants": "~18.0.13",
     "expo-crypto": "~15.0.9",
+    "expo-file-system": "~19.0.23",
     "expo-font": "~14.0.12",
+    "expo-glass-effect": "~0.1.10",
     "expo-image": "~3.0.11",
     "expo-linking": "~8.0.12",
     "expo-router": "~6.0.24",
@@ -40,6 +42,8 @@
   "devDependencies": {
     "@mozilla/readability": "^0.6.0",
     "@types/react": "~19.1.17",
+    "eslint": "^9.39.4",
+    "eslint-config-expo": "^10.0.0",
     "tsx": "^4.22.4",
     "typescript": "~5.9.3"
   },

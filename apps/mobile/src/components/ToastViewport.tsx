@@ -6,12 +6,16 @@ import {
   subscribeToToasts,
   type ToastMessage,
 } from "../lib/toast";
-import { colors } from "../lib/theme";
+import { makeThemedStyles, useTheme } from "../lib/theme";
+
+import { GlassSurface } from "./glass";
 
 const TOAST_DURATION_MS = 7000;
 
 export function ToastViewport() {
   const insets = useSafeAreaInsets();
+  const { scheme, c } = useTheme();
+  const styles = themed[scheme];
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
   useEffect(() => {
@@ -33,48 +37,64 @@ export function ToastViewport() {
       <Pressable
         accessibilityRole="alert"
         onPress={() => setToast(null)}
-        style={[
-          styles.toast,
-          toast.kind === "error" ? styles.errorToast : styles.infoToast,
-        ]}
+        style={styles.toastWrap}
       >
-        <Text style={styles.text}>{toast.message}</Text>
+        <GlassSurface
+          tintColor={toast.kind === "error" ? c.errorSurface : undefined}
+          style={styles.toast}
+          fallbackStyle={
+            toast.kind === "error" ? styles.errorToast : styles.infoToast
+          }
+        >
+          <Text style={styles.text}>{toast.message}</Text>
+        </GlassSurface>
       </Pressable>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  viewport: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 1000,
-    alignItems: "center",
-    paddingHorizontal: 18,
-  },
-  toast: {
-    width: "100%",
-    maxWidth: 520,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    shadowColor: "#000000",
-    shadowOpacity: 0.16,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 5 },
-  },
-  errorToast: {
-    backgroundColor: "#FFF1EF",
-    borderColor: "#D98C82",
-  },
-  infoToast: {
-    backgroundColor: colors.surface,
-    borderColor: colors.hairline,
-  },
-  text: {
-    color: colors.ink,
-    fontSize: 14,
-    lineHeight: 19,
-    fontWeight: "600",
-  },
-});
+const themed = makeThemedStyles((c) =>
+  StyleSheet.create({
+    viewport: {
+      ...StyleSheet.absoluteFillObject,
+      zIndex: 1000,
+      alignItems: "center",
+      paddingHorizontal: 18,
+    },
+    toastWrap: {
+      width: "100%",
+      maxWidth: 520,
+    },
+    toast: {
+      width: "100%",
+      borderRadius: 16,
+      borderCurve: "continuous",
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+    },
+    errorToast: {
+      backgroundColor: c.errorSurface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.errorBorder,
+      shadowColor: "#000000",
+      shadowOpacity: 0.16,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 5 },
+    },
+    infoToast: {
+      backgroundColor: c.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.hairline,
+      shadowColor: "#000000",
+      shadowOpacity: 0.16,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 5 },
+    },
+    text: {
+      color: c.ink,
+      fontSize: 14,
+      lineHeight: 19,
+      fontWeight: "600",
+    },
+  })
+);

@@ -6,8 +6,9 @@ import React from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 
 // Tapered wavy ribbon in a 100x12 box: thick rounded start, slight swell in
-// the middle, thinning tail — the "ink wash" gesture.
-const RIBBON =
+// the middle, thinning tail — the "ink wash" gesture. Exported so backdrop
+// decoration (BackdropWash) can paint the same gesture at other scales.
+export const RIBBON =
   "M 2 7.6" +
   " C 12 3.6 30 2.8 50 4.2" +
   " C 68 5.4 84 3.6 98 5.4" +

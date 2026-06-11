@@ -4,9 +4,11 @@ import type { BoxAnnotation } from "@inkwell/content";
 import React, { memo } from "react";
 import { StyleSheet, View } from "react-native";
 
-import { colors } from "../../lib/theme";
+import { makeThemedStyles, useTheme } from "../../lib/theme";
 
 function Box({ box, scale }: { box: BoxAnnotation; scale: number }) {
+  const { scheme } = useTheme();
+  const styles = themed[scheme];
   return (
     <View
       style={[
@@ -44,13 +46,15 @@ export const BoxesLayer = memo(function BoxesLayer({
   );
 });
 
-const styles = StyleSheet.create({
-  box: {
-    position: "absolute",
-    borderWidth: 2,
-    borderColor: colors.boxStroke,
-    backgroundColor: colors.boxFill,
-    borderRadius: 8,
-    borderStyle: "dashed",
-  },
-});
+const themed = makeThemedStyles((c) =>
+  StyleSheet.create({
+    box: {
+      position: "absolute",
+      borderWidth: 2,
+      borderColor: c.boxStroke,
+      backgroundColor: c.boxFill,
+      borderRadius: 8,
+      borderStyle: "dashed",
+    },
+  })
+);

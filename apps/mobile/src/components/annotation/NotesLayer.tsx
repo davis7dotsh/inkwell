@@ -4,7 +4,7 @@ import type { NoteAnnotation } from "@inkwell/content";
 import React, { memo } from "react";
 import { Pressable, StyleSheet, Text } from "react-native";
 
-import { colors } from "../../lib/theme";
+import { makeThemedStyles, useTheme } from "../../lib/theme";
 
 type Props = {
   notes: NoteAnnotation[];
@@ -20,6 +20,8 @@ export const NotesLayer = memo(function NotesLayer({
   onPressNote,
   onNoteLayout,
 }: Props) {
+  const { scheme } = useTheme();
+  const styles = themed[scheme];
   return (
     <>
       {notes.map((note) => (
@@ -43,25 +45,27 @@ export const NotesLayer = memo(function NotesLayer({
   );
 });
 
-const styles = StyleSheet.create({
-  note: {
-    position: "absolute",
-    maxWidth: 230,
-    backgroundColor: colors.noteBackground,
-    borderColor: colors.noteBorder,
-    borderWidth: 1,
-    borderRadius: 10,
-    borderBottomLeftRadius: 2,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    shadowColor: "#1B4F8A",
-    shadowOpacity: 0.18,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  noteText: {
-    fontSize: 13.5,
-    lineHeight: 19,
-    color: colors.noteText,
-  },
-});
+const themed = makeThemedStyles((c) =>
+  StyleSheet.create({
+    note: {
+      position: "absolute",
+      maxWidth: 230,
+      backgroundColor: c.noteBackground,
+      borderColor: c.noteBorder,
+      borderWidth: 1,
+      borderRadius: 10,
+      borderBottomLeftRadius: 2,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+      shadowColor: "#1B4F8A",
+      shadowOpacity: 0.18,
+      shadowRadius: 6,
+      shadowOffset: { width: 0, height: 2 },
+    },
+    noteText: {
+      fontSize: 13.5,
+      lineHeight: 19,
+      color: c.noteText,
+    },
+  })
+);
