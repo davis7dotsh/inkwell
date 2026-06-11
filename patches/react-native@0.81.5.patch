@@ -1,0 +1,26 @@
+diff --git a/ReactCommon/react/nativemodule/core/platform/ios/ReactCommon/RCTTurboModule.mm b/ReactCommon/react/nativemodule/core/platform/ios/ReactCommon/RCTTurboModule.mm
+index 2a677974ca8a929849109f294bddcb239bb202d0..77274374cf0ea77705228c91d0872490f9f55f60 100644
+--- a/ReactCommon/react/nativemodule/core/platform/ios/ReactCommon/RCTTurboModule.mm
++++ b/ReactCommon/react/nativemodule/core/platform/ios/ReactCommon/RCTTurboModule.mm
+@@ -9,6 +9,7 @@
+ 
+ #import <React/RCTBridgeModule.h>
+ #import <React/RCTConvert.h>
++#import <React/RCTLog.h>
+ #import <React/RCTCxxConvert.h>
+ #import <React/RCTManagedPointer.h>
+ #import <React/RCTModuleMethod.h>
+@@ -435,7 +436,12 @@ TraceSection s(
+     @try {
+       [inv invokeWithTarget:strongModule];
+     } @catch (NSException *exception) {
+-      throw convertNSExceptionToJSError(runtime, exception, std::string{moduleName}, methodNameStr);
++      // Backport of facebook/react-native#55390: void methods run on the
++      // TurboModule queue, so converting the NSException to a JSError here
++      // would touch the JS runtime from the wrong thread while the JS thread
++      // is running, corrupting the Hermes heap (insta-crash on launch).
++      RCTLogError(
++          @"Exception '%@' was thrown while invoking %s on target %s", exception, methodName, moduleName);
+     } @finally {
+       [retainedObjectsForInvocation removeAllObjects];
+     }

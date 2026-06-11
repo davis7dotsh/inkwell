@@ -14,3 +14,6 @@ allowBuilds:
   utf-8-validate: true
   unrs-resolver: true
   '@clerk/shared': false
+
+patchedDependencies:
+  react-native@0.81.5: patches/react-native@0.81.5.patch

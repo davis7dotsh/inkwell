@@ -14,9 +14,18 @@ import {
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { FatalErrorScreen } from "../components/FatalErrorScreen";
 import { SignInScreen } from "../components/SignInScreen";
 import { ToastViewport } from "../components/ToastViewport";
 import { createClerkTokenCache } from "../lib/clerkTokenCache";
+import {
+  clearLastFatalReport,
+  persistFatalReport,
+  readLastFatalReport,
+  setFatalErrorListener,
+  toFatalReport,
+  type FatalReport,
+} from "../lib/crashGuard";
 import { makeThemedStyles, serif, useTheme } from "../lib/theme";
 import { showError } from "../lib/toast";
 
@@ -182,30 +191,105 @@ function ConfigNeededScreen() {
   );
 }
 
-export default function RootLayout() {
-  if (!publishableKey || !convex) {
+/** Catches render errors anywhere in the tree and shows the diagnostic
+ * screen instead of letting the release build abort. */
+class RootErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { report: FatalReport | null }
+> {
+  state: { report: FatalReport | null } = { report: null };
+
+  static getDerivedStateFromError(error: unknown) {
+    return { report: toFatalReport(error, true) };
+  }
+
+  componentDidCatch(error: unknown, info: React.ErrorInfo) {
+    const report = this.state.report ?? toFatalReport(error, true);
+    persistFatalReport({
+      ...report,
+      stack: [report.stack, info.componentStack].filter(Boolean).join("\n"),
+    });
+  }
+
+  render() {
+    if (this.state.report) {
+      return (
+        <FatalErrorScreen
+          report={this.state.report}
+          mode="live"
+          onClose={() => this.setState({ report: null })}
+        />
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/** Surfaces fatal errors the boundary can't see: ones reported through the
+ * global handler (event handlers, timers) and ones persisted by a previous
+ * launch that died. */
+function CrashGate({ children }: { children: React.ReactNode }) {
+  const [liveReport, setLiveReport] = useState<FatalReport | null>(null);
+  const [previousReport, setPreviousReport] = useState<FatalReport | null>(
+    () => readLastFatalReport()
+  );
+
+  useEffect(() => {
+    setFatalErrorListener(setLiveReport);
+    return () => setFatalErrorListener(null);
+  }, []);
+
+  if (liveReport) {
     return (
-      <View style={{ flex: 1 }}>
-        <StatusBar style="auto" />
-        <ConfigNeededScreen />
-      </View>
+      <FatalErrorScreen
+        report={liveReport}
+        mode="live"
+        onClose={() => setLiveReport(null)}
+      />
     );
   }
+  if (previousReport) {
+    return (
+      <FatalErrorScreen
+        report={previousReport}
+        mode="previous"
+        onClose={() => {
+          clearLastFatalReport();
+          setPreviousReport(null);
+        }}
+      />
+    );
+  }
+  return <>{children}</>;
+}
+
+export default function RootLayout() {
   return (
-    <ClerkProvider
-      publishableKey={publishableKey}
-      tokenCache={clerkTokenCache}
-    >
-      <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
-        <SafeAreaProvider>
-          <GestureHandlerRootView style={{ flex: 1 }}>
+    <RootErrorBoundary>
+      <CrashGate>
+        {!publishableKey || !convex ? (
+          <View style={{ flex: 1 }}>
             <StatusBar style="auto" />
-            <AuthGate />
-            <ToastViewport />
-          </GestureHandlerRootView>
-        </SafeAreaProvider>
-      </ConvexProviderWithClerk>
-    </ClerkProvider>
+            <ConfigNeededScreen />
+          </View>
+        ) : (
+          <ClerkProvider
+            publishableKey={publishableKey}
+            tokenCache={clerkTokenCache}
+          >
+            <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
+              <SafeAreaProvider>
+                <GestureHandlerRootView style={{ flex: 1 }}>
+                  <StatusBar style="auto" />
+                  <AuthGate />
+                  <ToastViewport />
+                </GestureHandlerRootView>
+              </SafeAreaProvider>
+            </ConvexProviderWithClerk>
+          </ClerkProvider>
+        )}
+      </CrashGate>
+    </RootErrorBoundary>
   );
 }
 

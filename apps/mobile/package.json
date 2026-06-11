@@ -1,6 +1,6 @@
 {
   "name": "inkwell-mobile",
-  "main": "expo-router/entry",
+  "main": "index.js",
   "version": "1.0.0",
   "dependencies": {
     "@clerk/expo": "^3.3.1",
