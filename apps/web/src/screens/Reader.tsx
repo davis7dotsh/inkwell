@@ -3,7 +3,13 @@
 // annotations.get and are drawn scaled over the content column.
 import { api } from "@inkwell/backend/convex/_generated/api";
 import type { Id } from "@inkwell/backend/convex/_generated/dataModel";
-import type { Annotations, Block } from "@inkwell/content";
+import {
+  buildExportMarkdown,
+  emptyAnnotations,
+  type Annotations,
+  type Block,
+  type BlockLayout,
+} from "@inkwell/content";
 import { useMutation, useQuery } from "convex/react";
 import React, {
   useCallback,
@@ -54,12 +60,22 @@ function ScrollProgressBar() {
   );
 }
 
+function ExportIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3v11m0 0 4-4m-4 4-4-4M5 14v5h14v-5" />
+    </svg>
+  );
+}
+
 function ReaderBar({
   title,
   withProgress,
+  onExport,
 }: {
   title?: string;
   withProgress?: boolean;
+  onExport?: () => void;
 }) {
   return (
     <header className="reader-bar">
@@ -67,7 +83,19 @@ function ReaderBar({
         ← Library
       </Link>
       <span className="reader-title">{title ?? ""}</span>
-      <span />
+      <div className="reader-actions">
+        {onExport ? (
+          <button
+            type="button"
+            className="reader-export-button"
+            onClick={onExport}
+            aria-label="Export markup as Markdown"
+          >
+            <ExportIcon />
+            <span>Export</span>
+          </button>
+        ) : null}
+      </div>
       {withProgress ? <ScrollProgressBar /> : null}
     </header>
   );
@@ -164,8 +192,9 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
     [annotationDoc]
   );
 
-  // The annotation scale tracks the column's rendered width (≤ 700px).
+  // The annotation scale tracks the column's rendered width (≤ 900px).
   const [columnWidth, setColumnWidth] = useState<number | null>(null);
+  const blocksRef = useRef<HTMLDivElement>(null);
   const columnRef = useCallback((el: HTMLDivElement | null) => {
     if (!el) return;
     const observer = new ResizeObserver((entries) => {
@@ -175,6 +204,65 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  const onExport = useCallback(async () => {
+    const blockContainer = blocksRef.current;
+    const column = blockContainer?.parentElement;
+    if (
+      !article ||
+      article.status !== "ready" ||
+      !columnWidth ||
+      !blockContainer ||
+      !column
+    ) {
+      return;
+    }
+
+    const columnTop = column.getBoundingClientRect().top;
+    const layouts = new Map<number, BlockLayout>();
+    Array.from(blockContainer.children).forEach((element, index) => {
+      const rect = element.getBoundingClientRect();
+      layouts.set(index, { y: rect.top - columnTop, height: rect.height });
+    });
+
+    const exportAnnotations = annotations ?? emptyAnnotations(columnWidth);
+    const markdown = buildExportMarkdown(
+      {
+        title: article.title,
+        byline: article.byline,
+        siteName: article.siteName,
+        excerpt: article.excerpt,
+        blocks,
+        url: article.url,
+        savedAt: article.savedAt,
+      },
+      exportAnnotations,
+      layouts,
+      columnWidth / exportAnnotations.contentWidth
+    );
+    const baseName =
+      article.title.replace(/[\\/:*?"<>|\n\r]+/g, " ").trim().slice(0, 80) ||
+      "article";
+    const file = new File([markdown], `${baseName}.md`, {
+      type: "text/markdown;charset=utf-8",
+    });
+
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: article.title });
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+      }
+    }
+
+    const fileUrl = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = fileUrl;
+    link.download = file.name;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(fileUrl), 0);
+  }, [annotations, article, blocks, columnWidth]);
 
   if (article === undefined) {
     return (
@@ -227,7 +315,11 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
 
   return (
     <div className="reader">
-      <ReaderBar title={article.title} withProgress />
+      <ReaderBar
+        title={article.title}
+        withProgress
+        onExport={() => void onExport()}
+      />
       <div className="reader-content">
         <article className="content-column" ref={columnRef}>
           <h1 className="article-title">{article.title}</h1>
@@ -239,7 +331,9 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
             opacity={0.75}
             className="title-brush"
           />
-          <BlockRenderer blocks={blocks} />
+          <div className="article-blocks" ref={blocksRef}>
+            <BlockRenderer blocks={blocks} />
+          </div>
           <footer className="read-footer">
             <button
               className={`mark-read-button${isRead ? " mark-read-button-done" : ""}`}

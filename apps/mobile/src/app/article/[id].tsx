@@ -248,6 +248,8 @@ export default function ArticleScreen() {
   // Hit-test answer relay for the gesture worklet: -1 = pending on the JS
   // thread, 1 = drag an annotation, 0 = miss (hand the touch to the scroll).
   const moveHitSV = useSharedValue(0);
+  const moveTouchTokenSV = useSharedValue(0);
+  const currentTouchTokenRef = useRef(0);
   const activeStrokeRef = useRef<Stroke | null>(null);
   const previewBoxRef = useRef<BoxAnnotation | null>(null);
   const noteSizesRef = useRef(new Map<string, { w: number; h: number }>());
@@ -465,15 +467,29 @@ export default function ArticleScreen() {
   // undetermined; answers through moveHitSV so the worklet can activate
   // (drag) or fail (let the pencil scroll).
   const evaluateMoveHit = useCallback(
-    (x: number, y: number) => {
+    (token: number, x: number, y: number) => {
+      if (token !== moveTouchTokenSV.value) return;
+      currentTouchTokenRef.current = token;
       const p = toPoint(x, y);
       const target = findMoveTarget(p);
+      if (
+        token !== currentTouchTokenRef.current ||
+        token !== moveTouchTokenSV.value
+      ) {
+        return;
+      }
       moveRef.current = target ? { target, from: p, dx: 0, dy: 0 } : null;
       moveHitSV.value = target ? 1 : 0;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [findMoveTarget, toPoint]
   );
+
+  const clearFailedMoveHit = useCallback((token: number) => {
+    if (token !== currentTouchTokenRef.current) return;
+    currentTouchTokenRef.current = 0;
+    moveRef.current = null;
+  }, []);
 
   const onPanStart = useCallback(
     (x: number, y: number) => {
@@ -635,9 +651,11 @@ export default function ArticleScreen() {
               manager.fail();
               return;
             }
+            const token = moveTouchTokenSV.value + 1;
+            moveTouchTokenSV.value = token;
             moveHitSV.value = -1;
             const touch = e.allTouches[0];
-            runOnJS(evaluateMoveHit)(touch.x, touch.y);
+            runOnJS(evaluateMoveHit)(token, touch.x, touch.y);
             return;
           }
           if (isStylus || !hasStylusSV.value) {
@@ -660,6 +678,12 @@ export default function ArticleScreen() {
           // Pencil lifted before the hit test answered (or on a miss): release
           // the touch. An activated drag ends through the normal pan flow.
           if (isReadMode && moveHitSV.value !== 1) {
+            const token = moveTouchTokenSV.value;
+            if (token === moveTouchTokenSV.value) {
+              moveTouchTokenSV.value = token + 1;
+              moveHitSV.value = 0;
+              runOnJS(clearFailedMoveHit)(token);
+            }
             manager.fail();
           }
         })
@@ -686,6 +710,7 @@ export default function ArticleScreen() {
       nativeScroll,
       markStylusSeen,
       evaluateMoveHit,
+      clearFailedMoveHit,
       onPanStart,
       onPanUpdate,
       onPanEnd,

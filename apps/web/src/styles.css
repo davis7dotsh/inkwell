@@ -302,9 +302,9 @@ button {
 /* ---- library ---- */
 
 .library {
-  max-width: 760px;
+  max-width: 1040px;
   margin: 0 auto;
-  padding: 28px 20px 80px;
+  padding: 28px 28px 80px;
 }
 
 .app-header {
@@ -622,6 +622,47 @@ button {
   text-align: center;
 }
 
+.reader-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.reader-export-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  color: var(--accent);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 0 13px 0 11px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.reader-export-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.reader-export-button:hover {
+  color: var(--accent-strong);
+  background: var(--mist);
+  border-color: var(--link-underline);
+}
+
+.reader-export-button:focus-visible {
+  outline: 3px solid var(--mist);
+  outline-offset: 2px;
+}
+
 .scroll-progress-track {
   position: absolute;
   left: 0;
@@ -646,8 +687,12 @@ button {
 
 .content-column {
   position: relative;
-  max-width: 700px;
+  max-width: 900px;
   margin: 0 auto;
+}
+
+.article-blocks {
+  display: contents;
 }
 
 .article-title {
@@ -885,4 +930,20 @@ h4.article-heading {
   -webkit-line-clamp: 6;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+@media (max-width: 640px) {
+  .library {
+    padding-inline: 20px;
+  }
+
+  .reader-export-button span {
+    display: none;
+  }
+
+  .reader-export-button {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+  }
 }

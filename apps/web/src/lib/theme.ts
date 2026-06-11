@@ -101,5 +101,5 @@ export function displayInkColor(color: string, isDark: boolean): string {
   return isDark ? NIGHT_INK[color] ?? color : color;
 }
 
-/** Max width of the article text column (matches the mobile reader). */
-export const MAX_CONTENT_WIDTH = 700;
+/** Wider desktop reading column; annotations scale from their saved width. */
+export const MAX_CONTENT_WIDTH = 900;
