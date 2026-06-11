@@ -250,9 +250,16 @@ const app = new Hono<{ Bindings: Bindings }>()
     }
     headers.set("content-length", String(length));
 
-    // No body when onlyIf preconditions (etag) fail → 304/412 semantics.
+    // No body when onlyIf preconditions fail: failed If-None-Match reads
+    // are 304, failed If-Match/If-Unmodified-Since writes-style checks 412.
     if (!("body" in object) || !object.body) {
-      return new Response(null, { status: 304, headers });
+      const failedWritePrecondition =
+        c.req.header("if-match") !== undefined ||
+        c.req.header("if-unmodified-since") !== undefined;
+      return new Response(null, {
+        status: failedWritePrecondition ? 412 : 304,
+        headers,
+      });
     }
     return new Response(object.body, { status, headers });
   })

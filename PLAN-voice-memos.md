@@ -29,7 +29,7 @@ writing code in the matching workstream.
 
 ## 2. Flow
 
-```
+```text
  tool: memo → tap (x,y) ─► RecorderPanel (waveform from metering, timer, stop/cancel)
                               │ stop
                               ▼
@@ -125,8 +125,9 @@ Files: `wrangler.jsonc`, `src/index.ts` (chained routes — RPC type inference),
   - `GET /memos/:articleId/:memoId` — Range-aware (see §6.3 for the
     mandatory manual `206`/`Content-Range` handling), `Accept-Ranges: bytes`,
     404 when missing.
-  - `DELETE /memos/:articleId/:memoId` — `MEMOS.delete()`, 204. Best-effort
-    from clients; orphans are pennies.
+  - `DELETE /memos/:articleId/:memoId` — `MEMOS.delete()`, 200 `{ ok: true }`
+    (JSON like every other RPC route). Best-effort from clients; orphans are
+    pennies.
 - CORS: the web SPA fetches audio cross-origin — add `hono/cors` for the
   `/memos/*` routes allowing the web origins (localhost dev + prod domain),
   methods `GET`, headers `Authorization, Range`, expose `Content-Range`.
@@ -210,7 +211,7 @@ origins.
 
 ## 5. Execution order
 
-```
+```text
 Spike gate (§3) ─┐
 W1 content ──────┼─► W4 mobile ─► W5 web
 W2 backend ──────┤

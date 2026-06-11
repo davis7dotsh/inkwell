@@ -36,7 +36,8 @@ function MemoChip({
   const { getToken } = useAuth();
   const [open, setOpen] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [audioError, setAudioError] = useState(false);
+  // No API URL configured → error state from the start, not endless loading.
+  const [audioError, setAudioError] = useState(!API_URL);
   const objectUrlRef = useRef<string | null>(null);
 
   // Fetch the audio once, on first expand.
