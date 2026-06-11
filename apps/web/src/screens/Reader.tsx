@@ -4,7 +4,7 @@
 import { api } from "@inkwell/backend/convex/_generated/api";
 import type { Id } from "@inkwell/backend/convex/_generated/dataModel";
 import type { Annotations, Block } from "@inkwell/content";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import React, {
   useCallback,
   useEffect,
@@ -18,7 +18,7 @@ import { Link, useParams } from "react-router-dom";
 import { MarksOverlay, StrokesOverlay } from "../components/AnnotationsOverlay";
 import { BlockRenderer } from "../components/BlockRenderer";
 import { BrushStroke } from "../components/BrushStroke";
-import { colors, MAX_CONTENT_WIDTH } from "../lib/theme";
+import { MAX_CONTENT_WIDTH, useTheme } from "../lib/theme";
 
 /** Thin reading-progress bar pinned to the bottom edge of the sticky bar.
  * Writes the transform directly so scrolling never re-renders the reader. */
@@ -130,11 +130,25 @@ function parseAnnotations(doc: {
 }
 
 function ReaderInner({ id }: { id: Id<"articles"> }) {
+  const { c } = useTheme();
   const article = useQuery(api.articles.get, { id });
   const annotationDoc = useQuery(
     api.annotations.get,
     article ? { articleId: article._id } : "skip"
   );
+  const setReadStatus = useMutation(api.articles.setReadStatus);
+
+  // Opening an unread article flips it to in-progress — once per visit, so
+  // "mark as unread" from the footer isn't immediately undone.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (autoStartedRef.current) return;
+    if (article?.status !== "ready") return;
+    autoStartedRef.current = true;
+    if ((article.readStatus ?? "unread") === "unread") {
+      void setReadStatus({ id, status: "in_progress" });
+    }
+  }, [article, id, setReadStatus]);
 
   const blocks = useMemo<Block[]>(() => {
     if (!article?.blocksJson) return [];
@@ -209,6 +223,8 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
     .filter(Boolean)
     .join("  ·  ");
 
+  const isRead = article.readStatus === "read";
+
   return (
     <div className="reader">
       <ReaderBar title={article.title} withProgress />
@@ -219,11 +235,29 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
           <BrushStroke
             width={Math.min(220, (columnWidth ?? MAX_CONTENT_WIDTH) * 0.4)}
             height={8}
-            color={colors.wash}
+            color={c.wash}
             opacity={0.75}
             className="title-brush"
           />
           <BlockRenderer blocks={blocks} />
+          <footer className="read-footer">
+            <button
+              className={`mark-read-button${isRead ? " mark-read-button-done" : ""}`}
+              onClick={() =>
+                void setReadStatus({
+                  id,
+                  status: isRead ? "unread" : "read",
+                })
+              }
+            >
+              {isRead ? "✓ Read — mark as unread" : "Mark as read"}
+            </button>
+            {isRead ? null : (
+              <p className="read-footer-hint">
+                Finished? This moves it to your Read list everywhere.
+              </p>
+            )}
+          </footer>
           {annotations && columnWidth ? (
             <MarksOverlay annotations={annotations} columnWidth={columnWidth} />
           ) : null}

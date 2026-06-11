@@ -198,6 +198,128 @@ describe("POST /articles", () => {
   });
 });
 
+describe("POST /articles/upload", () => {
+  function uploadRequest(
+    ctx: ExecutionContext,
+    file: File | string,
+    field = "file"
+  ) {
+    const form = new FormData();
+    form.append(field, file);
+    return app.request(
+      "/articles/upload",
+      { method: "POST", body: form },
+      TEST_ENV,
+      ctx
+    );
+  }
+
+  const pdfFile = (name = "My Paper.pdf") =>
+    new File(["%PDF-1.4 fake bytes"], name, { type: "application/pdf" });
+
+  it("rejects unauthenticated requests with 401", async () => {
+    authState.userId = null;
+    const ingest = stubNetwork(() => firecrawlOk({}));
+    const { ctx, flush } = makeExecutionCtx();
+
+    const res = await uploadRequest(ctx, pdfFile());
+    await flush();
+
+    expect(res.status).toBe(401);
+    expect(ingest["create-pending"]).toHaveLength(0);
+  });
+
+  it("rejects non-PDF uploads with 400", async () => {
+    const ingest = stubNetwork(() => firecrawlOk({}));
+    const { ctx, flush } = makeExecutionCtx();
+
+    const res = await uploadRequest(
+      ctx,
+      new File(["hello"], "notes.txt", { type: "text/plain" })
+    );
+    await flush();
+
+    expect(res.status).toBe(400);
+    expect(ingest["create-pending"]).toHaveLength(0);
+  });
+
+  it("rejects a missing file field with 400", async () => {
+    stubNetwork(() => firecrawlOk({}));
+    const { ctx } = makeExecutionCtx();
+
+    const res = await uploadRequest(ctx, "not-a-file");
+
+    expect(res.status).toBe(400);
+  });
+
+  it("creates a pending pdf row, parses via /v2/parse, and completes", async () => {
+    const ingest = stubNetwork(() =>
+      firecrawlOk({
+        markdown: "# Attention\n\nIs all you need.",
+        metadata: { title: "Attention Is All You Need" },
+      })
+    );
+    const { ctx, flush } = makeExecutionCtx();
+
+    const res = await uploadRequest(ctx, pdfFile("attention.pdf"));
+
+    expect(res.status).toBe(202);
+    expect(await res.json()).toEqual({ articleId: "art1" });
+    expect(ingest["create-pending"][0].body).toMatchObject({
+      userId: "user_1",
+      url: "upload://attention.pdf",
+      kind: "pdf",
+      title: "attention",
+    });
+
+    await flush();
+    expect(ingest.fail).toHaveLength(0);
+    expect(ingest.complete).toHaveLength(1);
+    const body = ingest.complete[0].body as {
+      title: string;
+      blocksJson: string;
+    };
+    expect(body.title).toBe("Attention Is All You Need");
+    const blocks = JSON.parse(body.blocksJson) as Block[];
+    expect(blocks[0]).toMatchObject({
+      type: "heading",
+      spans: [{ text: "Attention" }],
+    });
+  });
+
+  it("falls back to the filename title when metadata and headings are empty", async () => {
+    const ingest = stubNetwork(() =>
+      firecrawlOk({ markdown: "Just one plain paragraph.", metadata: {} })
+    );
+    const { ctx, flush } = makeExecutionCtx();
+
+    const res = await uploadRequest(ctx, pdfFile("Quarterly Report.pdf"));
+    await flush();
+
+    expect(res.status).toBe(202);
+    expect(ingest.complete).toHaveLength(1);
+    expect(ingest.complete[0].body).toMatchObject({
+      title: "Quarterly Report",
+    });
+  });
+
+  it("marks the article failed when the parse errors", async () => {
+    const ingest = stubNetwork(() => new Response("kaboom", { status: 500 }));
+    const { ctx, flush } = makeExecutionCtx();
+
+    const res = await uploadRequest(ctx, pdfFile());
+    await flush();
+
+    expect(res.status).toBe(202);
+    expect(ingest.complete).toHaveLength(0);
+    expect(ingest.fail).toHaveLength(1);
+    expect(ingest.fail[0].body).toMatchObject({
+      articleId: "art1",
+      error: expect.stringMatching(/HTTP 500/),
+    });
+  });
+});
+
 describe("POST /articles/:id/retry", () => {
   it("requires auth", async () => {
     authState.userId = null;

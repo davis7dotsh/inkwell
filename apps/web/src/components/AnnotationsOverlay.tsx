@@ -9,6 +9,8 @@ import type { Annotations } from "@inkwell/content";
 import { strokeToSvgPath } from "@inkwell/content";
 import React from "react";
 
+import { displayInkColor, useTheme } from "../lib/theme";
+
 function annotationScale(annotations: Annotations, columnWidth: number) {
   return annotations.contentWidth > 0
     ? columnWidth / annotations.contentWidth
@@ -27,6 +29,7 @@ type Props = {
  * it to the column; height stretches with the article).
  */
 export function StrokesOverlay({ annotations, columnWidth }: Props) {
+  const { isDark } = useTheme();
   const scale = annotationScale(annotations, columnWidth);
   if (annotations.strokes.length === 0) return null;
   return (
@@ -44,7 +47,7 @@ export function StrokesOverlay({ annotations, columnWidth }: Props) {
               key={stroke.id}
               d={d}
               fill="none"
-              stroke={stroke.color}
+              stroke={displayInkColor(stroke.color, isDark)}
               strokeWidth={stroke.width}
               strokeLinecap="round"
               strokeLinejoin="round"

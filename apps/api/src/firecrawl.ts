@@ -33,6 +33,7 @@ type ScrapeResponseBody = {
 };
 
 const SCRAPE_ENDPOINT = "https://api.firecrawl.dev/v2/scrape";
+const PARSE_ENDPOINT = "https://api.firecrawl.dev/v2/parse";
 // Free tier is 10 req/min; if Retry-After is missing or unparsable, wait a
 // conservative slice of that window. Cap so we never blow the waitUntil
 // budget on a hostile header.
@@ -51,6 +52,42 @@ function retryAfterMs(res: Response): number {
 async function errorDetail(res: Response): Promise<string> {
   const text = await res.text().catch(() => "");
   return text ? ` — ${text.slice(0, 200)}` : "";
+}
+
+/** Sends the request (retrying once on 429) and unwraps the v2 envelope —
+ * shared by scrape and parse, whose response shapes match. */
+async function requestPayload(
+  request: () => Promise<Response> | Response,
+  label: string
+): Promise<FirecrawlScrape> {
+  let res = await request();
+  if (res.status === 429) {
+    await sleep(retryAfterMs(res));
+    res = await request();
+  }
+  if (!res.ok) {
+    const retried = res.status === 429 ? " (rate limited; retried once)" : "";
+    throw new Error(
+      `Firecrawl ${label} failed: HTTP ${res.status}${retried}${await errorDetail(res)}`
+    );
+  }
+
+  const json = (await res.json()) as ScrapeResponseBody;
+  if (json.success !== true) {
+    throw new Error(
+      `Firecrawl ${label} failed: ${json.error ?? "response had success: false"}`
+    );
+  }
+  if (!json.data) {
+    throw new Error(`Firecrawl ${label} failed: response had no data`);
+  }
+
+  const html = json.data.html ?? undefined;
+  const markdown = json.data.markdown ?? undefined;
+  if (!html && !markdown && json.data.warning) {
+    throw new Error(`Firecrawl returned no content: ${json.data.warning}`);
+  }
+  return { html, markdown, metadata: json.data.metadata };
 }
 
 export async function scrapeUrl(
@@ -73,33 +110,38 @@ export async function scrapeUrl(
         timeout: 120000,
       }),
     });
+  return requestPayload(request, "scrape");
+}
 
-  let res = await request();
-  if (res.status === 429) {
-    await sleep(retryAfterMs(res));
-    res = await request();
-  }
-  if (!res.ok) {
-    const retried = res.status === 429 ? " (rate limited; retried once)" : "";
-    throw new Error(
-      `Firecrawl scrape failed: HTTP ${res.status}${retried}${await errorDetail(res)}`
+/**
+ * Parses an uploaded document (PDF) through `POST /v2/parse` — the
+ * multipart-only sibling of scrape for files that have no public URL.
+ * Returns the same shape as scrapeUrl so the normalization path is shared.
+ */
+export async function parseFile(
+  fetchImpl: typeof fetch,
+  apiKey: string,
+  file: File
+): Promise<FirecrawlScrape> {
+  const request = () => {
+    // Rebuild the form per attempt — a FormData body can't be reused after
+    // a failed send.
+    const form = new FormData();
+    form.append("file", file, file.name);
+    form.append(
+      "options",
+      JSON.stringify({
+        formats: ["markdown"],
+        onlyMainContent: true,
+        parsers: ["pdf"],
+        timeout: 120000,
+      })
     );
-  }
-
-  const json = (await res.json()) as ScrapeResponseBody;
-  if (json.success !== true) {
-    throw new Error(
-      `Firecrawl scrape failed: ${json.error ?? "response had success: false"}`
-    );
-  }
-  if (!json.data) {
-    throw new Error("Firecrawl scrape failed: response had no data");
-  }
-
-  const html = json.data.html ?? undefined;
-  const markdown = json.data.markdown ?? undefined;
-  if (!html && !markdown && json.data.warning) {
-    throw new Error(`Firecrawl returned no content: ${json.data.warning}`);
-  }
-  return { html, markdown, metadata: json.data.metadata };
+    return fetchImpl(PARSE_ENDPOINT, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
+    });
+  };
+  return requestPayload(request, "parse");
 }

@@ -14,7 +14,7 @@ import { cors } from "hono/cors";
 import { z } from "zod";
 
 import { createPending } from "./convexService";
-import { processArticle } from "./pipeline";
+import { processArticle, processUpload } from "./pipeline";
 
 export type Bindings = {
   FIRECRAWL_API_KEY: string;
@@ -25,6 +25,24 @@ export type Bindings = {
 };
 
 const articleBody = z.object({ url: z.string() });
+
+// Firecrawl /v2/parse caps uploads at 50MB.
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+const uploadForm = z.object({
+  file: z.custom<File>((value) => value instanceof File, {
+    message: "file must be a file upload",
+  }),
+});
+
+const isPdf = (file: File): boolean =>
+  file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+
+/** Display title for an uploaded file: the name without its extension. */
+function titleFromFilename(name: string): string {
+  const stem = name.replace(/\.[a-z0-9]+$/i, "").trim();
+  return stem || "Uploaded PDF";
+}
 
 /**
  * Normalizes a pasted URL: trims, prefixes https:// when no scheme, then
@@ -82,6 +100,47 @@ const app = new Hono<{ Bindings: Bindings }>()
         articleId,
         userId: auth.userId,
         url: url.toString(),
+      })
+    );
+    return c.json({ articleId }, 202);
+  })
+  // Direct PDF upload (no public URL to scrape): the file rides along as
+  // multipart form data and goes to Firecrawl /v2/parse inside waitUntil().
+  // Uploaded articles get a synthetic `upload://<name>` url — clients use it
+  // to hide open-original/retry affordances.
+  .post("/articles/upload", zValidator("form", uploadForm), async (c) => {
+    const auth = getAuth(c);
+    if (!auth?.userId) return c.json({ error: "Unauthorized" }, 401);
+
+    const { file } = c.req.valid("form");
+    if (!isPdf(file)) {
+      return c.json({ error: "Only PDF files are supported" }, 400);
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      return c.json({ error: "PDFs are limited to 50MB" }, 400);
+    }
+
+    const fallbackTitle = titleFromFilename(file.name);
+    const { articleId } = await createPending(
+      fetch,
+      c.env.CONVEX_SITE_URL,
+      c.env.WORKER_SHARED_SECRET,
+      {
+        userId: auth.userId,
+        url: `upload://${file.name}`,
+        kind: "pdf",
+        title: fallbackTitle,
+        savedAt: Date.now(),
+      }
+    );
+    c.executionCtx.waitUntil(
+      processUpload({
+        fetchImpl: fetch,
+        env: c.env,
+        articleId,
+        userId: auth.userId,
+        file,
+        fallbackTitle,
       })
     );
     return c.json({ articleId }, 202);

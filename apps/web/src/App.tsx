@@ -7,7 +7,7 @@ import React from "react";
 import { Link, Route, Routes } from "react-router-dom";
 
 import { BrushStroke } from "./components/BrushStroke";
-import { colors } from "./lib/theme";
+import { useTheme } from "./lib/theme";
 import { Library } from "./screens/Library";
 import { Reader } from "./screens/Reader";
 
@@ -23,6 +23,7 @@ function NotFound() {
 }
 
 export function App() {
+  const { c } = useTheme();
   return (
     <>
       <AuthLoading>
@@ -38,7 +39,7 @@ export function App() {
             <BrushStroke
               width={140}
               height={9}
-              color={colors.wash}
+              color={c.wash}
               opacity={0.75}
             />
           </div>

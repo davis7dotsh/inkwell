@@ -25,6 +25,7 @@ import React, {
 import {
   ActivityIndicator,
   Platform,
+  Pressable,
   Share,
   StyleSheet,
   Text,
@@ -78,6 +79,19 @@ export default function ArticleScreen() {
   const article = useQuery(api.articles.get, { id: articleId });
   const remoteAnnotations = useQuery(api.annotations.get, { articleId });
   const saveAnnotations = useMutation(api.annotations.save);
+  const setReadStatus = useMutation(api.articles.setReadStatus);
+
+  // Opening an unread article flips it to in-progress — once per visit, so
+  // "mark as unread" from the footer isn't immediately undone.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (autoStartedRef.current) return;
+    if (article?.status !== "ready") return;
+    autoStartedRef.current = true;
+    if ((article.readStatus ?? "unread") === "unread") {
+      void setReadStatus({ id: articleId, status: "in_progress" });
+    }
+  }, [article, articleId, setReadStatus]);
 
   // Local annotation state is the source of truth while the screen is open;
   // the live query only seeds it once on load.
@@ -570,6 +584,16 @@ export default function ArticleScreen() {
   }, [article, blocks]);
 
   const ready = article !== undefined && article.status === "ready";
+  const isRead = article !== undefined && article.readStatus === "read";
+  // Uploaded PDFs carry a synthetic upload:// url — no original to open.
+  const isUpload = article?.url.startsWith("upload://") ?? false;
+
+  const onToggleRead = useCallback(() => {
+    void setReadStatus({
+      id: articleId,
+      status: isRead ? "unread" : "read",
+    });
+  }, [articleId, isRead, setReadStatus]);
 
   const savedDate = article
     ? new Date(article.savedAt).toLocaleDateString(undefined, {
@@ -586,11 +610,13 @@ export default function ArticleScreen() {
         right={
           ready ? (
             <>
-              <GlassIconButton
-                icon="apple-safari"
-                onPress={onOpenOriginal}
-                accessibilityLabel="Open original article in browser"
-              />
+              {isUpload ? null : (
+                <GlassIconButton
+                  icon="apple-safari"
+                  onPress={onOpenOriginal}
+                  accessibilityLabel="Open original article in browser"
+                />
+              )}
               <GlassIconButton
                 icon="file-export-outline"
                 onPress={onExport}
@@ -665,6 +691,34 @@ export default function ArticleScreen() {
                 onPressNote={onPressNote}
                 onNoteLayout={onNoteLayout}
               />
+              <View style={styles.readFooter}>
+                <Pressable
+                  onPress={onToggleRead}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    isRead ? "Mark as unread" : "Mark as read"
+                  }
+                  style={({ pressed }) => [
+                    styles.markReadButton,
+                    isRead && styles.markReadButtonDone,
+                    pressed && { opacity: 0.8 },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.markReadText,
+                      isRead && styles.markReadTextDone,
+                    ]}
+                  >
+                    {isRead ? "✓ Read — mark as unread" : "Mark as read"}
+                  </Text>
+                </Pressable>
+                {isRead ? null : (
+                  <Text style={styles.readFooterHint}>
+                    Finished? This moves it to your Read list everywhere.
+                  </Text>
+                )}
+              </View>
                   </View>
                 </View>
               </GestureDetector>
@@ -754,6 +808,37 @@ const themed = makeThemedStyles((c) =>
       fontSize: 13,
       color: c.inkFaint,
       marginBottom: 14,
+    },
+    readFooter: {
+      alignItems: "center",
+      gap: 10,
+      marginTop: 48,
+    },
+    markReadButton: {
+      height: 44,
+      borderRadius: 22,
+      borderCurve: "continuous",
+      paddingHorizontal: 26,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: c.accent,
+    },
+    markReadButtonDone: {
+      backgroundColor: c.surface,
+      borderWidth: 1,
+      borderColor: c.hairline,
+    },
+    markReadText: {
+      fontSize: 15,
+      fontWeight: "600",
+      color: c.onAccent,
+    },
+    markReadTextDone: {
+      color: c.inkSecondary,
+    },
+    readFooterHint: {
+      fontSize: 13,
+      color: c.inkFaint,
     },
   })
 );
