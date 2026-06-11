@@ -401,7 +401,14 @@ export default function LibraryScreen() {
     <View style={[styles.screen, { paddingTop: insets.top + 18 }]}>
       <BackdropWash />
       <View style={styles.titleRow}>
-        <Text style={styles.appTitle}>Inkwell</Text>
+        <View style={styles.titleLeft}>
+          <Text style={styles.appTitle}>Inkwell</Text>
+          {__DEV__ ? (
+            <View style={styles.devBadge} accessibilityLabel="Development build">
+              <Text style={styles.devBadgeText}>DEV</Text>
+            </View>
+          ) : null}
+        </View>
         <GlassIconButton
           icon="logout-variant"
           onPress={() => void signOut()}
@@ -567,6 +574,27 @@ const themed = makeThemedStyles((c) =>
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
+    },
+    titleLeft: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    // Tiny "running against dev" marker — only rendered in dev builds.
+    devBadge: {
+      backgroundColor: c.accentSoft,
+      borderWidth: 1,
+      borderColor: c.linkUnderline,
+      borderRadius: 6,
+      borderCurve: "continuous",
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+    },
+    devBadgeText: {
+      fontSize: 10,
+      fontWeight: "700",
+      letterSpacing: 0.8,
+      color: c.accent,
     },
     appTitle: {
       fontFamily: serif,

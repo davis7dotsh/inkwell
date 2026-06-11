@@ -324,7 +324,14 @@ export function Library() {
       <BackdropWash />
       <header className="app-header">
         <div className="wordmark">
-          <h1>Inkwell</h1>
+          <div className="wordmark-row">
+            <h1>Inkwell</h1>
+            {import.meta.env.DEV ? (
+              <span className="dev-badge" title="Development build">
+                DEV
+              </span>
+            ) : null}
+          </div>
           <BrushStroke width={118} height={9} color={c.wash} />
         </div>
         <UserButton />

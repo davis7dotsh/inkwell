@@ -103,6 +103,25 @@ button {
   margin-top: 4px;
 }
 
+.wordmark-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Tiny "running against dev" marker — only rendered in dev builds. */
+.dev-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  background: var(--mist);
+  border: 1px solid var(--link-underline);
+  border-radius: 6px;
+  padding: 2px 6px;
+  line-height: 1.2;
+}
+
 .wordmark-large h1 {
   font-size: 40px;
 }
