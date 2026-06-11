@@ -39,6 +39,17 @@ function MemoChip({
   // No API URL configured → error state from the start, not endless loading.
   const [audioError, setAudioError] = useState(!API_URL);
   const objectUrlRef = useRef<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Clicking anywhere outside the chip/popover dismisses it.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
 
   // Fetch the audio once, on first expand.
   useEffect(() => {
@@ -76,6 +87,7 @@ function MemoChip({
 
   return (
     <div
+      ref={containerRef}
       className="memo-annotation"
       style={{ left: memo.x * scale, top: memo.y * scale }}
     >
