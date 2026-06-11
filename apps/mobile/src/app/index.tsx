@@ -6,7 +6,7 @@ import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import * as Clipboard from "expo-clipboard";
 import { router } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -17,7 +17,9 @@ import {
   TextInput,
   View,
 } from "react-native";
-import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
+import ReanimatedSwipeable, {
+  type SwipeableMethods,
+} from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BackdropWash } from "../components/BackdropWash";
@@ -50,13 +52,17 @@ function ArticleCard({
   item,
   onDelete,
   onRetry,
+  onSwipeOpen,
 }: {
   item: ArticleListItem;
   onDelete: (id: Id<"articles">) => void;
   onRetry: (id: Id<"articles">) => void;
+  /** Called as this row starts to open, so the screen can close any other. */
+  onSwipeOpen: (row: SwipeableMethods | null) => void;
 }) {
   const { scheme, c } = useTheme();
   const styles = themed[scheme];
+  const swipeRef = useRef<SwipeableMethods>(null);
   const date = new Date(item.savedAt).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
@@ -72,9 +78,11 @@ function ArticleCard({
     ]);
   return (
     <ReanimatedSwipeable
+      ref={swipeRef}
       friction={2}
       rightThreshold={36}
       overshootRight={false}
+      onSwipeableOpenStartDrag={() => onSwipeOpen(swipeRef.current)}
       renderRightActions={(_progress, _translation, methods) => (
         <View style={styles.deleteActionWrap}>
           <Pressable
@@ -153,6 +161,15 @@ export default function LibraryScreen() {
   const articles = useQuery(api.articles.list);
   const removeArticle = useMutation(api.articles.remove);
   const [url, setUrl] = useState("");
+
+  // Only one swipe row open at a time — opening a new one closes the last.
+  const openRowRef = useRef<SwipeableMethods | null>(null);
+  const onSwipeOpen = useCallback((row: SwipeableMethods | null) => {
+    if (openRowRef.current && openRowRef.current !== row) {
+      openRowRef.current.close();
+    }
+    openRowRef.current = row;
+  }, []);
 
   const onSubmit = useCallback(() => {
     const normalized = normalizeUrl(url);
@@ -296,7 +313,12 @@ export default function LibraryScreen() {
         data={articles ?? []}
         keyExtractor={(item) => item._id}
         renderItem={({ item }) => (
-          <ArticleCard item={item} onDelete={onDelete} onRetry={onRetry} />
+          <ArticleCard
+            item={item}
+            onDelete={onDelete}
+            onRetry={onRetry}
+            onSwipeOpen={onSwipeOpen}
+          />
         )}
         contentContainerStyle={styles.list}
         ListEmptyComponent={

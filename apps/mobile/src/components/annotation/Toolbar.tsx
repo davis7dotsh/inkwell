@@ -16,14 +16,23 @@ export type Tool = "read" | "pen" | "highlighter" | "box" | "note" | "eraser";
 const TOOLS: {
   tool: Tool;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  label: string;
 }[] = [
-  { tool: "read", icon: "book-open-variant" },
-  { tool: "pen", icon: "pencil" },
-  { tool: "highlighter", icon: "marker" },
-  { tool: "box", icon: "vector-square" },
-  { tool: "note", icon: "note-plus-outline" },
-  { tool: "eraser", icon: "eraser" },
+  { tool: "read", icon: "book-open-variant", label: "Reading mode" },
+  { tool: "pen", icon: "pencil", label: "Pen" },
+  { tool: "highlighter", icon: "marker", label: "Highlighter" },
+  { tool: "box", icon: "vector-square", label: "Box" },
+  { tool: "note", icon: "note-plus-outline", label: "Note" },
+  { tool: "eraser", icon: "eraser", label: "Eraser" },
 ];
+
+// VoiceOver/TalkBack names for the stored pen inks (see penColors in theme).
+const PEN_COLOR_NAMES: Record<string, string> = {
+  "#0E2E52": "Deep ink",
+  "#1B4F8A": "Brush blue",
+  "#3D7BC0": "Stroke blue",
+  "#B0413E": "Seal red",
+};
 
 type Props = {
   tool: Tool;
@@ -59,6 +68,10 @@ export function Toolbar({
             <Pressable
               key={color}
               onPress={() => onPenColorChange(color)}
+              accessibilityRole="button"
+              accessibilityLabel={`${PEN_COLOR_NAMES[color] ?? color} pen`}
+              accessibilityState={{ selected: color === penColor }}
+              hitSlop={8}
               style={[
                 styles.colorDot,
                 { backgroundColor: displayInkColor(color, isDark) },
@@ -69,10 +82,13 @@ export function Toolbar({
         </GlassSurface>
       )}
       <GlassSurface style={styles.pill} fallbackStyle={styles.pillFallback}>
-        {TOOLS.map(({ tool: t, icon }) => (
+        {TOOLS.map(({ tool: t, icon, label }) => (
           <Pressable
             key={t}
             onPress={() => onToolChange(t)}
+            accessibilityRole="button"
+            accessibilityLabel={label}
+            accessibilityState={{ selected: tool === t }}
             style={[styles.button, tool === t && styles.buttonActive]}
           >
             <MaterialCommunityIcons
@@ -86,6 +102,9 @@ export function Toolbar({
         <Pressable
           onPress={onUndo}
           disabled={!canUndo}
+          accessibilityRole="button"
+          accessibilityLabel="Undo last annotation"
+          accessibilityState={{ disabled: !canUndo }}
           style={styles.button}
         >
           <MaterialCommunityIcons

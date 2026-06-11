@@ -24,6 +24,7 @@ import React, {
 } from "react";
 import {
   ActivityIndicator,
+  Platform,
   Share,
   StyleSheet,
   Text,
@@ -559,8 +560,10 @@ export default function ArticleScreen() {
     } catch {
       // Couldn't write the file — fall back to sharing the raw text.
     }
+    // Share.share's `url` is iOS-only; Android ignores it and would show an
+    // empty sheet, so Android always gets the markdown text.
     void Share.share(
-      fileUrl
+      fileUrl && Platform.OS === "ios"
         ? { url: fileUrl, title: article.title }
         : { message: markdown }
     );
