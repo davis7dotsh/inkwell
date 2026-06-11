@@ -48,6 +48,7 @@ export const list = query({
       siteName: article.siteName,
       excerpt: article.excerpt,
       savedAt: article.savedAt,
+      readStatus: article.readStatus,
     }));
   },
 });
@@ -56,6 +57,31 @@ export const get = query({
   args: { id: v.id("articles") },
   handler: async (ctx, args) => {
     return requireOwnedArticle(ctx, args.id);
+  },
+});
+
+export const rename = mutation({
+  args: { id: v.id("articles"), title: v.string() },
+  handler: async (ctx, args) => {
+    await requireOwnedArticle(ctx, args.id);
+    const title = args.title.trim();
+    if (!title) throw new Error("Title cannot be empty");
+    await ctx.db.patch(args.id, { title });
+  },
+});
+
+export const setReadStatus = mutation({
+  args: {
+    id: v.id("articles"),
+    status: v.union(
+      v.literal("unread"),
+      v.literal("in_progress"),
+      v.literal("read")
+    ),
+  },
+  handler: async (ctx, args) => {
+    await requireOwnedArticle(ctx, args.id);
+    await ctx.db.patch(args.id, { readStatus: args.status });
   },
 });
 
@@ -83,7 +109,11 @@ export const createPending = internalMutation({
     savedAt: v.number(),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.insert("articles", { ...args, status: "pending" });
+    return await ctx.db.insert("articles", {
+      ...args,
+      status: "pending",
+      readStatus: "unread",
+    });
   },
 });
 

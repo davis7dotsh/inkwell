@@ -116,3 +116,5 @@ export function displayInkColor(color: string, isDark: boolean): string {
 export const MAX_CONTENT_WIDTH = 700;
 /** Horizontal padding around the content column. */
 export const CONTENT_PADDING = 20;
+/** Vertical gap between the scroll content's top edge and the content column. */
+export const READER_TOP_PADDING = 28;

@@ -56,7 +56,7 @@ export function Toolbar({
   const styles = themed[scheme];
   return (
     <View
-      style={[styles.wrap, { bottom: Math.max(insets.bottom, 12) + 14 }]}
+      style={[styles.wrap, { right: Math.max(insets.right, 12) + 14 }]}
       pointerEvents="box-none"
     >
       {tool === "pen" && (
@@ -122,18 +122,20 @@ const themed = makeThemedStyles((c) =>
   StyleSheet.create({
     wrap: {
       position: "absolute",
-      left: 0,
-      right: 0,
+      top: 0,
+      bottom: 0,
+      flexDirection: "row",
       alignItems: "center",
+      justifyContent: "flex-end",
       gap: 10,
     },
     pill: {
-      flexDirection: "row",
+      flexDirection: "column",
       alignItems: "center",
       borderRadius: 28,
       borderCurve: "continuous",
-      paddingHorizontal: 8,
-      paddingVertical: 6,
+      paddingHorizontal: 6,
+      paddingVertical: 8,
       gap: 2,
     },
     pillFallback: {
@@ -157,14 +159,14 @@ const themed = makeThemedStyles((c) =>
       backgroundColor: c.accentSoft,
     },
     divider: {
-      width: StyleSheet.hairlineWidth,
-      height: 24,
+      width: 24,
+      height: StyleSheet.hairlineWidth,
       backgroundColor: c.hairline,
-      marginHorizontal: 4,
+      marginVertical: 4,
     },
     colorRow: {
-      paddingHorizontal: 12,
-      paddingVertical: 8,
+      paddingHorizontal: 8,
+      paddingVertical: 12,
       gap: 10,
     },
     colorDot: {

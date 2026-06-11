@@ -21,6 +21,7 @@ export const TEST_ENV: PipelineEnv & {
 };
 
 export const FIRECRAWL_ENDPOINT = "https://api.firecrawl.dev/v2/scrape";
+export const FIRECRAWL_PARSE_ENDPOINT = "https://api.firecrawl.dev/v2/parse";
 
 // Tiny real HTML fixture, parsed by the real @inkwell/content pipeline in
 // the happy-path tests: one h1 + two paragraphs.
@@ -48,7 +49,11 @@ function headersOf(init?: RequestInit): Record<string, string> {
 }
 
 function parseBody(init?: RequestInit): unknown {
-  return init?.body ? JSON.parse(String(init.body)) : undefined;
+  const body = init?.body;
+  if (!body) return undefined;
+  // Multipart bodies (FormData) pass through as-is; JSON bodies are parsed.
+  if (typeof body !== "string") return body;
+  return JSON.parse(body);
 }
 
 /** Sequential stub: returns canned responses in order, recording each call. */
@@ -78,8 +83,9 @@ export type IngestLog = {
 };
 
 /**
- * URL-dispatching stub: Firecrawl scrapes get `scrape()` responses; Convex
- * ingest calls are recorded and acknowledged (create-pending → articleId).
+ * URL-dispatching stub: Firecrawl scrape/parse calls get `scrape()`
+ * responses; Convex ingest calls are recorded and acknowledged
+ * (create-pending → articleId).
  */
 export function fakeNetwork(scrape: () => Response): {
   impl: typeof fetch;
@@ -88,7 +94,9 @@ export function fakeNetwork(scrape: () => Response): {
   const ingest: IngestLog = { "create-pending": [], complete: [], fail: [] };
   const impl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url === FIRECRAWL_ENDPOINT) return scrape();
+    if (url === FIRECRAWL_ENDPOINT || url === FIRECRAWL_PARSE_ENDPOINT) {
+      return scrape();
+    }
     const match = /\/ingest\/(create-pending|complete|fail)$/.exec(url);
     if (match) {
       const op = match[1] as keyof IngestLog;

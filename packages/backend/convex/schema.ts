@@ -18,6 +18,15 @@ export default defineSchema({
     excerpt: v.optional(v.string()),
     blocksJson: v.optional(v.string()), // JSON.stringify(Block[]) — string to dodge deep validators; Convex doc limit ~1MB, fine for articles
     savedAt: v.number(), // Date.now() at save
+    // Reading progress. Optional: rows written before this field existed are
+    // treated as "unread" by clients.
+    readStatus: v.optional(
+      v.union(
+        v.literal("unread"),
+        v.literal("in_progress"),
+        v.literal("read")
+      )
+    ),
   }).index("by_user", ["userId"]),
 
   annotations: defineTable({

@@ -3,7 +3,7 @@
 import type { Block, Span } from "@inkwell/content";
 import React, { Fragment, memo, type ReactNode } from "react";
 
-import { colors } from "../lib/theme";
+import { useTheme } from "../lib/theme";
 
 import { BrushStroke } from "./BrushStroke";
 
@@ -29,6 +29,15 @@ function SpanText({ spans }: { spans: Span[] }) {
 }
 
 const headingTags = ["h1", "h2", "h3", "h4"] as const;
+
+function RuleDivider() {
+  const { c } = useTheme();
+  return (
+    <div className="rule-divider" role="separator">
+      <BrushStroke width={150} height={7} color={c.wash} opacity={0.6} />
+    </div>
+  );
+}
 
 function BlockView({ block }: { block: Block }) {
   switch (block.type) {
@@ -88,11 +97,7 @@ function BlockView({ block }: { block: Block }) {
         </pre>
       );
     case "rule":
-      return (
-        <div className="rule-divider" role="separator">
-          <BrushStroke width={150} height={7} color={colors.wash} opacity={0.6} />
-        </div>
-      );
+      return <RuleDivider />;
   }
 }
 

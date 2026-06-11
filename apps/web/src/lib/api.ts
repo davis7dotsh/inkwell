@@ -19,6 +19,16 @@ type ApiSchema = {
       status: 202;
     };
   };
+  // Direct PDF upload: multipart form with the file bytes; the worker
+  // parses it through Firecrawl /v2/parse.
+  "/articles/upload": {
+    $post: {
+      input: { form: { file: File } };
+      output: { articleId: string };
+      outputFormat: "json";
+      status: 202;
+    };
+  };
   // Retry needs the article's url in the body: the worker's Convex access is
   // write-only (ingest endpoints), so the client supplies it from its live
   // articles.list data.
