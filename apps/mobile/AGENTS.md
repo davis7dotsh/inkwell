@@ -8,10 +8,15 @@ expo-dev-client builds instead:
 
 - `pnpm dev` (expo start) runs Metro.
 - Simulator: build/install the Debug app, it connects to Metro.
-- iPad: `pnpm ipad:dev` installs a Debug dev client with bundle id
-  `sh.davis7.inkwell.dev`, so it coexists with the prod app
-  (`pnpm ipad`, bundle id `sh.davis7.inkwell`). Rebuild the dev client only
-  when native deps change; JS comes from Metro.
+- iPad: `pnpm ipad:dev` installs a Debug dev client that coexists with the
+  prod app (`pnpm ipad`). Rebuild the dev client only when native deps
+  change; JS comes from Metro.
+- Debug builds get a distinct identity — name "Inkwell Dev", orange-badged
+  icon, bundle id `sh.davis7.inkwell.dev` — baked into the Debug build
+  configuration by `plugins/withDevVariant.js`, so dev and prod build from
+  one prebuild with no `APP_VARIANT` re-prebuild between them. Release is
+  untouched. If `assets/images/icon.png` changes, regenerate the badge:
+  `swift scripts/make-dev-icon.swift assets/images/icon.png assets/images/icon-dev.png`.
 
 - use pnpm for the package manager in this project
 - `ios/` is generated (CNG): `npx expo prebuild -p ios --clean` regenerates
