@@ -34,8 +34,12 @@ function loadTranscription(): AppleTranscription | null {
 let transcription: AppleTranscription | null | undefined;
 let prepared: Promise<void> | null = null;
 
-const getTranscription = (): AppleTranscription | null =>
-  (transcription ??= loadTranscription());
+// Not `??=`: a null result (module unavailable) must cache too, or every
+// call re-pays the throwing require().
+const getTranscription = (): AppleTranscription | null => {
+  if (transcription === undefined) transcription = loadTranscription();
+  return transcription;
+};
 
 /**
  * Kicks off the speech model asset install (no-op when already on device).
