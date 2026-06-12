@@ -4,6 +4,7 @@
 // the real implementation at runtime.
 import nodeAssert from "node:assert/strict";
 
+import { buildDocumentOutline } from "../src/documentOutline";
 import { buildExportMarkdown } from "../src/exportMarkdown";
 import { htmlToBlocks } from "../src/htmlToBlocks";
 import { markdownToBlocks } from "../src/markdownToBlocks";
@@ -662,6 +663,97 @@ assert.throws(
 );
 
 console.log("firecrawlToArticle tests passed");
+
+// ============================================================
+// buildDocumentOutline
+// ============================================================
+
+const outline = buildDocumentOutline([
+  { type: "paragraph", spans: [{ text: "Preface" }] },
+  {
+    type: "heading",
+    level: 2,
+    spans: [{ text: "1 " }, { text: "Introduction", bold: true }],
+  },
+  { type: "paragraph", spans: [{ text: "Body" }] },
+  {
+    type: "heading",
+    level: 4,
+    spans: [{ text: "  1.1   Training data  " }],
+  },
+  { type: "heading", level: 3, spans: [{ text: "Risk & safety" }] },
+  { type: "heading", level: 3, spans: [{ text: "Risk & safety" }] },
+]);
+
+assert.deepEqual(outline, [
+  {
+    id: "section-2-1-introduction",
+    blockIndex: 1,
+    title: "1 Introduction",
+    level: 2,
+    depth: 0,
+  },
+  {
+    id: "section-4-1-1-training-data",
+    blockIndex: 3,
+    title: "1.1 Training data",
+    level: 4,
+    depth: 2,
+  },
+  {
+    id: "section-5-risk-safety",
+    blockIndex: 4,
+    title: "Risk & safety",
+    level: 3,
+    depth: 1,
+  },
+  {
+    id: "section-6-risk-safety",
+    blockIndex: 5,
+    title: "Risk & safety",
+    level: 3,
+    depth: 1,
+  },
+]);
+assert.deepEqual(
+  buildDocumentOutline([
+    { type: "heading", level: 1, spans: [{ text: "   " }] },
+  ]),
+  [],
+  "blank headings are omitted"
+);
+assert.deepEqual(
+  buildDocumentOutline([
+    { type: "heading", level: 4, spans: [{ text: "Abstract" }] },
+    { type: "heading", level: 2, spans: [{ text: "Chapter one" }] },
+  ]).map((entry) => entry.depth),
+  [2, 0],
+  "depth normalizes to the shallowest heading even when it isn't first"
+);
+assert.equal(
+  buildDocumentOutline([
+    { type: "heading", level: 2, spans: [{ text: "5 ㎒ explained" }] },
+  ])[0].id,
+  "section-1-5-mhz-explained",
+  "NFKD decomposition runs before lowercasing"
+);
+const longSlugId = buildDocumentOutline([
+  {
+    type: "heading",
+    level: 2,
+    spans: [
+      {
+        text: "How we built the new document outline for very long PDF chapter abc",
+      },
+    ],
+  },
+])[0].id;
+assert.ok(
+  !longSlugId.endsWith("-"),
+  `truncated slugs drop the dangling hyphen (got ${longSlugId})`
+);
+
+console.log("buildDocumentOutline tests passed");
 
 // ════════════════════════════════════════════════════════════════════
 // buildExportMarkdown — voice memos

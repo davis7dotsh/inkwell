@@ -129,7 +129,13 @@ type Props = {
   articleId: string;
 };
 
-export function MemosOverlay({ annotations, columnWidth, articleId }: Props) {
+// Memoized so reader re-renders (e.g. the outline's active-section state)
+// don't re-render every chip.
+export const MemosOverlay = React.memo(function MemosOverlay({
+  annotations,
+  columnWidth,
+  articleId,
+}: Props) {
   const scale =
     annotations.contentWidth > 0 ? columnWidth / annotations.contentWidth : 1;
   if (annotations.memos.length === 0) return null;
@@ -145,4 +151,4 @@ export function MemosOverlay({ annotations, columnWidth, articleId }: Props) {
       ))}
     </div>
   );
-}
+});

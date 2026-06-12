@@ -4,6 +4,7 @@
 import { api } from "@inkwell/backend/convex/_generated/api";
 import type { Id } from "@inkwell/backend/convex/_generated/dataModel";
 import {
+  buildDocumentOutline,
   buildExportMarkdown,
   emptyAnnotations,
   type Annotations,
@@ -22,10 +23,13 @@ import React, {
 import { Link, useParams } from "react-router-dom";
 
 import { MarksOverlay, StrokesOverlay } from "../components/AnnotationsOverlay";
-import { MemosOverlay } from "../components/MemosOverlay";
 import { BlockRenderer } from "../components/BlockRenderer";
 import { BrushStroke } from "../components/BrushStroke";
+import { DocumentOutline } from "../components/DocumentOutline";
+import { MemosOverlay } from "../components/MemosOverlay";
 import { MAX_CONTENT_WIDTH, useTheme } from "../lib/theme";
+
+const DOCUMENT_START_ID = "document-start";
 
 /** Thin reading-progress bar pinned to the bottom edge of the sticky bar.
  * Writes the transform directly so scrolling never re-renders the reader. */
@@ -69,14 +73,26 @@ function ExportIcon() {
   );
 }
 
+function ContentsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" />
+    </svg>
+  );
+}
+
 function ReaderBar({
   title,
   withProgress,
   onExport,
+  hasOutline,
+  onToggleOutline,
 }: {
   title?: string;
   withProgress?: boolean;
   onExport?: () => void;
+  hasOutline?: boolean;
+  onToggleOutline?: () => void;
 }) {
   return (
     <header className="reader-bar">
@@ -85,6 +101,17 @@ function ReaderBar({
       </Link>
       <span className="reader-title">{title ?? ""}</span>
       <div className="reader-actions">
+        {hasOutline && onToggleOutline ? (
+          <button
+            type="button"
+            className="reader-outline-toggle"
+            onClick={onToggleOutline}
+            aria-label="Open document outline"
+          >
+            <ContentsIcon />
+            <span>Contents</span>
+          </button>
+        ) : null}
         {onExport ? (
           <button
             type="button"
@@ -100,6 +127,51 @@ function ReaderBar({
       {withProgress ? <ScrollProgressBar /> : null}
     </header>
   );
+}
+
+function useActiveDocumentSection(
+  outline: ReturnType<typeof buildDocumentOutline>,
+) {
+  const [activeId, setActiveId] = useState(DOCUMENT_START_ID);
+
+  useEffect(() => {
+    let raf = 0;
+    const update = () => {
+      const threshold = 104;
+      let nextId = DOCUMENT_START_ID;
+      for (const entry of outline) {
+        const element = document.getElementById(entry.id);
+        if (!element || element.getBoundingClientRect().top > threshold) break;
+        nextId = entry.id;
+      }
+      // Only snap to the last entry when the page actually scrolls;
+      // otherwise short articles would pin it active forever.
+      const scrollable =
+        document.documentElement.scrollHeight > window.innerHeight + 4;
+      const atBottom =
+        scrollable &&
+        window.innerHeight + window.scrollY >=
+          document.documentElement.scrollHeight - 4;
+      if (atBottom && outline.length > 0) {
+        nextId = outline[outline.length - 1].id;
+      }
+      setActiveId((current) => (current === nextId ? current : nextId));
+    };
+    const schedule = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+    };
+  }, [outline]);
+
+  return activeId;
 }
 
 function CenterState({ children }: { children: ReactNode }) {
@@ -166,9 +238,10 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
   const article = useQuery(api.articles.get, { id });
   const annotationDoc = useQuery(
     api.annotations.get,
-    article ? { articleId: article._id } : "skip"
+    article ? { articleId: article._id } : "skip",
   );
   const setReadStatus = useMutation(api.articles.setReadStatus);
+  const [outlineOpen, setOutlineOpen] = useState(false);
 
   // Opening an unread article flips it to in-progress — once per visit, so
   // "mark as unread" from the footer isn't immediately undone.
@@ -193,8 +266,126 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
 
   const annotations = useMemo<Annotations | null>(
     () => (annotationDoc ? parseAnnotations(annotationDoc) : null),
-    [annotationDoc]
+    [annotationDoc],
   );
+  const outline = useMemo(() => buildDocumentOutline(blocks), [blocks]);
+  const headingIds = useMemo(
+    () =>
+      new Map(outline.map((entry) => [entry.blockIndex, entry.id] as const)),
+    [outline],
+  );
+  const activeOutlineId = useActiveDocumentSection(outline);
+
+  const onOutlineNavigate = useCallback((targetId: string) => {
+    const target = document.getElementById(targetId);
+    if (!target) return;
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    target.scrollIntoView({
+      behavior: reducedMotion ? "auto" : "smooth",
+      block: "start",
+    });
+    // Move keyboard/SR focus to the landing spot (headings carry
+    // tabIndex={-1} for this), and preserve react-router's history state
+    // ({usr, key, idx}) — replacing it with null corrupts the router.
+    target.focus({ preventScroll: true });
+    window.history.replaceState(window.history.state, "", `#${targetId}`);
+    setOutlineOpen(false);
+  }, []);
+
+  // The drawer is an aria-modal dialog: focus moves into it on open, Tab
+  // cycles within it, the page behind it stops scrolling, and focus returns
+  // to the opener on dismissal (navigation focuses the target heading
+  // instead, which the cleanup leaves alone).
+  const drawerPanelRef = useRef<HTMLElement | null>(null);
+  const drawerReturnFocusRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!outlineOpen) return;
+    const panel = drawerPanelRef.current;
+    drawerReturnFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    panel?.focus();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        // A search field with text consumes Escape to clear itself first.
+        if (
+          event.target instanceof HTMLInputElement &&
+          event.target.value !== ""
+        ) {
+          return;
+        }
+        setOutlineOpen(false);
+        return;
+      }
+      if (event.key !== "Tab" || !panel) return;
+      const focusables = Array.from(
+        panel.querySelectorAll<HTMLElement>(
+          "a[href], button:not([disabled]), input:not([disabled])",
+        ),
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey) {
+        if (active === first || active === panel || !panel.contains(active)) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else if (active === last || !panel.contains(active)) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      // Focus fell to <body> when the drawer unmounted, unless navigation
+      // already moved it to a heading.
+      if (document.activeElement === document.body) {
+        drawerReturnFocusRef.current?.focus();
+      }
+    };
+  }, [outlineOpen]);
+
+  // Close the drawer when the layout switches to the desktop rail so it
+  // doesn't pop back open after resizing through the breakpoint.
+  useEffect(() => {
+    if (!outlineOpen) return;
+    const desktop = window.matchMedia("(min-width: 1200px)");
+    const onChange = () => {
+      if (desktop.matches) setOutlineOpen(false);
+    };
+    onChange();
+    desktop.addEventListener("change", onChange);
+    return () => desktop.removeEventListener("change", onChange);
+  }, [outlineOpen]);
+
+  // Restore a #section deep link once per article. The outline's identity
+  // can change later (a blocksJson rewrite streaming in) and must not yank
+  // the reader back to the hash target mid-read.
+  const hashRestoredRef = useRef(false);
+  useEffect(() => {
+    if (hashRestoredRef.current) return;
+    if (outline.length === 0 || !window.location.hash) return;
+    hashRestoredRef.current = true;
+    let targetId: string;
+    try {
+      targetId = decodeURIComponent(window.location.hash.slice(1));
+    } catch {
+      return; // malformed percent-encoding in a hand-edited/truncated link
+    }
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(targetId)?.scrollIntoView({ block: "start" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [outline]);
 
   // The annotation scale tracks the column's rendered width (≤ 900px).
   const [columnWidth, setColumnWidth] = useState<number | null>(null);
@@ -242,11 +433,13 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
       },
       exportAnnotations,
       layouts,
-      columnWidth / exportAnnotations.contentWidth
+      columnWidth / exportAnnotations.contentWidth,
     );
     const baseName =
-      article.title.replace(/[\\/:*?"<>|\n\r]+/g, " ").trim().slice(0, 80) ||
-      "article";
+      article.title
+        .replace(/[\\/:*?"<>|\n\r]+/g, " ")
+        .trim()
+        .slice(0, 80) || "article";
     const file = new File([markdown], `${baseName}.md`, {
       type: "text/markdown;charset=utf-8",
     });
@@ -256,7 +449,8 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
         await navigator.share({ files: [file], title: article.title });
         return;
       } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") return;
+        if (error instanceof DOMException && error.name === "AbortError")
+          return;
       }
     }
 
@@ -296,8 +490,7 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
       <CenterState>
         <p>This article failed to save.</p>
         <p className="center-state-hint">
-          {article.error ?? "Unknown error."} You can retry it from the
-          library.
+          {article.error ?? "Unknown error."} You can retry it from the library.
         </p>
         <Link to="/" className="back-link">
           Back to the library
@@ -323,58 +516,109 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
         title={article.title}
         withProgress
         onExport={() => void onExport()}
+        hasOutline={outline.length > 0}
+        onToggleOutline={() => setOutlineOpen(true)}
       />
       <div className="reader-content">
-        <article className="content-column" ref={columnRef}>
-          <h1 className="article-title">{article.title}</h1>
-          <p className="article-meta">{meta}</p>
-          <BrushStroke
-            width={Math.min(220, (columnWidth ?? MAX_CONTENT_WIDTH) * 0.4)}
-            height={8}
-            color={c.wash}
-            opacity={0.75}
-            className="title-brush"
-          />
-          <div className="article-blocks" ref={blocksRef}>
-            <BlockRenderer blocks={blocks} />
-          </div>
-          <footer className="read-footer">
-            <button
-              className={`mark-read-button${isRead ? " mark-read-button-done" : ""}`}
-              onClick={() =>
-                void setReadStatus({
-                  id,
-                  status: isRead ? "unread" : "read",
-                })
-              }
-            >
-              {isRead ? "✓ Read — mark as unread" : "Mark as read"}
-            </button>
-            {isRead ? null : (
-              <p className="read-footer-hint">
-                Finished? This moves it to your Read list everywhere.
-              </p>
-            )}
-          </footer>
-          {annotations && columnWidth ? (
-            <>
-              <MarksOverlay
-                annotations={annotations}
-                columnWidth={columnWidth}
+        <div
+          className={`reader-layout${
+            outline.length > 0 ? " reader-layout-rail" : ""
+          }`}
+        >
+          {outline.length > 0 ? (
+            <aside className="document-outline-rail">
+              <DocumentOutline
+                entries={outline}
+                activeId={activeOutlineId}
+                onNavigate={onOutlineNavigate}
               />
-              <StrokesOverlay
-                annotations={annotations}
-                columnWidth={columnWidth}
-              />
-              <MemosOverlay
-                annotations={annotations}
-                columnWidth={columnWidth}
-                articleId={article._id}
-              />
-            </>
+            </aside>
           ) : null}
-        </article>
+          <article className="content-column" ref={columnRef}>
+            <h1 id={DOCUMENT_START_ID} tabIndex={-1} className="article-title">
+              {article.title}
+            </h1>
+            <p className="article-meta">{meta}</p>
+            <BrushStroke
+              width={Math.min(220, (columnWidth ?? MAX_CONTENT_WIDTH) * 0.4)}
+              height={8}
+              color={c.wash}
+              opacity={0.75}
+              className="title-brush"
+            />
+            <div className="article-blocks" ref={blocksRef}>
+              <BlockRenderer blocks={blocks} headingIds={headingIds} />
+            </div>
+            <footer className="read-footer">
+              <button
+                className={`mark-read-button${isRead ? " mark-read-button-done" : ""}`}
+                onClick={() =>
+                  void setReadStatus({
+                    id,
+                    status: isRead ? "unread" : "read",
+                  })
+                }
+              >
+                {isRead ? "✓ Read — mark as unread" : "Mark as read"}
+              </button>
+              {isRead ? null : (
+                <p className="read-footer-hint">
+                  Finished? This moves it to your Read list everywhere.
+                </p>
+              )}
+            </footer>
+            {annotations && columnWidth ? (
+              <>
+                <MarksOverlay
+                  annotations={annotations}
+                  columnWidth={columnWidth}
+                />
+                <StrokesOverlay
+                  annotations={annotations}
+                  columnWidth={columnWidth}
+                />
+                <MemosOverlay
+                  annotations={annotations}
+                  columnWidth={columnWidth}
+                  articleId={article._id}
+                />
+              </>
+            ) : null}
+          </article>
+        </div>
       </div>
+      {outline.length > 0 && outlineOpen ? (
+        <div className="document-outline-drawer">
+          <button
+            type="button"
+            className="document-outline-scrim"
+            onClick={() => setOutlineOpen(false)}
+            aria-label="Close document outline"
+          />
+          <aside
+            ref={drawerPanelRef}
+            className="document-outline-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Document outline"
+            tabIndex={-1}
+          >
+            <button
+              type="button"
+              className="document-outline-close"
+              onClick={() => setOutlineOpen(false)}
+              aria-label="Close document outline"
+            >
+              Close
+            </button>
+            <DocumentOutline
+              entries={outline}
+              activeId={activeOutlineId}
+              onNavigate={onOutlineNavigate}
+            />
+          </aside>
+        </div>
+      ) : null}
     </div>
   );
 }

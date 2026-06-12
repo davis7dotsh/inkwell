@@ -39,13 +39,22 @@ function RuleDivider() {
   );
 }
 
-function BlockView({ block }: { block: Block }) {
+function BlockView({
+  block,
+  blockIndex,
+  headingIds,
+}: {
+  block: Block;
+  blockIndex: number;
+  headingIds?: ReadonlyMap<number, string>;
+}) {
   switch (block.type) {
     case "heading": {
       // Mobile caps heading styles at the h4 size; mirror that here.
       const Tag = headingTags[Math.min(block.level, 4) - 1];
+      const id = headingIds?.get(blockIndex);
       return (
-        <Tag className="article-heading">
+        <Tag id={id} tabIndex={id ? -1 : undefined} className="article-heading">
           <SpanText spans={block.spans} />
         </Tag>
       );
@@ -103,13 +112,20 @@ function BlockView({ block }: { block: Block }) {
 
 export const BlockRenderer = memo(function BlockRenderer({
   blocks,
+  headingIds,
 }: {
   blocks: Block[];
+  headingIds?: ReadonlyMap<number, string>;
 }) {
   return (
     <>
       {blocks.map((block, index) => (
-        <BlockView key={index} block={block} />
+        <BlockView
+          key={index}
+          block={block}
+          blockIndex={index}
+          headingIds={headingIds}
+        />
       ))}
     </>
   );
