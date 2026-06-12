@@ -22,6 +22,7 @@ import React, {
 import { Link, useParams } from "react-router-dom";
 
 import { MarksOverlay, StrokesOverlay } from "../components/AnnotationsOverlay";
+import { MemosOverlay } from "../components/MemosOverlay";
 import { BlockRenderer } from "../components/BlockRenderer";
 import { BrushStroke } from "../components/BrushStroke";
 import { MAX_CONTENT_WIDTH, useTheme } from "../lib/theme";
@@ -144,6 +145,8 @@ function parseAnnotations(doc: {
   strokesJson: string;
   boxesJson: string;
   notesJson: string;
+  /** Rows written before voice memos existed lack the column. */
+  memosJson?: string;
 }): Annotations | null {
   try {
     return {
@@ -151,6 +154,7 @@ function parseAnnotations(doc: {
       strokes: JSON.parse(doc.strokesJson),
       boxes: JSON.parse(doc.boxesJson),
       notes: JSON.parse(doc.notesJson),
+      memos: JSON.parse(doc.memosJson ?? "[]"),
     };
   } catch {
     return null;
@@ -361,6 +365,11 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
               <StrokesOverlay
                 annotations={annotations}
                 columnWidth={columnWidth}
+              />
+              <MemosOverlay
+                annotations={annotations}
+                columnWidth={columnWidth}
+                articleId={article._id}
               />
             </>
           ) : null}

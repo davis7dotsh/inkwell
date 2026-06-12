@@ -11,7 +11,14 @@ import {
 } from "../../lib/theme";
 import { GlassSurface } from "../glass";
 
-export type Tool = "read" | "pen" | "highlighter" | "box" | "note" | "eraser";
+export type Tool =
+  | "read"
+  | "pen"
+  | "highlighter"
+  | "box"
+  | "note"
+  | "memo"
+  | "eraser";
 
 const TOOLS: {
   tool: Tool;
@@ -23,6 +30,7 @@ const TOOLS: {
   { tool: "highlighter", icon: "marker", label: "Highlighter" },
   { tool: "box", icon: "vector-square", label: "Box" },
   { tool: "note", icon: "note-plus-outline", label: "Note" },
+  { tool: "memo", icon: "microphone-outline", label: "Voice memo" },
   { tool: "eraser", icon: "eraser", label: "Eraser" },
 ];
 

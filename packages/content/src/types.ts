@@ -75,6 +75,23 @@ export type NoteAnnotation = {
 };
 
 /**
+ * A recorded voice memo pinned to a location in the article. The audio file
+ * lives in remote storage, addressed by (articleId, id) — the persistence
+ * layer's concern, like the article itself.
+ */
+export type VoiceMemoAnnotation = {
+  id: string;
+  x: number;
+  y: number;
+  durationMs: number;
+  /** On-device transcription; "" when transcription was unavailable. */
+  transcript: string;
+  /** Audio upload state: "local" until the recording reaches remote storage. */
+  status: "local" | "uploaded";
+  createdAt: number;
+};
+
+/**
  * One annotation set for one article. Which article it belongs to is the
  * persistence layer's concern (Convex row / storage key), not part of the
  * content payload.
@@ -85,6 +102,7 @@ export type Annotations = {
   strokes: Stroke[];
   boxes: BoxAnnotation[];
   notes: NoteAnnotation[];
+  memos: VoiceMemoAnnotation[];
 };
 
 export const emptyAnnotations = (contentWidth: number): Annotations => ({
@@ -92,4 +110,5 @@ export const emptyAnnotations = (contentWidth: number): Annotations => ({
   strokes: [],
   boxes: [],
   notes: [],
+  memos: [],
 });

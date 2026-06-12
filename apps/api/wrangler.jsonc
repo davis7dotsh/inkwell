@@ -13,11 +13,16 @@
       "vars": {
         "CLERK_PUBLISHABLE_KEY": "pk_test_aGFwcHktc2hlZXAtODcuY2xlcmsuYWNjb3VudHMuZGV2JA",
         "CONVEX_SITE_URL": "https://abundant-grouse-159.convex.site"
-      }
+      },
+      // Bindings are non-inheritable: every env declares its own.
+      "r2_buckets": [
+        { "binding": "MEMOS", "bucket_name": "inkwell-memos-dev" }
+      ]
     }
   },
   "workers_dev": true,
   "routes": [{ "pattern": "api.inkwellapp.net", "custom_domain": true }],
+  "r2_buckets": [{ "binding": "MEMOS", "bucket_name": "inkwell-memos" }],
   "observability": {
     "enabled": true
   },
