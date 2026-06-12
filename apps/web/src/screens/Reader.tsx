@@ -144,9 +144,14 @@ function useActiveDocumentSection(
         if (!element || element.getBoundingClientRect().top > threshold) break;
         nextId = entry.id;
       }
+      // Only snap to the last entry when the page actually scrolls;
+      // otherwise short articles would pin it active forever.
+      const scrollable =
+        document.documentElement.scrollHeight > window.innerHeight + 4;
       const atBottom =
+        scrollable &&
         window.innerHeight + window.scrollY >=
-        document.documentElement.scrollHeight - 4;
+          document.documentElement.scrollHeight - 4;
       if (atBottom && outline.length > 0) {
         nextId = outline[outline.length - 1].id;
       }
@@ -281,22 +286,101 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
       behavior: reducedMotion ? "auto" : "smooth",
       block: "start",
     });
-    window.history.replaceState(null, "", `#${targetId}`);
+    // Move keyboard/SR focus to the landing spot (headings carry
+    // tabIndex={-1} for this), and preserve react-router's history state
+    // ({usr, key, idx}) — replacing it with null corrupts the router.
+    target.focus({ preventScroll: true });
+    window.history.replaceState(window.history.state, "", `#${targetId}`);
     setOutlineOpen(false);
   }, []);
 
+  // The drawer is an aria-modal dialog: focus moves into it on open, Tab
+  // cycles within it, the page behind it stops scrolling, and focus returns
+  // to the opener on dismissal (navigation focuses the target heading
+  // instead, which the cleanup leaves alone).
+  const drawerPanelRef = useRef<HTMLElement | null>(null);
+  const drawerReturnFocusRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
     if (!outlineOpen) return;
+    const panel = drawerPanelRef.current;
+    drawerReturnFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    panel?.focus();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOutlineOpen(false);
+      if (event.key === "Escape") {
+        // A search field with text consumes Escape to clear itself first.
+        if (
+          event.target instanceof HTMLInputElement &&
+          event.target.value !== ""
+        ) {
+          return;
+        }
+        setOutlineOpen(false);
+        return;
+      }
+      if (event.key !== "Tab" || !panel) return;
+      const focusables = Array.from(
+        panel.querySelectorAll<HTMLElement>(
+          "a[href], button:not([disabled]), input:not([disabled])",
+        ),
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey) {
+        if (active === first || active === panel || !panel.contains(active)) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else if (active === last || !panel.contains(active)) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      // Focus fell to <body> when the drawer unmounted, unless navigation
+      // already moved it to a heading.
+      if (document.activeElement === document.body) {
+        drawerReturnFocusRef.current?.focus();
+      }
+    };
   }, [outlineOpen]);
 
+  // Close the drawer when the layout switches to the desktop rail so it
+  // doesn't pop back open after resizing through the breakpoint.
   useEffect(() => {
+    if (!outlineOpen) return;
+    const desktop = window.matchMedia("(min-width: 1200px)");
+    const onChange = () => {
+      if (desktop.matches) setOutlineOpen(false);
+    };
+    onChange();
+    desktop.addEventListener("change", onChange);
+    return () => desktop.removeEventListener("change", onChange);
+  }, [outlineOpen]);
+
+  // Restore a #section deep link once per article. The outline's identity
+  // can change later (a blocksJson rewrite streaming in) and must not yank
+  // the reader back to the hash target mid-read.
+  const hashRestoredRef = useRef(false);
+  useEffect(() => {
+    if (hashRestoredRef.current) return;
     if (outline.length === 0 || !window.location.hash) return;
-    const targetId = decodeURIComponent(window.location.hash.slice(1));
+    hashRestoredRef.current = true;
+    let targetId: string;
+    try {
+      targetId = decodeURIComponent(window.location.hash.slice(1));
+    } catch {
+      return; // malformed percent-encoding in a hand-edited/truncated link
+    }
     const frame = requestAnimationFrame(() => {
       document.getElementById(targetId)?.scrollIntoView({ block: "start" });
     });
@@ -436,7 +520,11 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
         onToggleOutline={() => setOutlineOpen(true)}
       />
       <div className="reader-content">
-        <div className="reader-layout">
+        <div
+          className={`reader-layout${
+            outline.length > 0 ? " reader-layout-rail" : ""
+          }`}
+        >
           {outline.length > 0 ? (
             <aside className="document-outline-rail">
               <DocumentOutline
@@ -508,10 +596,12 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
             aria-label="Close document outline"
           />
           <aside
+            ref={drawerPanelRef}
             className="document-outline-panel"
             role="dialog"
             aria-modal="true"
             aria-label="Document outline"
+            tabIndex={-1}
           >
             <button
               type="button"

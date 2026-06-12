@@ -7,6 +7,15 @@ import React, {
   useState,
 } from "react";
 
+/** Mirror react-router's Link: let cmd/ctrl/shift/alt-click and non-primary
+ * buttons fall through to native anchor behavior (open in new tab). */
+const isPlainLeftClick = (event: React.MouseEvent) =>
+  event.button === 0 &&
+  !event.metaKey &&
+  !event.ctrlKey &&
+  !event.shiftKey &&
+  !event.altKey;
+
 export function DocumentOutline({
   entries,
   activeId,
@@ -62,6 +71,15 @@ export function DocumentOutline({
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              // First Escape clears the filter (consistently across
+              // browsers); only an empty field lets it close the drawer.
+              if (event.key === "Escape" && query) {
+                event.preventDefault();
+                event.stopPropagation();
+                setQuery("");
+              }
+            }}
             placeholder="Find a section"
           />
         </label>
@@ -76,6 +94,7 @@ export function DocumentOutline({
           }`}
           aria-current={activeId === "document-start" ? "location" : undefined}
           onClick={(event) => {
+            if (!isPlainLeftClick(event)) return;
             event.preventDefault();
             onNavigate("document-start");
           }}
@@ -98,6 +117,7 @@ export function DocumentOutline({
               aria-current={active ? "location" : undefined}
               title={entry.title}
               onClick={(event) => {
+                if (!isPlainLeftClick(event)) return;
                 event.preventDefault();
                 onNavigate(entry.id);
               }}

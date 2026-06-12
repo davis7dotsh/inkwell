@@ -5,7 +5,7 @@
 // the content column so they share its origin, exactly like mobile.
 import type { Annotations } from "@inkwell/content";
 import { strokeToSvgPath } from "@inkwell/content";
-import React from "react";
+import React, { memo } from "react";
 
 import { displayInkColor, useTheme } from "../lib/theme";
 
@@ -24,8 +24,13 @@ type Props = {
 /**
  * Ink strokes as one SVG. Rendered inside the content column
  * (`.strokes-overlay` stretches with it; ink may overflow the bounds).
+ * Memoized so reader re-renders (e.g. the outline's active-section state)
+ * don't rebuild every stroke path.
  */
-export function StrokesOverlay({ annotations, columnWidth }: Props) {
+export const StrokesOverlay = memo(function StrokesOverlay({
+  annotations,
+  columnWidth,
+}: Props) {
   const { isDark } = useTheme();
   const scale = annotationScale(annotations, columnWidth);
   if (annotations.strokes.length === 0) return null;
@@ -50,13 +55,16 @@ export function StrokesOverlay({ annotations, columnWidth }: Props) {
       </g>
     </svg>
   );
-}
+});
 
 /**
  * Key-section boxes and sticky-note bubbles, absolutely positioned inside
  * the content column. Box inset/outset paddings match mobile.
  */
-export function MarksOverlay({ annotations, columnWidth }: Props) {
+export const MarksOverlay = memo(function MarksOverlay({
+  annotations,
+  columnWidth,
+}: Props) {
   const scale = annotationScale(annotations, columnWidth);
   if (annotations.boxes.length === 0 && annotations.notes.length === 0) {
     return null;
@@ -86,4 +94,4 @@ export function MarksOverlay({ annotations, columnWidth }: Props) {
       ))}
     </div>
   );
-}
+});

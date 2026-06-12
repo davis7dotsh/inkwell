@@ -894,6 +894,13 @@ button {
   box-shadow: 0 0 0 3px var(--mist);
 }
 
+/* iOS Safari auto-zooms the page when a focused input is under 16px. */
+@media (pointer: coarse) {
+  .document-outline-search input {
+    font-size: 16px;
+  }
+}
+
 .document-outline-list {
   min-height: 0;
   overflow-y: auto;
@@ -1005,14 +1012,16 @@ button {
 }
 
 @media (min-width: 1200px) {
-  .reader-layout {
+  /* Grid only when the rail actually renders (.reader-layout-rail);
+   * heading-less articles keep the centered 900px column. Flexible side
+   * tracks let the reading column reach its 900px before the gutters
+   * absorb leftover space — fixed-max side tracks would starve it (grid
+   * distributes free space equally across tracks). */
+  .reader-layout-rail {
     display: grid;
     max-width: 1450px;
     margin: 0 auto;
-    grid-template-columns: minmax(220px, 260px) minmax(0, 900px) minmax(
-        0,
-        260px
-      );
+    grid-template-columns: minmax(220px, 1fr) minmax(0, 900px) minmax(0, 1fr);
     gap: 28px;
   }
 
@@ -1029,13 +1038,15 @@ button {
     padding-top: 2px;
   }
 
-  .content-column {
+  .reader-layout-rail .content-column {
     width: 100%;
     grid-column: 2;
   }
 }
 
-@media (max-width: 1199px) {
+/* 1199.98 (not 1199) so fractional viewport widths from zoom/DPR can't
+ * fall between this and the 1200px rail query, hiding both. */
+@media (max-width: 1199.98px) {
   .reader-outline-toggle {
     display: inline-flex;
   }
@@ -1289,7 +1300,8 @@ h4.article-heading {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
-  z-index: 5;
+  /* Above the sticky reader bar (z 10), below the outline drawer (z 20). */
+  z-index: 11;
   width: 300px;
   background: var(--surface);
   border: 1px solid var(--wash);
