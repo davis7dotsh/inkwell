@@ -268,8 +268,8 @@ const app = new Hono<{ Bindings: Bindings }>()
   })
   // MCP endpoint for agents (Claude Code, scripts — anything that can send
   // an Authorization header; see mcp.ts). Stateless streamable HTTP: fresh
-  // server + transport per request, per-spec method handling (GET → 405)
-  // done by the transport, so the route takes .all.
+  // server + transport per request. Takes .all so non-POST methods land
+  // here and get the 405 below instead of the SPA-less worker's 404.
   .all("/mcp", async (c) => {
     const userId = userIdOf(c);
     if (!userId) {
@@ -279,7 +279,22 @@ const app = new Hono<{ Bindings: Bindings }>()
         "WWW-Authenticate": 'Bearer error="invalid_token"',
       });
     }
-    const server = buildInkwellMcp(userId, c.env);
+    // Per spec, a server offering no server-initiated stream answers GET
+    // (and DELETE — no sessions to terminate) with 405. The transport can't
+    // do this itself: its stateless GET path opens an SSE stream that a
+    // discarded per-request server would never feed, hanging the client.
+    if (c.req.method !== "POST") {
+      return c.json(
+        {
+          jsonrpc: "2.0",
+          error: { code: -32000, message: "Method not allowed." },
+          id: null,
+        },
+        405,
+        { Allow: "POST" }
+      );
+    }
+    const server = buildInkwellMcp(userId, c.env, c.executionCtx);
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // stateless
       // Plain JSON responses (no SSE framing): simplest for scripts, and

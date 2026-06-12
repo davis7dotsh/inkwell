@@ -46,7 +46,14 @@ function parseJsonArray<T>(json: string): T[] {
 
 const byReadingOrder = (a: { y: number }, b: { y: number }) => a.y - b.y;
 
-export function buildInkwellMcp(userId: string, env: PipelineEnv): McpServer {
+/** The slice of ExecutionContext the tools need (structural, fake-able). */
+export type WaitUntil = { waitUntil(promise: Promise<unknown>): void };
+
+export function buildInkwellMcp(
+  userId: string,
+  env: PipelineEnv,
+  executionCtx: WaitUntil
+): McpServer {
   const server = new McpServer(
     { name: "inkwell", version: "0.1.0" },
     {
@@ -101,13 +108,20 @@ export function buildInkwellMcp(userId: string, env: PipelineEnv): McpServer {
           savedAt: Date.now(),
         }
       );
-      const outcome = await processArticle({
+      const pipeline = processArticle({
         fetchImpl: fetch,
         env,
         articleId,
         userId,
         url: url.toString(),
       });
+      // Backstop: if the client disconnects mid-save (timeout, ctrl-C), the
+      // runtime would cancel this invocation and strand the row in pending —
+      // waitUntil keeps the pipeline (and its complete/fail write) running.
+      // Note waitUntil only extends ~30s past a disconnect; if that ever
+      // bites, the full fix is a stale-pending sweep in Convex.
+      executionCtx.waitUntil(pipeline.catch(() => undefined));
+      const outcome = await pipeline;
 
       const structuredContent =
         outcome.status === "ready"

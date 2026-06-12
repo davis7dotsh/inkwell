@@ -29,9 +29,13 @@ vi.mock("@clerk/hono", () => ({
 
 import app from "../src/index";
 
+const waitUntilCalls: Promise<unknown>[] = [];
+
 const makeExecutionCtx = () =>
   ({
-    waitUntil: () => undefined,
+    waitUntil: (promise: Promise<unknown>) => {
+      waitUntilCalls.push(promise);
+    },
     passThroughOnException: () => undefined,
   }) as unknown as ExecutionContext;
 
@@ -81,6 +85,7 @@ const noScrape = () => {
 
 beforeEach(() => {
   authState.userId = "user_1";
+  waitUntilCalls.length = 0;
 });
 
 afterEach(() => {
@@ -98,6 +103,24 @@ describe("POST /mcp auth", () => {
     );
     expect(res.status).toBe(401);
     expect(res.headers.get("WWW-Authenticate")).toContain("Bearer");
+  });
+
+  it("answers non-POST methods with 405, not a hanging SSE stream", async () => {
+    // The transport's stateless GET path would open an SSE stream that this
+    // per-request server never feeds; the route must 405 first.
+    for (const method of ["GET", "DELETE"]) {
+      const res = await app.request(
+        "/mcp",
+        {
+          method,
+          headers: { Accept: "application/json, text/event-stream" },
+        },
+        TEST_ENV,
+        makeExecutionCtx()
+      );
+      expect(res.status).toBe(405);
+      expect(res.headers.get("Allow")).toBe("POST");
+    }
   });
 });
 
@@ -208,6 +231,9 @@ describe("save_article", () => {
       status: "ready",
       title: "Hello Inkwell",
     });
+    // The pipeline promise must also be registered with waitUntil so a
+    // client disconnect mid-save can't strand the row in pending.
+    expect(waitUntilCalls).toHaveLength(1);
   });
 
   it("reports failed when the scrape errors", async () => {

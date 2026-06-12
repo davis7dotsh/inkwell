@@ -791,6 +791,16 @@ console.log("firecrawlToArticle tests passed");
     "---",
     "empty blocks are dropped"
   );
+
+  // Code containing fence runs must not terminate the wrapping fence early.
+  assert.equal(
+    blocksToMarkdown([
+      { type: "code", text: "```js\nlet a = 1;\n```" },
+      { type: "paragraph", spans: [{ text: "after" }] },
+    ]),
+    "````\n```js\nlet a = 1;\n```\n````\n\nafter",
+    "fence outruns embedded backtick runs"
+  );
   console.log("blocksToMarkdown tests passed");
 }
 

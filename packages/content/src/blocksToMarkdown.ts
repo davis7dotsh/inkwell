@@ -35,8 +35,16 @@ function blockToMarkdown(block: Block): string {
             `${block.ordered ? `${i + 1}.` : "-"} ${spansToMarkdown(item)}`
         )
         .join("\n");
-    case "code":
-      return `\`\`\`\n${block.text}\n\`\`\``;
+    case "code": {
+      // The fence must outrun any backtick run inside the code, or an
+      // embedded ``` line would close it early (CommonMark).
+      const longestRun = (block.text.match(/`+/g) ?? []).reduce(
+        (max, run) => Math.max(max, run.length),
+        0
+      );
+      const fence = "`".repeat(Math.max(3, longestRun + 1));
+      return `${fence}\n${block.text}\n${fence}`;
+    }
     case "image": {
       const image = `![${block.alt ?? ""}](${block.src})`;
       return block.caption ? `${image}\n*${block.caption}*` : image;
