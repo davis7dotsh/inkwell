@@ -21,7 +21,12 @@ vi.mock("@clerk/hono", () => ({
     () => async (_c: unknown, next: () => Promise<void>) => {
       await next();
     },
-  getAuth: () => ({ userId: authState.userId }),
+  // Mirrors the real shape for both auth paths the app accepts (session JWT
+  // or user-scoped API key): routes narrow on isAuthenticated, then userId.
+  getAuth: () => ({
+    userId: authState.userId,
+    isAuthenticated: authState.userId !== null,
+  }),
 }));
 
 import app from "../src/index";

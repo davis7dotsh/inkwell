@@ -4,6 +4,7 @@
 // the real implementation at runtime.
 import nodeAssert from "node:assert/strict";
 
+import { blocksToMarkdown } from "../src/blocksToMarkdown";
 import { buildExportMarkdown } from "../src/exportMarkdown";
 import { htmlToBlocks } from "../src/htmlToBlocks";
 import { markdownToBlocks } from "../src/markdownToBlocks";
@@ -727,6 +728,97 @@ console.log("firecrawlToArticle tests passed");
     "no memo section without memos"
   );
   console.log("buildExportMarkdown memo tests passed");
+}
+
+// ---- blocksToMarkdown ----
+{
+  const blocks: Block[] = [
+    { type: "heading", level: 2, spans: [{ text: "Results" }] },
+    {
+      type: "paragraph",
+      spans: [
+        { text: "Parsing is " },
+        { text: "fast", bold: true },
+        { text: " — see " },
+        { text: "the docs", href: "https://example.com/docs" },
+        { text: "." },
+      ],
+    },
+    { type: "quote", spans: [{ text: "First line\nSecond line" }] },
+    {
+      type: "list",
+      ordered: true,
+      items: [[{ text: "one" }], [{ text: "two", italic: true }]],
+    },
+    { type: "list", ordered: false, items: [[{ text: "bullet" }]] },
+    { type: "code", text: "const x = 1;" },
+    {
+      type: "image",
+      src: "https://example.com/a.png",
+      alt: "chart",
+      caption: "Fig 1",
+    },
+    { type: "rule" },
+    { type: "paragraph", spans: [{ text: "inline " }, { text: "code", code: true }] },
+  ];
+  const markdown = blocksToMarkdown(blocks);
+  const expected = [
+    "## Results",
+    "Parsing is **fast** — see [the docs](https://example.com/docs).",
+    "> First line\n> Second line",
+    "1. one\n2. *two*",
+    "- bullet",
+    "```\nconst x = 1;\n```",
+    "![chart](https://example.com/a.png)\n*Fig 1*",
+    "---",
+    "inline `code`",
+  ].join("\n\n");
+  assert.equal(markdown, expected, "blocksToMarkdown serializes every block type");
+
+  // Round-trip sanity: markdown → blocks → markdown is stable for plain content.
+  const roundTrip = blocksToMarkdown(
+    markdownToBlocks("# Title\n\nA *styled* paragraph.")
+  );
+  assert.equal(
+    roundTrip,
+    "# Title\n\nA *styled* paragraph.",
+    "round-trips through markdownToBlocks"
+  );
+
+  // Blocks that serialize to nothing are dropped, not left as blank gaps.
+  assert.equal(
+    blocksToMarkdown([{ type: "paragraph", spans: [] }, { type: "rule" }]),
+    "---",
+    "empty blocks are dropped"
+  );
+
+  // Code containing fence runs must not terminate the wrapping fence early.
+  assert.equal(
+    blocksToMarkdown([
+      { type: "code", text: "```js\nlet a = 1;\n```" },
+      { type: "paragraph", spans: [{ text: "after" }] },
+    ]),
+    "````\n```js\nlet a = 1;\n```\n````\n\nafter",
+    "fence outruns embedded backtick runs"
+  );
+
+  // Inline code spans: delimiter outruns interior backticks; content
+  // touching a backtick at either end gets space padding (CommonMark).
+  assert.equal(
+    blocksToMarkdown([
+      {
+        type: "paragraph",
+        spans: [
+          { text: "foo`bar", code: true },
+          { text: " and " },
+          { text: "`lead", code: true },
+        ],
+      },
+    ]),
+    "``foo`bar`` and `` `lead ``",
+    "inline code handles interior and edge backticks"
+  );
+  console.log("blocksToMarkdown tests passed");
 }
 
 console.log("\nALL CONTENT TESTS PASSED");

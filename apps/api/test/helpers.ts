@@ -82,16 +82,30 @@ export type IngestLog = {
   fail: RecordedCall[];
 };
 
+/** Canned responses for the /agent/* Convex read actions, keyed by route. */
+export type AgentReads = Partial<
+  Record<
+    "articles" | "article" | "annotations",
+    (params: URLSearchParams) => Response
+  >
+>;
+
 /**
  * URL-dispatching stub: Firecrawl scrape/parse calls get `scrape()`
  * responses; Convex ingest calls are recorded and acknowledged
- * (create-pending → articleId).
+ * (create-pending → articleId); /agent reads are recorded and answered by
+ * the matching `reads` handler.
  */
-export function fakeNetwork(scrape: () => Response): {
+export function fakeNetwork(
+  scrape: () => Response,
+  reads: AgentReads = {}
+): {
   impl: typeof fetch;
   ingest: IngestLog;
+  agentCalls: RecordedCall[];
 } {
   const ingest: IngestLog = { "create-pending": [], complete: [], fail: [] };
+  const agentCalls: RecordedCall[] = [];
   const impl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url === FIRECRAWL_ENDPOINT || url === FIRECRAWL_PARSE_ENDPOINT) {
@@ -109,7 +123,16 @@ export function fakeNetwork(scrape: () => Response): {
         op === "create-pending" ? { articleId: "art1" } : { ok: true }
       );
     }
+    const agentMatch = /\/agent\/(articles|article|annotations)(?:\?|$)/.exec(
+      url
+    );
+    if (agentMatch) {
+      agentCalls.push({ url, headers: headersOf(init), body: undefined });
+      const handler = reads[agentMatch[1] as keyof AgentReads];
+      if (!handler) throw new Error(`no agent read stub for: ${url}`);
+      return handler(new URL(url).searchParams);
+    }
     throw new Error(`unexpected fetch in test: ${url}`);
   }) as typeof fetch;
-  return { impl, ingest };
+  return { impl, ingest, agentCalls };
 }

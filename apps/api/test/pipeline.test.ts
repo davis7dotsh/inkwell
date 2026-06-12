@@ -109,7 +109,7 @@ describe("processArticle", () => {
       articleId: "art1",
         url: "https://example.com",
       })
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ status: "failed", error: "network down" });
     expect(consoleError).toHaveBeenCalledOnce();
   });
 });
