@@ -3,18 +3,26 @@
 // parses inside ctx.waitUntil() (see pipeline.ts). Clients never poll — the
 // pending→ready transition streams to them via Convex live queries.
 //
+// Agents get the same data through /mcp (see mcp.ts): every route accepts a
+// user-scoped Clerk API key (Authorization: Bearer ak_...) as well as a
+// session JWT, so scripts can also drive the REST routes directly.
+//
 // Routes are chained off one Hono instance (mandatory for RPC type
 // inference). Clients import AppType type-only and connect via hcWithType.
 
 import { clerkMiddleware, getAuth } from "@clerk/hono";
 import { zValidator } from "@hono/zod-validator";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { Hono } from "hono";
 import { hc } from "hono/client";
 import { cors } from "hono/cors";
+import type { Context } from "hono";
 import { z } from "zod";
 
 import { createPending } from "./convexService";
+import { buildInkwellMcp } from "./mcp";
 import { processArticle, processUpload } from "./pipeline";
+import { kindOf, normalizeUrl } from "./url";
 
 export type Bindings = {
   FIRECRAWL_API_KEY: string;
@@ -46,28 +54,15 @@ function titleFromFilename(name: string): string {
 }
 
 /**
- * Normalizes a pasted URL: trims, prefixes https:// when no scheme, then
- * requires http(s) and a dotted hostname. Returns null when unsalvageable.
+ * Caller's Clerk user id — from a session JWT (apps) or a user-scoped API
+ * key (agents). Org-scoped keys have no userId and are rejected by the
+ * routes' null checks.
  */
-function normalizeUrl(raw: string): URL | null {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
-    ? trimmed
-    : `https://${trimmed}`;
-  let url: URL;
-  try {
-    url = new URL(withScheme);
-  } catch {
-    return null;
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-  if (!url.hostname.includes(".")) return null;
-  return url;
-}
-
-const kindOf = (url: URL): "web" | "pdf" =>
-  url.pathname.toLowerCase().endsWith(".pdf") ? "pdf" : "web";
+const userIdOf = (c: Context): string | null => {
+  const auth = getAuth(c, { acceptsToken: ["session_token", "api_key"] });
+  if (!auth?.isAuthenticated) return null;
+  return auth.userId ?? null;
+};
 
 // ---- voice memo audio (R2) ----
 // Memo recordings are small m4a files (~0.5MB/min, 10-minute cap on the
@@ -92,8 +87,8 @@ const app = new Hono<{ Bindings: Bindings }>()
   .get("/health", (c) => c.json({ ok: true }, 200))
   .use("*", clerkMiddleware())
   .post("/articles", zValidator("json", articleBody), async (c) => {
-    const auth = getAuth(c);
-    if (!auth?.userId) return c.json({ error: "Unauthorized" }, 401);
+    const userId = userIdOf(c);
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
 
     const url = normalizeUrl(c.req.valid("json").url);
     if (!url) return c.json({ error: "Invalid URL" }, 400);
@@ -103,7 +98,7 @@ const app = new Hono<{ Bindings: Bindings }>()
       c.env.CONVEX_SITE_URL,
       c.env.WORKER_SHARED_SECRET,
       {
-        userId: auth.userId,
+        userId,
         url: url.toString(),
         kind: kindOf(url),
         title: url.toString(), // placeholder until the scrape completes
@@ -115,7 +110,7 @@ const app = new Hono<{ Bindings: Bindings }>()
         fetchImpl: fetch,
         env: c.env,
         articleId,
-        userId: auth.userId,
+        userId,
         url: url.toString(),
       })
     );
@@ -126,8 +121,8 @@ const app = new Hono<{ Bindings: Bindings }>()
   // Uploaded articles get a synthetic `upload://<name>` url — clients use it
   // to hide open-original/retry affordances.
   .post("/articles/upload", zValidator("form", uploadForm), async (c) => {
-    const auth = getAuth(c);
-    if (!auth?.userId) return c.json({ error: "Unauthorized" }, 401);
+    const userId = userIdOf(c);
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
 
     const { file } = c.req.valid("form");
     if (!isPdf(file)) {
@@ -143,7 +138,7 @@ const app = new Hono<{ Bindings: Bindings }>()
       c.env.CONVEX_SITE_URL,
       c.env.WORKER_SHARED_SECRET,
       {
-        userId: auth.userId,
+        userId,
         url: `upload://${file.name}`,
         kind: "pdf",
         title: fallbackTitle,
@@ -155,7 +150,7 @@ const app = new Hono<{ Bindings: Bindings }>()
         fetchImpl: fetch,
         env: c.env,
         articleId,
-        userId: auth.userId,
+        userId,
         file,
         fallbackTitle,
       })
@@ -167,8 +162,8 @@ const app = new Hono<{ Bindings: Bindings }>()
   // has no Convex read access (ingest endpoints are write-only), so the
   // client supplies the article's url from its live articles.list data.
   .post("/articles/:id/retry", zValidator("json", articleBody), async (c) => {
-    const auth = getAuth(c);
-    if (!auth?.userId) return c.json({ error: "Unauthorized" }, 401);
+    const userId = userIdOf(c);
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
 
     const url = normalizeUrl(c.req.valid("json").url);
     if (!url) return c.json({ error: "Invalid URL" }, 400);
@@ -179,7 +174,7 @@ const app = new Hono<{ Bindings: Bindings }>()
         fetchImpl: fetch,
         env: c.env,
         articleId,
-        userId: auth.userId,
+        userId,
         url: url.toString(),
       })
     );
@@ -188,8 +183,8 @@ const app = new Hono<{ Bindings: Bindings }>()
   // Voice memo audio. The annotation itself (placement, transcript, upload
   // status) syncs through Convex; only the m4a bytes land here.
   .put("/memos/:articleId/:memoId", zValidator("param", memoParams), async (c) => {
-    const auth = getAuth(c);
-    if (!auth?.userId) return c.json({ error: "Unauthorized" }, 401);
+    const userId = userIdOf(c);
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
 
     const contentType = c.req.header("content-type") ?? "";
     if (!/^audio\//.test(contentType)) {
@@ -208,18 +203,18 @@ const app = new Hono<{ Bindings: Bindings }>()
     }
 
     const { articleId, memoId } = c.req.valid("param");
-    await c.env.MEMOS.put(memoKey(auth.userId, articleId, memoId), audio, {
+    await c.env.MEMOS.put(memoKey(userId, articleId, memoId), audio, {
       httpMetadata: { contentType: "audio/mp4" },
     });
     return c.json({ size: audio.byteLength }, 200);
   })
   .get("/memos/:articleId/:memoId", zValidator("param", memoParams), async (c) => {
-    const auth = getAuth(c);
-    if (!auth?.userId) return c.json({ error: "Unauthorized" }, 401);
+    const userId = userIdOf(c);
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
 
     const { articleId, memoId } = c.req.valid("param");
     const object = await c.env.MEMOS.get(
-      memoKey(auth.userId, articleId, memoId),
+      memoKey(userId, articleId, memoId),
       { range: c.req.raw.headers, onlyIf: c.req.raw.headers }
     );
     if (!object) return c.json({ error: "Not found" }, 404);
@@ -264,12 +259,36 @@ const app = new Hono<{ Bindings: Bindings }>()
     return new Response(object.body, { status, headers });
   })
   .delete("/memos/:articleId/:memoId", zValidator("param", memoParams), async (c) => {
-    const auth = getAuth(c);
-    if (!auth?.userId) return c.json({ error: "Unauthorized" }, 401);
+    const userId = userIdOf(c);
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
 
     const { articleId, memoId } = c.req.valid("param");
-    await c.env.MEMOS.delete(memoKey(auth.userId, articleId, memoId));
+    await c.env.MEMOS.delete(memoKey(userId, articleId, memoId));
     return c.json({ ok: true }, 200);
+  })
+  // MCP endpoint for agents (Claude Code, scripts — anything that can send
+  // an Authorization header; see mcp.ts). Stateless streamable HTTP: fresh
+  // server + transport per request, per-spec method handling (GET → 405)
+  // done by the transport, so the route takes .all.
+  .all("/mcp", async (c) => {
+    const userId = userIdOf(c);
+    if (!userId) {
+      // A real 401 + WWW-Authenticate is what MCP clients key off; OAuth
+      // discovery metadata can be layered on later without reshaping this.
+      return c.json({ error: "Unauthorized" }, 401, {
+        "WWW-Authenticate": 'Bearer error="invalid_token"',
+      });
+    }
+    const server = buildInkwellMcp(userId, c.env);
+    const transport = new WebStandardStreamableHTTPServerTransport({
+      sessionIdGenerator: undefined, // stateless
+      // Plain JSON responses (no SSE framing): simplest for scripts, and
+      // clients are required to support both. Revisit if a tool ever wants
+      // to stream progress notifications mid-call.
+      enableJsonResponse: true,
+    });
+    await server.connect(transport);
+    return transport.handleRequest(c.req.raw);
   });
 
 export type AppType = typeof app;

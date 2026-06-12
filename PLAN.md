@@ -163,6 +163,12 @@ scope by `userId`; throw on cross-user access):
   in `convex/http.ts` (served on `https://<deployment>.convex.site/...` —
   note `.site`, not `.cloud`). See PLAN-integration-notes.md for the exact
   pattern. Internal mutations stay invisible to clients.
+- Service-side reads (for the worker's MCP tools): `internalQuery`s
+  `articles.listForAgent` / `articles.getForAgent` /
+  `annotations.getForAgent`, exposed as GET HTTP actions `/agent/articles`,
+  `/agent/article`, `/agent/annotations` behind the same shared secret. The
+  worker authenticates the caller (Clerk session or API key) and asserts
+  `userId` explicitly — same trust model as the ingest writes.
 
 ## 6. `apps/api` — Hono worker
 
@@ -186,6 +192,13 @@ Routes (zod-validated via `@hono/zod-validator`):
 - `POST /articles/:id/retry` → re-run pipeline for a `failed` article (must
   belong to caller).
 - `GET /health` → `{ ok: true }` (no auth).
+- `ALL /mcp` → stateless MCP server (`src/mcp.ts`) with tools
+  `save_article` / `list_articles` / `get_article` / `get_notes`. Every
+  route accepts a user-scoped Clerk API key (`Authorization: Bearer ak_...`)
+  as well as a session JWT (`getAuth(c, { acceptsToken: ["session_token",
+  "api_key"] })`), so agents can also hit the REST routes (e.g.
+  `/articles/upload` for local PDFs — file bytes don't belong in MCP tool
+  args).
 
 `processArticle`:
 1. `POST https://api.firecrawl.dev/v2/scrape` with

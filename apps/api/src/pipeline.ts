@@ -14,6 +14,15 @@ export type PipelineEnv = {
   CONVEX_SITE_URL: string;
 };
 
+/**
+ * Where the article landed. The REST routes run the pipeline in waitUntil()
+ * and drop this (clients watch the row via Convex live queries); the MCP
+ * save_article tool awaits it to answer the agent synchronously.
+ */
+export type PipelineOutcome =
+  | { status: "ready"; title: string }
+  | { status: "failed"; error: string };
+
 async function runPipeline(options: {
   fetchImpl: typeof fetch;
   env: PipelineEnv;
@@ -22,7 +31,7 @@ async function runPipeline(options: {
   fetchContent: () => Promise<FirecrawlScrape>;
   /** Used when Firecrawl metadata/content yields no usable title. */
   fallbackTitle?: string;
-}): Promise<void> {
+}): Promise<PipelineOutcome> {
   const { fetchImpl, env, articleId, userId, fetchContent, fallbackTitle } =
     options;
   try {
@@ -41,6 +50,7 @@ async function runPipeline(options: {
       excerpt: article.excerpt,
       blocksJson: JSON.stringify(article.blocks),
     });
+    return { status: "ready", title };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     try {
@@ -56,6 +66,7 @@ async function runPipeline(options: {
         failError
       );
     }
+    return { status: "failed", error: message };
   }
 }
 
@@ -65,9 +76,9 @@ export async function processArticle(options: {
   articleId: string;
   userId: string;
   url: string;
-}): Promise<void> {
+}): Promise<PipelineOutcome> {
   const { fetchImpl, env, articleId, userId, url } = options;
-  await runPipeline({
+  return runPipeline({
     fetchImpl,
     env,
     articleId,
@@ -85,9 +96,9 @@ export async function processUpload(options: {
   userId: string;
   file: File;
   fallbackTitle: string;
-}): Promise<void> {
+}): Promise<PipelineOutcome> {
   const { fetchImpl, env, articleId, userId, file, fallbackTitle } = options;
-  await runPipeline({
+  return runPipeline({
     fetchImpl,
     env,
     articleId,
