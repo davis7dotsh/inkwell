@@ -244,7 +244,7 @@ export function buildInkwellMcp(
         article.siteName ? `Site: ${article.siteName}` : undefined,
         `Source: ${article.url}`,
         `Saved: ${new Date(article.savedAt).toISOString()}`,
-        `Read status: ${article.readStatus ?? "unread"}`,
+        `Read status: ${article.readStatus}`,
       ]
         .filter(Boolean)
         .join("\n");

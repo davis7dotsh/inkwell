@@ -59,6 +59,15 @@ function param(req: Request, name: string): string | undefined {
   return new URL(req.url).searchParams.get(name) ?? undefined;
 }
 
+const READ_STATUSES = ["unread", "in_progress", "read"] as const;
+const ARTICLE_STATUSES = ["pending", "ready", "failed"] as const;
+
+const isOneOf = <T extends string>(
+  value: string | undefined,
+  allowed: readonly T[]
+): value is T | undefined =>
+  value === undefined || (allowed as readonly string[]).includes(value);
+
 http.route({
   path: "/agent/articles",
   method: "GET",
@@ -71,31 +80,29 @@ http.route({
     if (limit !== undefined && !Number.isFinite(limit)) {
       return new Response("limit must be a number", { status: 400 });
     }
-    // Validators on the internalQuery reject bad filter values with a
-    // descriptive ArgumentValidationError; surface those as 400s.
-    try {
-      const articles = await ctx.runQuery(internal.articles.listForAgent, {
-        userId,
-        readStatus: param(req, "readStatus") as
-          | "unread"
-          | "in_progress"
-          | "read"
-          | undefined,
-        status: param(req, "status") as
-          | "pending"
-          | "ready"
-          | "failed"
-          | undefined,
-        limit,
-      });
-      return Response.json({ articles });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.includes("ArgumentValidationError")) {
-        return new Response(message, { status: 400 });
-      }
-      throw error;
+    // Validate filters here (not via the internalQuery's validators) so bad
+    // values are a clean 400 instead of pattern-matching Convex error text.
+    const readStatus = param(req, "readStatus");
+    if (!isOneOf(readStatus, READ_STATUSES)) {
+      return new Response(
+        `readStatus must be one of: ${READ_STATUSES.join(", ")}`,
+        { status: 400 }
+      );
     }
+    const status = param(req, "status");
+    if (!isOneOf(status, ARTICLE_STATUSES)) {
+      return new Response(
+        `status must be one of: ${ARTICLE_STATUSES.join(", ")}`,
+        { status: 400 }
+      );
+    }
+    const articles = await ctx.runQuery(internal.articles.listForAgent, {
+      userId,
+      readStatus,
+      status,
+      limit,
+    });
+    return Response.json({ articles });
   }),
 });
 

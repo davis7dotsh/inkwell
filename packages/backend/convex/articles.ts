@@ -170,7 +170,8 @@ export const getForAgent = internalQuery({
     if (!id) return null;
     const article = await ctx.db.get(id);
     if (!article || article.userId !== args.userId) return null;
-    return article;
+    // Same legacy-row normalization as listForAgent.
+    return { ...article, readStatus: article.readStatus ?? "unread" };
   },
 });
 

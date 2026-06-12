@@ -4,10 +4,21 @@
 // hand article text to LLMs.
 import type { Block, Span } from "./types";
 
+/** Longest run of consecutive backticks in the text (0 when none). */
+const longestBacktickRun = (text: string): number =>
+  (text.match(/`+/g) ?? []).reduce((max, run) => Math.max(max, run.length), 0);
+
 function spanToMarkdown(span: Span): string {
   let text = span.text;
   if (!text) return "";
-  if (span.code) text = `\`${text}\``;
+  if (span.code) {
+    // CommonMark code spans: the delimiter must outrun any interior backtick
+    // run, and content that starts/ends with a backtick needs space padding
+    // (one leading+trailing space is stripped when both are present).
+    const fence = "`".repeat(longestBacktickRun(text) + 1);
+    const pad = text.startsWith("`") || text.endsWith("`") ? " " : "";
+    text = `${fence}${pad}${text}${pad}${fence}`;
+  }
   if (span.bold) text = `**${text}**`;
   if (span.italic) text = `*${text}*`;
   if (span.href) text = `[${text}](${span.href})`;
@@ -38,11 +49,7 @@ function blockToMarkdown(block: Block): string {
     case "code": {
       // The fence must outrun any backtick run inside the code, or an
       // embedded ``` line would close it early (CommonMark).
-      const longestRun = (block.text.match(/`+/g) ?? []).reduce(
-        (max, run) => Math.max(max, run.length),
-        0
-      );
-      const fence = "`".repeat(Math.max(3, longestRun + 1));
+      const fence = "`".repeat(Math.max(3, longestBacktickRun(block.text) + 1));
       return `${fence}\n${block.text}\n${fence}`;
     }
     case "image": {

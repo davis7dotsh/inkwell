@@ -118,7 +118,7 @@ export type AgentArticle = {
   excerpt?: string;
   blocksJson?: string;
   savedAt: number;
-  readStatus?: ReadStatus;
+  readStatus: ReadStatus; // legacy rows normalized to "unread" server-side
 };
 
 export type AgentAnnotations = {
@@ -175,7 +175,14 @@ export async function listArticles(
     readStatus: args.readStatus,
     status: args.status,
     limit: args.limit,
-  })) as { articles: AgentArticleSummary[] };
+  })) as { articles: AgentArticleSummary[] } | null;
+  if (result === null) {
+    // Unlike the by-id reads, this route never 404s — a 404 means the
+    // deployment doesn't have the /agent routes yet.
+    throw new Error(
+      "Convex /agent/articles returned 404 — is @inkwell/backend deployed with the agent read routes?"
+    );
+  }
   return result.articles;
 }
 

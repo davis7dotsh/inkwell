@@ -801,6 +801,23 @@ console.log("firecrawlToArticle tests passed");
     "````\n```js\nlet a = 1;\n```\n````\n\nafter",
     "fence outruns embedded backtick runs"
   );
+
+  // Inline code spans: delimiter outruns interior backticks; content
+  // touching a backtick at either end gets space padding (CommonMark).
+  assert.equal(
+    blocksToMarkdown([
+      {
+        type: "paragraph",
+        spans: [
+          { text: "foo`bar", code: true },
+          { text: " and " },
+          { text: "`lead", code: true },
+        ],
+      },
+    ]),
+    "``foo`bar`` and `` `lead ``",
+    "inline code handles interior and edge backticks"
+  );
   console.log("blocksToMarkdown tests passed");
 }
 
