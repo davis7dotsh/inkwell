@@ -106,21 +106,23 @@ export function Toolbar({
             />
           </Pressable>
         ))}
-        <View style={styles.divider} />
-        <Pressable
-          onPress={onUndo}
-          disabled={!canUndo}
-          accessibilityRole="button"
-          accessibilityLabel="Undo last annotation"
-          accessibilityState={{ disabled: !canUndo }}
-          style={styles.button}
-        >
-          <MaterialCommunityIcons
-            name="undo"
-            size={22}
-            color={canUndo ? c.inkSecondary : c.hairline}
-          />
-        </Pressable>
+        {canUndo ? (
+          <>
+            <View style={styles.divider} />
+            <Pressable
+              onPress={onUndo}
+              accessibilityRole="button"
+              accessibilityLabel="Undo last annotation"
+              style={styles.button}
+            >
+              <MaterialCommunityIcons
+                name="undo"
+                size={22}
+                color={c.inkSecondary}
+              />
+            </Pressable>
+          </>
+        ) : null}
       </GlassSurface>
     </View>
   );

@@ -4,7 +4,10 @@
 // the real implementation at runtime.
 import nodeAssert from "node:assert/strict";
 
-import { buildDocumentOutline } from "../src/documentOutline";
+import {
+  buildDocumentOutline,
+  inferDocumentHeadings,
+} from "../src/documentOutline";
 import { buildExportMarkdown } from "../src/exportMarkdown";
 import { htmlToBlocks } from "../src/htmlToBlocks";
 import { markdownToBlocks } from "../src/markdownToBlocks";
@@ -754,6 +757,70 @@ assert.ok(
 );
 
 console.log("buildDocumentOutline tests passed");
+
+// ============================================================
+// inferDocumentHeadings
+// ============================================================
+
+const paragraph = (text: string): Block => ({
+  type: "paragraph",
+  spans: [{ text }],
+});
+const inferred = inferDocumentHeadings([
+  paragraph("System card title"),
+  paragraph("Executive Summary"),
+  paragraph("Contents"),
+  paragraph("2.3.4 External testing 45 2.4 Alignment risk update 55"),
+  paragraph("1 Introduction"),
+  paragraph("Opening body."),
+  paragraph("1.1 Training data and process"),
+  paragraph("Training body."),
+  paragraph("1 Note that:"),
+  paragraph("2 RSP evaluations"),
+  paragraph("2.1 Risk assessment process"),
+  paragraph(
+    "3 We re-run this evaluation upon finding a bug. See section 2.3.7.1 for details."
+  ),
+  paragraph("3 Cyber"),
+  paragraph("3.1 Introduction"),
+  paragraph(
+    "3.1.1 Capabilities This paragraph was merged into the heading and is intentionally much too long to promote because treating the whole body as a heading would damage the reader. It continues with enough ordinary prose to exceed the conservative heading-length limit."
+  ),
+  paragraph("4.8 and Opus 4.7 performed similarly in this evaluation."),
+  paragraph("4 Safeguards and harmlessness"),
+]);
+
+assert.deepEqual(
+  inferred
+    .map((block, index) =>
+      block.type === "heading"
+        ? { index, level: block.level, text: spanText(block.spans) }
+        : null
+    )
+    .filter(Boolean),
+  [
+    { index: 1, level: 1, text: "Executive Summary" },
+    { index: 4, level: 1, text: "1 Introduction" },
+    { index: 6, level: 2, text: "1.1 Training data and process" },
+    { index: 9, level: 1, text: "2 RSP evaluations" },
+    { index: 10, level: 2, text: "2.1 Risk assessment process" },
+    { index: 12, level: 1, text: "3 Cyber" },
+    { index: 13, level: 2, text: "3.1 Introduction" },
+    { index: 16, level: 1, text: "4 Safeguards and harmlessness" },
+  ],
+  "paragraph-only PDF sections become headings without promoting TOC fragments, footnotes, or merged body text"
+);
+const nativeHeadingBlocks: Block[] = [
+  { type: "heading", level: 2, spans: [{ text: "Native heading" }] },
+  paragraph("Body"),
+];
+assert.equal(
+  inferDocumentHeadings(nativeHeadingBlocks),
+  nativeHeadingBlocks,
+  "documents with native headings remain unchanged"
+);
+
+console.log("inferDocumentHeadings tests passed");
 
 // ════════════════════════════════════════════════════════════════════
 // buildExportMarkdown — voice memos

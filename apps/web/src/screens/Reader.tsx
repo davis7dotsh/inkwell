@@ -7,6 +7,7 @@ import {
   buildDocumentOutline,
   buildExportMarkdown,
   emptyAnnotations,
+  inferDocumentHeadings,
   type Annotations,
   type Block,
   type BlockLayout,
@@ -258,7 +259,7 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
   const blocks = useMemo<Block[]>(() => {
     if (!article?.blocksJson) return [];
     try {
-      return JSON.parse(article.blocksJson) as Block[];
+      return inferDocumentHeadings(JSON.parse(article.blocksJson) as Block[]);
     } catch {
       return [];
     }
