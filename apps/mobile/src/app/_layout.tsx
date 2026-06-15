@@ -178,7 +178,7 @@ function ConfigNeededScreen() {
     <View style={styles.configScreen}>
       <Text style={styles.configTitle}>Inkwell</Text>
       <Text style={styles.configText}>
-        Almost there — this build is missing configuration. Copy
+        Almost there. This build is missing configuration. Copy
         {" .env.example"} to {".env.local"} and set:
       </Text>
       {missing.map((name) => (

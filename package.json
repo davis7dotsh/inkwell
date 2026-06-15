@@ -9,6 +9,7 @@
     "api": "pnpm --filter @inkwell/api dev",
     "test": "pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck",
-    "ipad": "pnpm --filter inkwell-mobile ipad"
+    "ipad": "pnpm --filter inkwell-mobile ipad",
+    "iphone": "pnpm --filter inkwell-mobile iphone"
   }
 }

@@ -50,7 +50,6 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { BlockRenderer } from "../../components/BlockRenderer";
-import { BrushStroke } from "../../components/BrushStroke";
 import {
   DOCUMENT_START_ID,
   DocumentOutline,
@@ -91,7 +90,8 @@ import {
 } from "../../lib/theme";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
-const OUTLINE_RAIL_BREAKPOINT = 1180;
+const OUTLINE_RAIL_BREAKPOINT = 1320;
+const IS_IPHONE = Platform.OS === "ios" && !Platform.isPad;
 
 type UndoOp =
   | { kind: "stroke" | "box" | "note" | "memo"; id: string }
@@ -1131,6 +1131,12 @@ export default function ArticleScreen() {
     <View style={styles.screen}>
       <ScreenHeader
         title={article?.title ?? ""}
+        subtitle={
+          article
+            ? [article.siteName, savedDate].filter(Boolean).join("  ·  ")
+            : undefined
+        }
+        compact={IS_IPHONE}
         right={
           ready ? (
             <View style={styles.headerActions}>
@@ -1209,23 +1215,24 @@ export default function ArticleScreen() {
                   }}
                 >
                   <GestureDetector gesture={drawGestures}>
-                    <View collapsable={false} style={styles.scrollContent}>
+                    <View
+                      collapsable={false}
+                      style={styles.scrollContent}
+                    >
                       <View
                         style={{ width: contentWidth, alignSelf: "center" }}
                       >
-                        <Text style={styles.title}>{article.title}</Text>
+                        <Text
+                          style={[styles.title, IS_IPHONE && styles.phoneTitle]}
+                        >
+                          {article.title}
+                        </Text>
                         <Text style={styles.meta}>
                           {[article.byline, article.siteName, savedDate]
                             .filter(Boolean)
                             .join("  ·  ")}
                         </Text>
-                        <BrushStroke
-                          width={Math.min(220, contentWidth * 0.4)}
-                          height={8}
-                          color={c.wash}
-                          opacity={0.75}
-                          style={{ marginBottom: 26 }}
-                        />
+                        <View style={styles.titleRule} />
                         <BlockRenderer
                           blocks={blocks}
                           contentWidth={contentWidth}
@@ -1268,7 +1275,7 @@ export default function ArticleScreen() {
                               ]}
                             >
                               {isRead
-                                ? "✓ Read — mark as unread"
+                                ? "Read. Mark as unread"
                                 : "Mark as read"}
                             </Text>
                           </Pressable>
@@ -1303,6 +1310,7 @@ export default function ArticleScreen() {
             onPenColorChange={setPenColor}
             canUndo={undoStack.length > 0}
             onUndo={undo}
+            isPhone={IS_IPHONE}
           />
 
           <NoteEditorModal
@@ -1378,9 +1386,9 @@ const themed = makeThemedStyles((c) =>
       width: OUTLINE_RAIL_WIDTH,
       borderRightWidth: StyleSheet.hairlineWidth,
       borderRightColor: c.hairline,
-      backgroundColor: c.background,
-      paddingHorizontal: 14,
-      paddingTop: 20,
+      backgroundColor: c.surface,
+      paddingHorizontal: 18,
+      paddingTop: 24,
     },
     headerActions: {
       flexDirection: "row",
@@ -1392,11 +1400,11 @@ const themed = makeThemedStyles((c) =>
       top: 0,
       left: 0,
       right: 0,
-      height: 3,
+      height: 2,
       zIndex: 10,
     },
     progressFill: {
-      height: 3,
+      height: 2,
       backgroundColor: c.accent,
       transformOrigin: "left",
       borderTopRightRadius: 2,
@@ -1420,21 +1428,31 @@ const themed = makeThemedStyles((c) =>
     },
     title: {
       fontFamily: serif,
-      fontSize: 32,
-      lineHeight: 40,
-      fontWeight: "700",
+      fontSize: 40,
+      lineHeight: 48,
+      fontWeight: "600",
       color: c.ink,
-      marginBottom: 12,
+      marginBottom: 14,
+    },
+    phoneTitle: {
+      fontSize: 31,
+      lineHeight: 39,
     },
     meta: {
-      fontSize: 13,
+      fontSize: 12.5,
       color: c.inkFaint,
-      marginBottom: 14,
+      marginBottom: 22,
+    },
+    titleRule: {
+      width: 54,
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: c.inkFaint,
+      marginBottom: 34,
     },
     readFooter: {
       alignItems: "center",
       gap: 10,
-      marginTop: 48,
+      marginTop: 56,
     },
     markReadButton: {
       height: 44,
@@ -1443,17 +1461,17 @@ const themed = makeThemedStyles((c) =>
       paddingHorizontal: 26,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: c.accent,
+      backgroundColor: c.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.hairline,
     },
     markReadButtonDone: {
-      backgroundColor: c.surface,
-      borderWidth: 1,
-      borderColor: c.hairline,
+      backgroundColor: c.surfaceMuted,
     },
     markReadText: {
       fontSize: 15,
       fontWeight: "600",
-      color: c.onAccent,
+      color: c.accent,
     },
     markReadTextDone: {
       color: c.inkSecondary,
