@@ -404,6 +404,40 @@ describe("get_notes", () => {
     expect(response.result?.content?.[0]?.text).toContain("No annotations yet");
   });
 
+  it("ignores malformed note and transcript entries", async () => {
+    stubNetwork(noScrape, {
+      annotations: () => ({
+        articleTitle: "Article A",
+        articleUrl: "https://example.com/a",
+        annotations: {
+          contentWidth: 800,
+          notesJson: JSON.stringify([
+            null,
+            { y: 10 },
+            { y: 20, text: 42 },
+            { y: 30, text: "Valid note" },
+          ]),
+          memosJson: JSON.stringify([
+            false,
+            { y: 10, transcript: null },
+            { y: 20, transcript: "Valid transcript" },
+          ]),
+          strokesJson: "[]",
+          boxesJson: "[]",
+          updatedAt: 1750000000000,
+        },
+      }),
+    });
+
+    const response = await callTool("get_notes", { articleId: "art1" });
+
+    expect(response.result?.isError).toBeFalsy();
+    expect(response.result?.structuredContent).toMatchObject({
+      notes: ["Valid note"],
+      voiceMemoTranscripts: ["Valid transcript"],
+    });
+  });
+
   it("returns a tool error for unknown ids", async () => {
     stubNetwork(noScrape, {
       annotations: () => null,

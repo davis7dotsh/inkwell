@@ -10,13 +10,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { blocksToMarkdown } from "@inkwell/content";
-import type {
-  Block,
-  BoxAnnotation,
-  NoteAnnotation,
-  Stroke,
-  VoiceMemoAnnotation,
-} from "@inkwell/content";
+import type { Block, BoxAnnotation, Stroke } from "@inkwell/content";
 import { z } from "zod";
 
 import type { ConvexService } from "./convexService";
@@ -42,6 +36,15 @@ function parseJsonArray<T>(json: string): T[] {
   } catch {
     return [];
   }
+}
+
+function hasTextAtY<Key extends "text" | "transcript">(
+  value: unknown,
+  key: Key
+): value is { y: number } & Record<Key, string> {
+  if (typeof value !== "object" || value === null) return false;
+  const fields = value as Record<string, unknown>;
+  return typeof fields.y === "number" && typeof fields[key] === "string";
 }
 
 const byReadingOrder = (a: { y: number }, b: { y: number }) => a.y - b.y;
@@ -275,13 +278,15 @@ export function buildInkwellMcp(
 
       const row = result.annotations;
       const notes = row
-        ? parseJsonArray<NoteAnnotation>(row.notesJson)
+        ? parseJsonArray<unknown>(row.notesJson)
+            .filter((note) => hasTextAtY(note, "text"))
             .sort(byReadingOrder)
             .map((note) => note.text.trim())
             .filter(Boolean)
         : [];
       const voiceMemoTranscripts = row
-        ? parseJsonArray<VoiceMemoAnnotation>(row.memosJson)
+        ? parseJsonArray<unknown>(row.memosJson)
+            .filter((memo) => hasTextAtY(memo, "transcript"))
             .sort(byReadingOrder)
             .map((memo) => memo.transcript.trim())
             .filter(Boolean)
