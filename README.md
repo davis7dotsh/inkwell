@@ -16,7 +16,7 @@ pnpm monorepo:
 |---|---|
 | `apps/mobile` | Expo app (SDK 56; Expo Go unavailable — use dev-client builds, see apps/mobile/CLAUDE.md). Reader + Apple Pencil annotation, Clerk SSO sign-in, Convex live queries. |
 | `apps/web` | React SPA on a Cloudflare Worker (Vite + static assets). Save console, live library, read-only reader that shows your iPad markups. |
-| `apps/api` | Hono worker. Clerk-authed RPC; scrapes via Firecrawl v2 (web pages and PDFs), normalizes to blocks, writes to Convex through shared-secret HTTP actions. |
+| `apps/api` | Hono worker. Clerk-authed RPC and MCP; scrapes via Firecrawl v2, normalizes to blocks, and calls internal Convex functions with a deployment key. |
 | `packages/content` | Shared content model: Block types, htmlToBlocks, markdownToBlocks, Firecrawl normalizer, Markdown export, stroke geometry. |
 | `packages/backend` | Convex schema + functions (articles, annotations) with Clerk auth. |
 
@@ -24,8 +24,6 @@ Save flow: client → `POST /articles` (202 immediately) → worker scrapes in
 `waitUntil` → article flips pending→ready in Convex → every signed-in device
 updates live. Annotations save with a debounced Convex mutation and follow
 you across devices.
-
-Full design doc: PLAN.md · API/version specifics: PLAN-integration-notes.md.
 
 ## Develop
 

@@ -4,7 +4,8 @@ pnpm workspaces:
 
 - `apps/mobile` — Expo app (SDK 54, pinned). **Read apps/mobile/AGENTS.md before touching it.**
 - `apps/web` — React SPA on a Cloudflare Worker (Vite + static assets)
-- `apps/api` — Hono worker (Firecrawl scraping, Clerk auth, writes to Convex)
+- `apps/api` — Hono worker (Firecrawl scraping, Clerk auth, Convex service
+  reads/writes, MCP server at `/mcp` for agents via Clerk API keys)
 - `packages/content` — shared Block model + parsers (pure TS, RN-free)
 - `packages/backend` — Convex schema/functions
 

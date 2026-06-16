@@ -10,8 +10,7 @@
     "types": ["vite/client"],
     "skipLibCheck": true
   },
-  // The backend env.d.ts ambient (process.env in the Convex runtime) must be
-  // in this program too: importing the generated Convex api type-checks
-  // ../../packages/backend/convex/http.ts from source.
+  // Keep the backend runtime's process.env ambient available while importing
+  // generated Convex API types from source.
   "include": ["src", "../../packages/backend/convex/env.d.ts"]
 }

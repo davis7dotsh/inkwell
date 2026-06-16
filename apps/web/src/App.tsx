@@ -9,6 +9,7 @@ import { Link, Route, Routes } from "react-router-dom";
 import { BrushStroke } from "./components/BrushStroke";
 import { useTheme } from "./lib/theme";
 import { Library } from "./screens/Library";
+import { McpSetup } from "./screens/McpSetup";
 import { Reader } from "./screens/Reader";
 
 function NotFound() {
@@ -50,6 +51,7 @@ export function App() {
       <Authenticated>
         <Routes>
           <Route path="/" element={<Library />} />
+          <Route path="/mcp-setup" element={<McpSetup />} />
           <Route path="/read/:id" element={<Reader />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

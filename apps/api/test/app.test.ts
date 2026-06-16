@@ -21,7 +21,12 @@ vi.mock("@clerk/hono", () => ({
     () => async (_c: unknown, next: () => Promise<void>) => {
       await next();
     },
-  getAuth: () => ({ userId: authState.userId }),
+  // Mirrors the real shape for both auth paths the app accepts (session JWT
+  // or user-scoped API key): routes narrow on isAuthenticated, then userId.
+  getAuth: () => ({
+    userId: authState.userId,
+    isAuthenticated: authState.userId !== null,
+  }),
 }));
 
 import app from "../src/index";
@@ -120,8 +125,8 @@ describe("POST /articles", () => {
     expect(res.status).toBe(202);
     expect(await res.json()).toEqual({ articleId: "art1" });
     expect(ingest["create-pending"]).toHaveLength(1);
-    expect(ingest["create-pending"][0].headers["x-inkwell-key"]).toBe(
-      TEST_ENV.WORKER_SHARED_SECRET
+    expect(ingest["create-pending"][0].headers.Authorization).toBe(
+      `Convex ${TEST_ENV.CONVEX_DEPLOY_KEY}`
     );
     expect(ingest["create-pending"][0].body).toMatchObject({
       userId: "user_1",
