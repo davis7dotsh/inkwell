@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Block } from "@inkwell/content";
 
+import { createConvexService } from "../src/convexService";
 import { processArticle } from "../src/pipeline";
 import { FIXTURE_HTML, TEST_ENV, fakeNetwork, firecrawlOk } from "./helpers";
 
@@ -27,6 +28,7 @@ describe("processArticle", () => {
       userId: "user_test",
       articleId: "art1",
       url: "https://example.com/hello",
+      convex: createConvexService(impl, TEST_ENV),
     });
 
     expect(ingest.fail).toHaveLength(0);
@@ -63,6 +65,7 @@ describe("processArticle", () => {
       userId: "user_test",
       articleId: "art1",
       url: "https://example.com/hello",
+      convex: createConvexService(impl, TEST_ENV),
     });
 
     expect(ingest.complete).toHaveLength(0);
@@ -83,6 +86,7 @@ describe("processArticle", () => {
       userId: "user_test",
       articleId: "art1",
       url: "https://example.com/empty",
+      convex: createConvexService(impl, TEST_ENV),
     });
 
     expect(ingest.complete).toHaveLength(0);
@@ -106,8 +110,9 @@ describe("processArticle", () => {
         fetchImpl: impl,
         env: TEST_ENV,
         userId: "user_test",
-      articleId: "art1",
+        articleId: "art1",
         url: "https://example.com",
+        convex: createConvexService(impl, TEST_ENV),
       })
     ).resolves.toEqual({ status: "failed", error: "network down" });
     expect(consoleError).toHaveBeenCalledOnce();

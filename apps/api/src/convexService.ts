@@ -1,8 +1,23 @@
-// Tiny service client for the Convex HTTP actions (convex/http.ts in
-// @inkwell/backend): `/ingest/*` writes for the scrape pipeline, `/agent/*`
-// reads for the MCP tools. They live on the `.convex.site` origin — NOT
-// `.convex.cloud` — and are guarded by the x-inkwell-key shared secret, so
-// the internal functions never gain a public client surface.
+// Direct Convex service client for the API worker. The deployment key grants
+// access to internal functions, so no public query or HTTP-action bridge is
+// needed. Create this client per request/work item: ConvexHttpClient stores
+// authentication state and must not be shared across Worker requests.
+
+import { ConvexHttpClient } from "convex/browser";
+import {
+  getFunctionName,
+  makeFunctionReference,
+  type DefaultFunctionArgs,
+  type FunctionReference,
+  type FunctionType,
+} from "convex/server";
+
+import { internal } from "../../../packages/backend/convex/_generated/api";
+
+export type ConvexServiceEnv = {
+  CONVEX_URL: string;
+  CONVEX_DEPLOY_KEY: string;
+};
 
 export type ArticleKind = "web" | "pdf";
 export type ArticleStatus = "pending" | "ready" | "failed";
@@ -32,181 +47,89 @@ export type FailArgs = {
   error: string;
 };
 
-export async function post(
-  fetchImpl: typeof fetch,
-  siteUrl: string,
-  secret: string,
-  path: string,
-  body: unknown
-): Promise<unknown> {
-  const res = await fetchImpl(`${siteUrl.replace(/\/+$/, "")}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-inkwell-key": secret,
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(
-      `Convex ${path} failed: HTTP ${res.status}${text ? ` — ${text.slice(0, 200)}` : ""}`
-    );
-  }
-  return res.json();
-}
+type AdminAuthenticatedClient = ConvexHttpClient & {
+  setAdminAuth(token: string): void;
+};
 
-export async function createPending(
-  fetchImpl: typeof fetch,
-  siteUrl: string,
-  secret: string,
-  args: CreatePendingArgs
-): Promise<{ articleId: string }> {
-  const result = await post(
-    fetchImpl,
-    siteUrl,
-    secret,
-    "/ingest/create-pending",
-    args
+function supportsAdminAuth(
+  client: ConvexHttpClient
+): client is AdminAuthenticatedClient {
+  return (
+    "setAdminAuth" in client &&
+    typeof client.setAdminAuth === "function"
   );
-  return result as { articleId: string };
 }
 
-export async function complete(
-  fetchImpl: typeof fetch,
-  siteUrl: string,
-  secret: string,
-  args: CompleteArgs
-): Promise<void> {
-  await post(fetchImpl, siteUrl, secret, "/ingest/complete", args);
+// ConvexHttpClient's public methods intentionally accept public references.
+// Admin auth can execute internal functions, so preserve the generated
+// argument/return types while recreating the same runtime function name.
+function adminReference<
+  Type extends FunctionType,
+  Args extends DefaultFunctionArgs,
+  Return,
+>(reference: FunctionReference<Type, "internal", Args, Return>) {
+  return makeFunctionReference<Type, Args, Return>(getFunctionName(reference));
 }
 
-export async function fail(
+export function createConvexService(
   fetchImpl: typeof fetch,
-  siteUrl: string,
-  secret: string,
-  args: FailArgs
-): Promise<void> {
-  await post(fetchImpl, siteUrl, secret, "/ingest/fail", args);
-}
-
-// ---- Agent reads ----
-
-export type AgentArticleSummary = {
-  id: string;
-  url: string;
-  kind: ArticleKind;
-  status: ArticleStatus;
-  error?: string;
-  title: string;
-  byline?: string;
-  siteName?: string;
-  excerpt?: string;
-  savedAt: number;
-  readStatus: ReadStatus;
-};
-
-export type AgentArticle = {
-  _id: string;
-  url: string;
-  kind: ArticleKind;
-  status: ArticleStatus;
-  error?: string;
-  title: string;
-  byline?: string;
-  siteName?: string;
-  excerpt?: string;
-  blocksJson?: string;
-  savedAt: number;
-  readStatus: ReadStatus; // legacy rows normalized to "unread" server-side
-};
-
-export type AgentAnnotations = {
-  articleTitle: string;
-  articleUrl: string;
-  annotations: {
-    contentWidth: number;
-    strokesJson: string;
-    boxesJson: string;
-    notesJson: string;
-    memosJson: string;
-    updatedAt: number;
-  } | null;
-};
-
-/** GET helper; returns null on 404 so callers can express "not found". */
-async function get(
-  fetchImpl: typeof fetch,
-  siteUrl: string,
-  secret: string,
-  path: string,
-  params: Record<string, string | number | undefined>
-): Promise<unknown | null> {
-  const url = new URL(`${siteUrl.replace(/\/+$/, "")}${path}`);
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined) url.searchParams.set(key, String(value));
-  }
-  const res = await fetchImpl(url.toString(), {
-    headers: { "x-inkwell-key": secret },
+  env: ConvexServiceEnv
+) {
+  const client = new ConvexHttpClient(env.CONVEX_URL, {
+    fetch: fetchImpl,
+    logger: false,
   });
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(
-      `Convex ${path} failed: HTTP ${res.status}${text ? ` — ${text.slice(0, 200)}` : ""}`
-    );
+  if (!supportsAdminAuth(client)) {
+    throw new Error("Installed Convex client does not support admin auth");
   }
-  return res.json();
+  client.setAdminAuth(env.CONVEX_DEPLOY_KEY);
+
+  return {
+    async createPending(args: CreatePendingArgs) {
+      const articleId = await client.mutation(
+        adminReference(internal.articles.createPending),
+        args
+      );
+      return { articleId };
+    },
+
+    async complete(args: CompleteArgs) {
+      await client.mutation(
+        adminReference(internal.articles.complete),
+        args
+      );
+    },
+
+    async fail(args: FailArgs) {
+      await client.mutation(adminReference(internal.articles.fail), args);
+    },
+
+    listArticles(args: {
+      userId: string;
+      readStatus?: ReadStatus;
+      status?: ArticleStatus;
+      limit?: number;
+    }) {
+      return client.query(
+        adminReference(internal.articles.listForAgent),
+        args
+      );
+    },
+
+    getArticle(args: { userId: string; id: string }) {
+      return client.query(
+        adminReference(internal.articles.getForAgent),
+        args
+      );
+    },
+
+    getAnnotations(args: { userId: string; articleId: string }) {
+      return client.query(
+        adminReference(internal.annotations.getForAgent),
+        args
+      );
+    },
+  };
 }
 
-export async function listArticles(
-  fetchImpl: typeof fetch,
-  siteUrl: string,
-  secret: string,
-  args: {
-    userId: string;
-    readStatus?: ReadStatus;
-    status?: ArticleStatus;
-    limit?: number;
-  }
-): Promise<AgentArticleSummary[]> {
-  const result = (await get(fetchImpl, siteUrl, secret, "/agent/articles", {
-    userId: args.userId,
-    readStatus: args.readStatus,
-    status: args.status,
-    limit: args.limit,
-  })) as { articles: AgentArticleSummary[] } | null;
-  if (result === null) {
-    // Unlike the by-id reads, this route never 404s — a 404 means the
-    // deployment doesn't have the /agent routes yet.
-    throw new Error(
-      "Convex /agent/articles returned 404 — is @inkwell/backend deployed with the agent read routes?"
-    );
-  }
-  return result.articles;
-}
-
-export async function getArticle(
-  fetchImpl: typeof fetch,
-  siteUrl: string,
-  secret: string,
-  args: { userId: string; id: string }
-): Promise<AgentArticle | null> {
-  const result = (await get(fetchImpl, siteUrl, secret, "/agent/article", {
-    userId: args.userId,
-    id: args.id,
-  })) as { article: AgentArticle } | null;
-  return result?.article ?? null;
-}
-
-export async function getAnnotations(
-  fetchImpl: typeof fetch,
-  siteUrl: string,
-  secret: string,
-  args: { userId: string; articleId: string }
-): Promise<AgentAnnotations | null> {
-  return (await get(fetchImpl, siteUrl, secret, "/agent/annotations", {
-    userId: args.userId,
-    articleId: args.articleId,
-  })) as AgentAnnotations | null;
-}
+export type ConvexService = ReturnType<typeof createConvexService>;

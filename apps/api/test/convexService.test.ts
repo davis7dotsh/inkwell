@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { complete, createPending, fail, post } from "../src/convexService";
-import { TEST_ENV, fetchQueue, jsonResponse } from "./helpers";
-
-const SITE = TEST_ENV.CONVEX_SITE_URL;
-const SECRET = TEST_ENV.WORKER_SHARED_SECRET;
+import { createConvexService } from "../src/convexService";
+import {
+  TEST_ENV,
+  convexResponse,
+  fetchQueue,
+  jsonResponse,
+} from "./helpers";
 
 describe("convexService", () => {
-  it("createPending posts args with the shared-secret header", async () => {
-    const { impl, calls } = fetchQueue([jsonResponse({ articleId: "art42" })]);
+  it("calls an internal mutation with deployment-key auth", async () => {
+    const { impl, calls } = fetchQueue([convexResponse("art42")]);
+    const service = createConvexService(impl, TEST_ENV);
     const args = {
       userId: "user_1",
       url: "https://example.com/a",
@@ -17,56 +20,89 @@ describe("convexService", () => {
       savedAt: 1717900000000,
     };
 
-    const result = await createPending(impl, SITE, SECRET, args);
+    const result = await service.createPending(args);
 
     expect(result).toEqual({ articleId: "art42" });
     expect(calls).toHaveLength(1);
-    expect(calls[0].url).toBe(`${SITE}/ingest/create-pending`);
-    expect(calls[0].headers["x-inkwell-key"]).toBe(SECRET);
-    expect(calls[0].headers["Content-Type"]).toBe("application/json");
-    expect(calls[0].body).toEqual(args);
+    expect(calls[0].url).toBe(`${TEST_ENV.CONVEX_URL}/api/mutation`);
+    expect(calls[0].headers.Authorization).toBe(
+      `Convex ${TEST_ENV.CONVEX_DEPLOY_KEY}`
+    );
+    expect(calls[0].body).toMatchObject({
+      path: "articles:createPending",
+      args: [args],
+    });
   });
 
-  it("complete and fail hit their ingest routes", async () => {
+  it("uses the native mutation endpoint for complete and fail", async () => {
     const { impl, calls } = fetchQueue([
-      jsonResponse({ ok: true }),
-      jsonResponse({ ok: true }),
+      convexResponse(null),
+      convexResponse(null),
     ]);
+    const service = createConvexService(impl, TEST_ENV);
 
-    await complete(impl, SITE, SECRET, {
+    await service.complete({
       articleId: "art1",
       expectedUserId: "user_test",
       title: "T",
       blocksJson: "[]",
     });
-    await fail(impl, SITE, SECRET, {
+    await service.fail({
       articleId: "art1",
       expectedUserId: "user_test",
       error: "boom",
     });
 
-    expect(calls[0].url).toBe(`${SITE}/ingest/complete`);
-    expect(calls[1].url).toBe(`${SITE}/ingest/fail`);
-    expect(calls[1].body).toEqual({
-      articleId: "art1",
-      expectedUserId: "user_test",
-      error: "boom",
+    expect(calls[0].body).toMatchObject({ path: "articles:complete" });
+    expect(calls[1].body).toMatchObject({
+      path: "articles:fail",
+      args: [
+        {
+          articleId: "art1",
+          expectedUserId: "user_test",
+          error: "boom",
+        },
+      ],
     });
   });
 
-  it("tolerates a trailing slash on the site URL", async () => {
-    const { impl, calls } = fetchQueue([jsonResponse({ ok: true })]);
-
-    await post(impl, `${SITE}/`, SECRET, "/ingest/fail", {});
-
-    expect(calls[0].url).toBe(`${SITE}/ingest/fail`);
-  });
-
-  it("throws a readable error on non-2xx responses", async () => {
-    const { impl } = fetchQueue([new Response("forbidden", { status: 403 })]);
+  it("calls internal queries directly and preserves typed results", async () => {
+    const articles = [
+      {
+        id: "art1",
+        url: "https://example.com",
+        kind: "web" as const,
+        status: "ready" as const,
+        title: "Example",
+        savedAt: 1,
+        readStatus: "unread" as const,
+      },
+    ];
+    const { impl, calls } = fetchQueue([convexResponse(articles)]);
+    const service = createConvexService(impl, TEST_ENV);
 
     await expect(
-      post(impl, SITE, SECRET, "/ingest/complete", {})
-    ).rejects.toThrow(/\/ingest\/complete failed: HTTP 403.*forbidden/);
+      service.listArticles({ userId: "user_1", limit: 10 })
+    ).resolves.toEqual(articles);
+    expect(calls[0].url).toBe(`${TEST_ENV.CONVEX_URL}/api/query`);
+    expect(calls[0].body).toMatchObject({
+      path: "articles:listForAgent",
+      args: [{ userId: "user_1", limit: 10 }],
+    });
+  });
+
+  it("surfaces native Convex HTTP failures", async () => {
+    const { impl } = fetchQueue([
+      jsonResponse({ error: "forbidden" }, 403),
+    ]);
+    const service = createConvexService(impl, TEST_ENV);
+
+    await expect(
+      service.fail({
+        articleId: "art1",
+        expectedUserId: "user_test",
+        error: "boom",
+      })
+    ).rejects.toThrow(/forbidden/);
   });
 });

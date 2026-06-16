@@ -10,7 +10,6 @@
 
 import type * as annotations from "../annotations.js";
 import type * as articles from "../articles.js";
-import type * as http from "../http.js";
 
 import type {
   ApiFromModules,
@@ -21,7 +20,6 @@ import type {
 declare const fullApi: ApiFromModules<{
   annotations: typeof annotations;
   articles: typeof articles;
-  http: typeof http;
 }>;
 
 /**

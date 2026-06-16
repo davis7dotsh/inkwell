@@ -16,13 +16,12 @@ export const get = query({
   },
 });
 
-// Agent read (api worker via convex/http.ts; userId asserted by the worker —
-// see articles.listForAgent). Bundles the article title so the notes tool is
-// one round trip.
+// Agent read through the API worker's admin-authenticated Convex client.
+// Bundles the article title so the notes tool is one round trip.
 export const getForAgent = internalQuery({
   args: {
     userId: v.string(),
-    // External id over HTTP; validate the shape at runtime.
+    // External id from the API worker; validate the shape at runtime.
     articleId: v.string(),
   },
   handler: async (ctx, args) => {

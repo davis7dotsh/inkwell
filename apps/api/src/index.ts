@@ -19,7 +19,7 @@ import { cors } from "hono/cors";
 import type { Context } from "hono";
 import { z } from "zod";
 
-import { createPending } from "./convexService";
+import { createConvexService } from "./convexService";
 import { buildInkwellMcp } from "./mcp";
 import { processArticle, processUpload } from "./pipeline";
 import { kindOf, normalizeUrl } from "./url";
@@ -28,8 +28,8 @@ export type Bindings = {
   FIRECRAWL_API_KEY: string;
   CLERK_SECRET_KEY: string;
   CLERK_PUBLISHABLE_KEY: string;
-  WORKER_SHARED_SECRET: string;
-  CONVEX_SITE_URL: string;
+  CONVEX_DEPLOY_KEY: string;
+  CONVEX_URL: string;
   MEMOS: R2Bucket;
 };
 
@@ -93,18 +93,14 @@ const app = new Hono<{ Bindings: Bindings }>()
     const url = normalizeUrl(c.req.valid("json").url);
     if (!url) return c.json({ error: "Invalid URL" }, 400);
 
-    const { articleId } = await createPending(
-      fetch,
-      c.env.CONVEX_SITE_URL,
-      c.env.WORKER_SHARED_SECRET,
-      {
-        userId,
-        url: url.toString(),
-        kind: kindOf(url),
-        title: url.toString(), // placeholder until the scrape completes
-        savedAt: Date.now(),
-      }
-    );
+    const convex = createConvexService(fetch, c.env);
+    const { articleId } = await convex.createPending({
+      userId,
+      url: url.toString(),
+      kind: kindOf(url),
+      title: url.toString(), // placeholder until the scrape completes
+      savedAt: Date.now(),
+    });
     c.executionCtx.waitUntil(
       processArticle({
         fetchImpl: fetch,
@@ -112,6 +108,7 @@ const app = new Hono<{ Bindings: Bindings }>()
         articleId,
         userId,
         url: url.toString(),
+        convex,
       })
     );
     return c.json({ articleId }, 202);
@@ -133,18 +130,14 @@ const app = new Hono<{ Bindings: Bindings }>()
     }
 
     const fallbackTitle = titleFromFilename(file.name);
-    const { articleId } = await createPending(
-      fetch,
-      c.env.CONVEX_SITE_URL,
-      c.env.WORKER_SHARED_SECRET,
-      {
-        userId,
-        url: `upload://${file.name}`,
-        kind: "pdf",
-        title: fallbackTitle,
-        savedAt: Date.now(),
-      }
-    );
+    const convex = createConvexService(fetch, c.env);
+    const { articleId } = await convex.createPending({
+      userId,
+      url: `upload://${file.name}`,
+      kind: "pdf",
+      title: fallbackTitle,
+      savedAt: Date.now(),
+    });
     c.executionCtx.waitUntil(
       processUpload({
         fetchImpl: fetch,
@@ -153,14 +146,14 @@ const app = new Hono<{ Bindings: Bindings }>()
         userId,
         file,
         fallbackTitle,
+        convex,
       })
     );
     return c.json({ articleId }, 202);
   })
   // Re-runs the pipeline for an existing (failed) article. createPending is
-  // NOT re-run — the pipeline completes/fails the existing row. The worker
-  // has no Convex read access (ingest endpoints are write-only), so the
-  // client supplies the article's url from its live articles.list data.
+  // NOT re-run — the pipeline completes/fails the existing row. The client
+  // supplies the article's url from its live articles.list data.
   .post("/articles/:id/retry", zValidator("json", articleBody), async (c) => {
     const userId = userIdOf(c);
     if (!userId) return c.json({ error: "Unauthorized" }, 401);
@@ -169,6 +162,7 @@ const app = new Hono<{ Bindings: Bindings }>()
     if (!url) return c.json({ error: "Invalid URL" }, 400);
 
     const articleId = c.req.param("id");
+    const convex = createConvexService(fetch, c.env);
     c.executionCtx.waitUntil(
       processArticle({
         fetchImpl: fetch,
@@ -176,6 +170,7 @@ const app = new Hono<{ Bindings: Bindings }>()
         articleId,
         userId,
         url: url.toString(),
+        convex,
       })
     );
     return c.json({ articleId }, 202);
@@ -294,7 +289,12 @@ const app = new Hono<{ Bindings: Bindings }>()
         { Allow: "POST" }
       );
     }
-    const server = buildInkwellMcp(userId, c.env, c.executionCtx);
+    const server = buildInkwellMcp(
+      userId,
+      c.env,
+      c.executionCtx,
+      createConvexService(fetch, c.env)
+    );
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // stateless
       // Plain JSON responses (no SSE framing): simplest for scripts, and

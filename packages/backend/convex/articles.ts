@@ -1,5 +1,5 @@
-// Articles: user-facing queries/mutations plus the internal mutations the
-// api worker drives through convex/http.ts (pending → ready/failed).
+// Articles: user-facing queries/mutations plus internal functions called by
+// the API worker through its admin-authenticated Convex client.
 import { v } from "convex/values";
 
 import type { Doc, Id } from "./_generated/dataModel";
@@ -106,10 +106,9 @@ export const remove = mutation({
 });
 
 // ---- Agent reads ----
-// Driven by the api worker through convex/http.ts (shared-secret guard).
-// ctx.auth is empty on that path, so the worker asserts the userId it
-// resolved from the caller's Clerk API key — same trust model as the
-// expectedUserId checks on the ingest mutations.
+// Driven by the API worker through an admin-authenticated Convex client.
+// ctx.auth is empty on that path, so the worker passes the userId it resolved
+// from the caller's Clerk API key.
 
 export const listForAgent = internalQuery({
   args: {
@@ -161,8 +160,8 @@ export const listForAgent = internalQuery({
 export const getForAgent = internalQuery({
   args: {
     userId: v.string(),
-    // Arrives over HTTP from outside Convex, so validate the id shape at
-    // runtime instead of trusting v.id().
+    // Arrives from the API worker, so validate the id shape at runtime
+    // instead of trusting v.id().
     id: v.string(),
   },
   handler: async (ctx, args) => {
@@ -194,7 +193,7 @@ export const createPending = internalMutation({
 
 export const complete = internalMutation({
   args: {
-    articleId: v.id("articles"),
+    articleId: v.string(),
     // The api worker passes the requesting user's id so a retry can never
     // rewrite somebody else's article.
     expectedUserId: v.string(),
@@ -206,11 +205,13 @@ export const complete = internalMutation({
   },
   handler: async (ctx, args) => {
     const { articleId, expectedUserId, ...fields } = args;
-    const article = await ctx.db.get(articleId);
+    const id = ctx.db.normalizeId("articles", articleId);
+    if (!id) throw new Error("Article not found");
+    const article = await ctx.db.get(id);
     if (!article || article.userId !== expectedUserId) {
       throw new Error("Article not found");
     }
-    await ctx.db.patch(articleId, {
+    await ctx.db.patch(id, {
       ...fields,
       status: "ready",
       error: undefined,
@@ -220,16 +221,18 @@ export const complete = internalMutation({
 
 export const fail = internalMutation({
   args: {
-    articleId: v.id("articles"),
+    articleId: v.string(),
     expectedUserId: v.string(),
     error: v.string(),
   },
   handler: async (ctx, args) => {
-    const article = await ctx.db.get(args.articleId);
+    const id = ctx.db.normalizeId("articles", args.articleId);
+    if (!id) throw new Error("Article not found");
+    const article = await ctx.db.get(id);
     if (!article || article.userId !== args.expectedUserId) {
       throw new Error("Article not found");
     }
-    await ctx.db.patch(args.articleId, {
+    await ctx.db.patch(id, {
       status: "failed",
       error: args.error,
     });

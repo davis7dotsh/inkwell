@@ -3,8 +3,8 @@
 // transport per request — required since SDK 1.26, and the natural place to
 // close every tool over the authenticated Clerk userId.
 //
-// Reads go through the /agent/* Convex HTTP actions (convexService.ts);
-// saves reuse the same pipeline as the REST routes but await it inline so
+// Reads and writes call Convex internal functions through an admin-authenticated
+// service client; saves reuse the REST pipeline but await it inline so
 // the agent learns ready/failed (plus the real title) in one tool call.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -19,7 +19,7 @@ import type {
 } from "@inkwell/content";
 import { z } from "zod";
 
-import { createPending, getAnnotations, getArticle, listArticles } from "./convexService";
+import type { ConvexService } from "./convexService";
 import { processArticle } from "./pipeline";
 import type { PipelineEnv } from "./pipeline";
 import { kindOf, normalizeUrl } from "./url";
@@ -52,7 +52,8 @@ export type WaitUntil = { waitUntil(promise: Promise<unknown>): void };
 export function buildInkwellMcp(
   userId: string,
   env: PipelineEnv,
-  executionCtx: WaitUntil
+  executionCtx: WaitUntil,
+  convex: ConvexService
 ): McpServer {
   const server = new McpServer(
     { name: "inkwell", version: "0.1.0" },
@@ -96,24 +97,20 @@ export function buildInkwellMcp(
       const url = normalizeUrl(rawUrl);
       if (!url) return errorResult(`Not a valid http(s) URL: ${rawUrl}`);
 
-      const { articleId } = await createPending(
-        fetch,
-        env.CONVEX_SITE_URL,
-        env.WORKER_SHARED_SECRET,
-        {
-          userId,
-          url: url.toString(),
-          kind: kindOf(url),
-          title: url.toString(), // placeholder until the scrape completes
-          savedAt: Date.now(),
-        }
-      );
+      const { articleId } = await convex.createPending({
+        userId,
+        url: url.toString(),
+        kind: kindOf(url),
+        title: url.toString(), // placeholder until the scrape completes
+        savedAt: Date.now(),
+      });
       const pipeline = processArticle({
         fetchImpl: fetch,
         env,
         articleId,
         userId,
         url: url.toString(),
+        convex,
       });
       // Backstop: if the client disconnects mid-save (timeout, ctrl-C), the
       // runtime would cancel this invocation and strand the row in pending —
@@ -176,12 +173,12 @@ export function buildInkwellMcp(
       annotations: { readOnlyHint: true },
     },
     async ({ readStatus, status, limit }) => {
-      const rows = await listArticles(
-        fetch,
-        env.CONVEX_SITE_URL,
-        env.WORKER_SHARED_SECRET,
-        { userId, readStatus, status, limit }
-      );
+      const rows = await convex.listArticles({
+        userId,
+        readStatus,
+        status,
+        limit,
+      });
       const articles = rows.map((row) => ({
         id: row.id,
         title: row.title,
@@ -215,12 +212,7 @@ export function buildInkwellMcp(
       annotations: { readOnlyHint: true },
     },
     async ({ articleId }) => {
-      const article = await getArticle(
-        fetch,
-        env.CONVEX_SITE_URL,
-        env.WORKER_SHARED_SECRET,
-        { userId, id: articleId }
-      );
+      const article = await convex.getArticle({ userId, id: articleId });
       if (!article) return errorResult(`No article with id ${articleId}.`);
       if (article.status !== "ready" || !article.blocksJson) {
         return errorResult(
@@ -278,12 +270,7 @@ export function buildInkwellMcp(
       annotations: { readOnlyHint: true },
     },
     async ({ articleId }) => {
-      const result = await getAnnotations(
-        fetch,
-        env.CONVEX_SITE_URL,
-        env.WORKER_SHARED_SECRET,
-        { userId, articleId }
-      );
+      const result = await convex.getAnnotations({ userId, articleId });
       if (!result) return errorResult(`No article with id ${articleId}.`);
 
       const row = result.annotations;

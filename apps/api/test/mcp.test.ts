@@ -172,7 +172,7 @@ describe("list_articles", () => {
 
   it("passes filters and the caller's userId to Convex, returns rows", async () => {
     const { agentCalls } = stubNetwork(noScrape, {
-      articles: () => jsonResponse({ articles: rows }),
+      articles: () => rows,
     });
 
     const response = await callTool("list_articles", {
@@ -181,13 +181,14 @@ describe("list_articles", () => {
     });
 
     expect(agentCalls).toHaveLength(1);
-    const call = new URL(agentCalls[0].url);
-    expect(call.pathname).toBe("/agent/articles");
-    expect(call.searchParams.get("userId")).toBe("user_1");
-    expect(call.searchParams.get("readStatus")).toBe("unread");
-    expect(call.searchParams.get("limit")).toBe("10");
-    expect(agentCalls[0].headers["x-inkwell-key"]).toBe(
-      TEST_ENV.WORKER_SHARED_SECRET
+    expect(agentCalls[0].functionName).toBe("articles:listForAgent");
+    expect(agentCalls[0].body).toEqual({
+      userId: "user_1",
+      readStatus: "unread",
+      limit: 10,
+    });
+    expect(agentCalls[0].headers.Authorization).toBe(
+      `Convex ${TEST_ENV.CONVEX_DEPLOY_KEY}`
     );
 
     expect(response.result?.isError).toBeFalsy();
@@ -281,12 +282,16 @@ describe("get_article", () => {
 
   it("renders the article as markdown with metadata", async () => {
     const { agentCalls } = stubNetwork(noScrape, {
-      article: () => jsonResponse({ article: readyArticle }),
+      article: () => readyArticle,
     });
 
     const response = await callTool("get_article", { articleId: "art1" });
 
-    expect(new URL(agentCalls[0].url).searchParams.get("id")).toBe("art1");
+    expect(agentCalls[0].functionName).toBe("articles:getForAgent");
+    expect(agentCalls[0].body).toEqual({
+      userId: "user_1",
+      id: "art1",
+    });
     const text = response.result?.content?.[0]?.text as string;
     expect(text).toContain("# Article A");
     expect(text).toContain("By: Jane Doe");
@@ -296,7 +301,7 @@ describe("get_article", () => {
 
   it("returns a tool error for unknown ids", async () => {
     stubNetwork(noScrape, {
-      article: () => new Response("not found", { status: 404 }),
+      article: () => null,
     });
 
     const response = await callTool("get_article", { articleId: "nope" });
@@ -304,11 +309,12 @@ describe("get_article", () => {
   });
 
   it("explains pending articles instead of dumping nothing", async () => {
+    const { blocksJson: _blocksJson, ...pendingArticle } = readyArticle;
     stubNetwork(noScrape, {
-      article: () =>
-        jsonResponse({
-          article: { ...readyArticle, status: "pending", blocksJson: undefined },
-        }),
+      article: () => ({
+        ...pendingArticle,
+        status: "pending",
+      }),
     });
 
     const response = await callTool("get_article", { articleId: "art1" });
@@ -320,45 +326,44 @@ describe("get_article", () => {
 describe("get_notes", () => {
   it("returns notes and transcripts in reading order plus ink counts", async () => {
     stubNetwork(noScrape, {
-      annotations: () =>
-        jsonResponse({
-          articleTitle: "Article A",
-          articleUrl: "https://example.com/a",
-          annotations: {
-            contentWidth: 800,
-            notesJson: JSON.stringify([
-              { id: "n2", x: 0, y: 500, text: "Second note" },
-              { id: "n1", x: 0, y: 10, text: "First note" },
-            ]),
-            memosJson: JSON.stringify([
-              {
-                id: "m1",
-                x: 0,
-                y: 50,
-                durationMs: 1000,
-                transcript: "Spoken thought",
-                status: "uploaded",
-                createdAt: 1,
-              },
-              {
-                id: "m2",
-                x: 0,
-                y: 60,
-                durationMs: 1000,
-                transcript: "   ",
-                status: "local",
-                createdAt: 2,
-              },
-            ]),
-            strokesJson: JSON.stringify([
-              { id: "s1", tool: "highlighter", color: "x", width: 1, points: [] },
-              { id: "s2", tool: "pen", color: "x", width: 1, points: [] },
-              { id: "s3", tool: "pen", color: "x", width: 1, points: [] },
-            ]),
-            boxesJson: JSON.stringify([{ id: "b1", x: 0, y: 0, w: 1, h: 1 }]),
-            updatedAt: 1750000000000,
-          },
-        }),
+      annotations: () => ({
+        articleTitle: "Article A",
+        articleUrl: "https://example.com/a",
+        annotations: {
+          contentWidth: 800,
+          notesJson: JSON.stringify([
+            { id: "n2", x: 0, y: 500, text: "Second note" },
+            { id: "n1", x: 0, y: 10, text: "First note" },
+          ]),
+          memosJson: JSON.stringify([
+            {
+              id: "m1",
+              x: 0,
+              y: 50,
+              durationMs: 1000,
+              transcript: "Spoken thought",
+              status: "uploaded",
+              createdAt: 1,
+            },
+            {
+              id: "m2",
+              x: 0,
+              y: 60,
+              durationMs: 1000,
+              transcript: "   ",
+              status: "local",
+              createdAt: 2,
+            },
+          ]),
+          strokesJson: JSON.stringify([
+            { id: "s1", tool: "highlighter", color: "x", width: 1, points: [] },
+            { id: "s2", tool: "pen", color: "x", width: 1, points: [] },
+            { id: "s3", tool: "pen", color: "x", width: 1, points: [] },
+          ]),
+          boxesJson: JSON.stringify([{ id: "b1", x: 0, y: 0, w: 1, h: 1 }]),
+          updatedAt: 1750000000000,
+        },
+      }),
     });
 
     const response = await callTool("get_notes", { articleId: "art1" });
@@ -382,12 +387,11 @@ describe("get_notes", () => {
 
   it("handles articles with no annotations yet", async () => {
     stubNetwork(noScrape, {
-      annotations: () =>
-        jsonResponse({
-          articleTitle: "Article A",
-          articleUrl: "https://example.com/a",
-          annotations: null,
-        }),
+      annotations: () => ({
+        articleTitle: "Article A",
+        articleUrl: "https://example.com/a",
+        annotations: null,
+      }),
     });
 
     const response = await callTool("get_notes", { articleId: "art1" });
@@ -402,7 +406,7 @@ describe("get_notes", () => {
 
   it("returns a tool error for unknown ids", async () => {
     stubNetwork(noScrape, {
-      annotations: () => new Response("not found", { status: 404 }),
+      annotations: () => null,
     });
 
     const response = await callTool("get_notes", { articleId: "nope" });
