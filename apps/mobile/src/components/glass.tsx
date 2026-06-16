@@ -32,6 +32,7 @@ type GlassSurfaceProps = {
   fallbackStyle?: StyleProp<ViewStyle>;
   tintColor?: string;
   isInteractive?: boolean;
+  effectStyle?: "clear" | "regular";
   children?: React.ReactNode;
   pointerEvents?: "auto" | "none" | "box-none" | "box-only";
 };
@@ -42,6 +43,7 @@ export function GlassSurface({
   fallbackStyle,
   tintColor,
   isInteractive,
+  effectStyle = "regular",
   children,
   pointerEvents,
 }: GlassSurfaceProps) {
@@ -52,6 +54,7 @@ export function GlassSurface({
         style={style}
         tintColor={tintColor}
         isInteractive={isInteractive}
+        glassEffectStyle={effectStyle}
         colorScheme={scheme}
         pointerEvents={pointerEvents}
       >
@@ -109,6 +112,7 @@ export function GlassIconButton({
       <GlassSurface
         isInteractive
         tintColor={tintColor}
+        effectStyle="clear"
         style={[
           staticStyles.iconButton,
           { width: size, height: size, borderRadius: size / 2 },

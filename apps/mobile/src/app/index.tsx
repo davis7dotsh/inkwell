@@ -17,14 +17,13 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
 import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { BackdropWash } from "../components/BackdropWash";
-import { BrushStroke } from "../components/BrushStroke";
 import { RenameModal } from "../components/RenameModal";
 import {
   GlassIconButton,
@@ -178,64 +177,82 @@ function ArticleCard({
         </View>
       )}
     >
-    <Pressable
-      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-      onPress={() => {
-        if (item.status === "ready") router.push(`/article/${item._id}`);
-      }}
-      onLongPress={showActions}
-    >
-      <Text style={styles.cardTitle} numberOfLines={2}>
-        {item.title}
-      </Text>
-      <View style={styles.metaRow}>
-        <Text style={[styles.cardMeta, { flexShrink: 1 }]} numberOfLines={1}>
-          {[item.siteName, date].filter(Boolean).join("  ·  ")}
-        </Text>
-        {item.status === "ready" ? (
-          <ReadStatusBadge status={readStatusOf(item)} />
-        ) : null}
-      </View>
-      {item.status === "pending" ? (
-        <View style={styles.statusRow}>
-          <View style={[styles.chip, styles.chipPending]}>
-            <ActivityIndicator size="small" color={c.accent} />
-            <Text style={styles.chipPendingText}>Saving…</Text>
+      <Pressable
+        style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+        onPress={() => {
+          if (item.status === "ready") router.push(`/article/${item._id}`);
+        }}
+        onLongPress={showActions}
+      >
+        <View style={styles.cardHeadingRow}>
+          <View style={styles.cardHeading}>
+            <Text style={styles.cardTitle} numberOfLines={2}>
+              {item.title}
+            </Text>
+            <View style={styles.metaRow}>
+              <Text style={[styles.cardMeta, { flexShrink: 1 }]} numberOfLines={1}>
+                {[item.siteName, date].filter(Boolean).join("  ·  ")}
+              </Text>
+              {item.status === "ready" ? (
+                <ReadStatusBadge status={readStatusOf(item)} />
+              ) : null}
+            </View>
           </View>
-        </View>
-      ) : item.status === "failed" ? (
-        <View style={styles.statusRow}>
-          <View style={[styles.chip, styles.chipFailed]}>
+          <Pressable
+            onPress={showActions}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={`Actions for ${item.title}`}
+            style={styles.moreButton}
+          >
             <MaterialCommunityIcons
-              name="alert-circle-outline"
-              size={14}
-              color={c.danger}
+              name="dots-horizontal"
+              size={20}
+              color={c.inkFaint}
             />
-            <Text style={styles.chipFailedText}>Couldn&apos;t save</Text>
-          </View>
-          {isUpload(item) ? null : (
-            <Pressable onPress={() => onRetry(item)} hitSlop={8}>
-              <Text style={styles.retryText}>Retry</Text>
-            </Pressable>
-          )}
+          </Pressable>
         </View>
-      ) : item.excerpt ? (
-        <Text style={styles.cardExcerpt} numberOfLines={2}>
-          {item.excerpt}
-        </Text>
-      ) : null}
-      {item.status === "failed" && item.error ? (
-        <Text style={styles.errorDetail} numberOfLines={2}>
-          {item.error}
-        </Text>
-      ) : null}
-    </Pressable>
+        {item.status === "pending" ? (
+          <View style={styles.statusRow}>
+            <View style={[styles.chip, styles.chipPending]}>
+              <ActivityIndicator size="small" color={c.accent} />
+              <Text style={styles.chipPendingText}>Saving…</Text>
+            </View>
+          </View>
+        ) : item.status === "failed" ? (
+          <View style={styles.statusRow}>
+            <View style={[styles.chip, styles.chipFailed]}>
+              <MaterialCommunityIcons
+                name="alert-circle-outline"
+                size={14}
+                color={c.danger}
+              />
+              <Text style={styles.chipFailedText}>Couldn&apos;t save</Text>
+            </View>
+            {isUpload(item) ? null : (
+              <Pressable onPress={() => onRetry(item)} hitSlop={8}>
+                <Text style={styles.retryText}>Retry</Text>
+              </Pressable>
+            )}
+          </View>
+        ) : item.excerpt ? (
+          <Text style={styles.cardExcerpt} numberOfLines={2}>
+            {item.excerpt}
+          </Text>
+        ) : null}
+        {item.status === "failed" && item.error ? (
+          <Text style={styles.errorDetail} numberOfLines={2}>
+            {item.error}
+          </Text>
+        ) : null}
+      </Pressable>
     </ReanimatedSwipeable>
   );
 }
 
 export default function LibraryScreen() {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const { scheme, c } = useTheme();
   const styles = themed[scheme];
   const { getToken, signOut } = useAuth();
@@ -243,12 +260,16 @@ export default function LibraryScreen() {
   const removeArticle = useMutation(api.articles.remove);
   const renameArticle = useMutation(api.articles.rename);
   const [url, setUrl] = useState("");
+  const [query, setQuery] = useState("");
+  const [addOpen, setAddOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
   const [renameTarget, setRenameTarget] = useState<ArticleListItem | null>(
     null
   );
+  const urlInputRef = useRef<TextInput>(null);
+  const isCompact = width < 700;
 
   // Only one swipe row open at a time — opening a new one closes the last.
   const openRowRef = useRef<SwipeableMethods | null>(null);
@@ -273,6 +294,7 @@ export default function LibraryScreen() {
       return;
     }
     setUrl("");
+    setAddOpen(false);
     void (async () => {
       try {
         const token = await getToken();
@@ -324,6 +346,7 @@ export default function LibraryScreen() {
         name: asset.name ?? "document.pdf",
         mimeType: asset.mimeType,
       });
+      setAddOpen(false);
       // The pending card arrives via the live query — nothing else to do.
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -389,92 +412,187 @@ export default function LibraryScreen() {
 
   const visibleArticles = useMemo(() => {
     if (!articles) return [];
-    const filtered =
+    const statusFiltered =
       filter === "all"
         ? articles
         : articles.filter((item) => readStatusOf(item) === filter);
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    const filtered = normalizedQuery
+      ? statusFiltered.filter((item) =>
+          [item.title, item.siteName, item.excerpt]
+            .filter(Boolean)
+            .some((value) =>
+              value?.toLocaleLowerCase().includes(normalizedQuery)
+            )
+        )
+      : statusFiltered;
     // articles.list is newest-first; flip a copy for oldest-first.
     return sortOrder === "newest" ? filtered : [...filtered].reverse();
-  }, [articles, filter, sortOrder]);
+  }, [articles, filter, query, sortOrder]);
+
+  const toggleAdd = useCallback(() => {
+    setAddOpen((open) => {
+      const next = !open;
+      if (next) {
+        setTimeout(() => urlInputRef.current?.focus(), 50);
+      }
+      return next;
+    });
+  }, []);
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top + 18 }]}>
-      <BackdropWash />
-      <View style={styles.titleRow}>
-        <View style={styles.titleLeft}>
-          <Text style={styles.appTitle}>Inkwell</Text>
-          {__DEV__ ? (
-            <View style={styles.devBadge} accessibilityLabel="Development build">
-              <Text style={styles.devBadgeText}>DEV</Text>
-            </View>
-          ) : null}
+      <View style={styles.libraryShell}>
+        <View style={styles.titleRow}>
+          <View style={styles.titleLeft}>
+            <Text style={styles.appTitle}>Inkwell</Text>
+            {__DEV__ ? (
+              <View
+                style={styles.devBadge}
+                accessibilityLabel="Development build"
+              >
+                <Text style={styles.devBadgeText}>DEV</Text>
+              </View>
+            ) : null}
+          </View>
+          <GlassIconButton
+            icon="logout-variant"
+            onPress={() => void signOut()}
+            accessibilityLabel="Sign out"
+            size={38}
+            iconSize={18}
+            iconColor={c.inkSecondary}
+          />
         </View>
-        <GlassIconButton
-          icon="logout-variant"
-          onPress={() => void signOut()}
-          accessibilityLabel="Sign out"
-          size={38}
-          iconSize={18}
-          iconColor={c.inkSecondary}
-        />
-      </View>
-      <BrushStroke
-        width={118}
-        height={9}
-        color={c.wash}
-        style={{ marginTop: 4 }}
-      />
-      <Text style={styles.appSubtitle}>
-        Save an article, read it, scribble all over it.
-      </Text>
 
-      <View style={styles.inputRow}>
-        <TextInput
-          style={styles.input}
-          value={url}
-          onChangeText={setUrl}
-          placeholder="Paste an article URL…"
-          placeholderTextColor={c.inkFaint}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="url"
-          returnKeyType="go"
-          onSubmitEditing={onSubmit}
-        />
-        <GlassIconButton
-          icon="content-paste"
-          onPress={() => void onPaste()}
-          accessibilityLabel="Paste from clipboard"
-          size={44}
-          iconSize={19}
-          iconColor={c.inkSecondary}
-        />
-        <GlassIconButton
-          icon={uploading ? "progress-upload" : "file-upload-outline"}
-          onPress={() => void onUpload()}
-          accessibilityLabel="Upload a PDF"
-          disabled={uploading}
-          size={44}
-          iconSize={19}
-          iconColor={c.inkSecondary}
-        />
-        <Pressable
-          onPress={onSubmit}
-          accessibilityRole="button"
-          style={({ pressed }) => pressed && !glassAvailable && styles.cardPressed}
-        >
-          <GlassSurface
-            isInteractive
-            tintColor={c.accent}
-            style={styles.addButton}
-            fallbackStyle={styles.addButtonFallback}
+        <View style={[styles.utilityRow, isCompact && styles.utilityRowCompact]}>
+          <View style={styles.searchField}>
+            <MaterialCommunityIcons
+              name="magnify"
+              size={19}
+              color={c.inkFaint}
+            />
+            <TextInput
+              style={styles.searchInput}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search library"
+              placeholderTextColor={c.inkFaint}
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+              accessibilityLabel="Search library"
+            />
+          </View>
+          <Pressable
+            onPress={toggleAdd}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: addOpen }}
+            style={({ pressed }) =>
+              pressed && !glassAvailable && styles.cardPressed
+            }
           >
-            <Text style={styles.addButtonText}>Save</Text>
-          </GlassSurface>
-        </Pressable>
-      </View>
+            <GlassSurface
+              isInteractive
+              effectStyle="clear"
+              tintColor={addOpen ? c.accentSoft : undefined}
+              style={styles.addControl}
+              fallbackStyle={styles.addControlFallback}
+            >
+              <MaterialCommunityIcons
+                name={addOpen ? "close" : "plus"}
+                size={20}
+                color={c.accent}
+              />
+              <Text style={styles.addControlText}>
+                {addOpen ? "Close" : "Add"}
+              </Text>
+            </GlassSurface>
+          </Pressable>
+        </View>
 
-      <View style={styles.controlsRow}>
+        {addOpen ? (
+          <View style={styles.captureArea}>
+            <Text style={styles.captureLabel}>Add to your library</Text>
+            <View style={[styles.inputRow, isCompact && styles.inputRowCompact]}>
+              <TextInput
+                ref={urlInputRef}
+                style={styles.input}
+                value={url}
+                onChangeText={setUrl}
+                placeholder="Paste an article URL"
+                placeholderTextColor={c.inkFaint}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                returnKeyType="go"
+                onSubmitEditing={onSubmit}
+              />
+              <View style={styles.captureActions}>
+                <GlassIconButton
+                  icon="content-paste"
+                  onPress={() => void onPaste()}
+                  accessibilityLabel="Paste from clipboard"
+                  size={44}
+                  iconSize={19}
+                  iconColor={c.inkSecondary}
+                />
+                <GlassIconButton
+                  icon={uploading ? "progress-upload" : "file-upload-outline"}
+                  onPress={() => void onUpload()}
+                  accessibilityLabel="Upload a PDF"
+                  disabled={uploading}
+                  size={44}
+                  iconSize={19}
+                  iconColor={c.inkSecondary}
+                />
+                <Pressable
+                  onPress={onSubmit}
+                  accessibilityRole="button"
+                  style={({ pressed }) =>
+                    pressed && !glassAvailable && styles.cardPressed
+                  }
+                >
+                  <GlassSurface
+                    isInteractive
+                    effectStyle="clear"
+                    tintColor={c.accent}
+                    style={styles.addButton}
+                    fallbackStyle={styles.addButtonFallback}
+                  >
+                    <Text style={styles.addButtonText}>Save</Text>
+                  </GlassSurface>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
+        <View style={styles.sectionHeadingRow}>
+          <Text style={styles.sectionTitle}>Library</Text>
+          <Pressable
+            onPress={() =>
+              setSortOrder((order) => (order === "newest" ? "oldest" : "newest"))
+            }
+            accessibilityRole="button"
+            accessibilityLabel="Toggle sort order"
+            hitSlop={6}
+            style={styles.sortButton}
+          >
+            <MaterialCommunityIcons
+              name={
+                sortOrder === "newest"
+                  ? "sort-calendar-descending"
+                  : "sort-calendar-ascending"
+              }
+              size={16}
+              color={c.inkSecondary}
+            />
+            <Text style={styles.sortText}>
+              {sortOrder === "newest" ? "Newest" : "Oldest"}
+            </Text>
+          </Pressable>
+        </View>
+
         <View style={styles.filterChips}>
           {FILTERS.map(({ value, label }) => {
             const active = filter === value;
@@ -498,60 +616,50 @@ export default function LibraryScreen() {
             );
           })}
         </View>
-        <Pressable
-          onPress={() =>
-            setSortOrder((order) => (order === "newest" ? "oldest" : "newest"))
-          }
-          accessibilityRole="button"
-          accessibilityLabel="Toggle sort order"
-          hitSlop={6}
-          style={styles.sortButton}
-        >
-          <MaterialCommunityIcons
-            name={
-              sortOrder === "newest"
-                ? "sort-calendar-descending"
-                : "sort-calendar-ascending"
-            }
-            size={16}
-            color={c.inkSecondary}
-          />
-          <Text style={styles.sortText}>
-            {sortOrder === "newest" ? "Newest" : "Oldest"}
-          </Text>
-        </Pressable>
-      </View>
 
-      <FlatList
-        data={visibleArticles}
-        keyExtractor={(item) => item._id}
-        renderItem={({ item }) => (
-          <ArticleCard
-            item={item}
-            onDelete={onDelete}
-            onRename={onRename}
-            onRetry={onRetry}
-            onSwipeOpen={onSwipeOpen}
-          />
-        )}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={
-          articles !== undefined ? (
-            <View style={styles.empty}>
-              <MaterialCommunityIcons
-                name="book-open-page-variant-outline"
-                size={44}
-                color={c.inkFaint}
-              />
-              <Text style={styles.emptyText}>
-                {articles.length > 0
-                  ? "Nothing here — try another filter."
-                  : "Nothing saved yet. Paste a URL above — it'll be waiting here on every device."}
-              </Text>
-            </View>
-          ) : null
-        }
-      />
+        <FlatList
+          style={styles.articleList}
+          data={visibleArticles}
+          keyExtractor={(item) => item._id}
+          renderItem={({ item }) => (
+            <ArticleCard
+              item={item}
+              onDelete={onDelete}
+              onRename={onRename}
+              onRetry={onRetry}
+              onSwipeOpen={onSwipeOpen}
+            />
+          )}
+          ItemSeparatorComponent={() => <View style={styles.divider} />}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.list}
+          ListEmptyComponent={
+            articles !== undefined ? (
+              <View style={styles.empty}>
+                <MaterialCommunityIcons
+                  name="book-open-page-variant-outline"
+                  size={38}
+                  color={c.inkFaint}
+                />
+                <Text style={styles.emptyTitle}>
+                  {query.trim()
+                    ? "No matching articles"
+                    : articles.length > 0
+                      ? "Nothing in this view"
+                      : "Your library is ready"}
+                </Text>
+                <Text style={styles.emptyText}>
+                  {query.trim()
+                    ? "Try a title, publication, or phrase from the article."
+                    : articles.length > 0
+                      ? "Choose another reading status."
+                      : "Add an article or PDF to begin a focused reading collection."}
+                </Text>
+              </View>
+            ) : null
+          }
+        />
+      </View>
 
       <RenameModal
         visible={renameTarget !== null}
@@ -569,6 +677,12 @@ const themed = makeThemedStyles((c) =>
       flex: 1,
       backgroundColor: c.background,
       paddingHorizontal: 20,
+    },
+    libraryShell: {
+      width: "100%",
+      maxWidth: 960,
+      flex: 1,
+      alignSelf: "center",
     },
     titleRow: {
       flexDirection: "row",
@@ -602,22 +716,87 @@ const themed = makeThemedStyles((c) =>
       fontWeight: "700",
       color: c.ink,
     },
-    appSubtitle: {
-      fontSize: 14,
+    utilityRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      marginTop: 22,
+      marginBottom: 28,
+    },
+    utilityRowCompact: {
+      marginTop: 18,
+      marginBottom: 24,
+    },
+    searchField: {
+      height: 44,
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 9,
+      backgroundColor: c.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.hairline,
+      borderRadius: 22,
+      borderCurve: "continuous",
+      paddingHorizontal: 14,
+    },
+    searchInput: {
+      flex: 1,
+      height: 44,
+      fontSize: 15,
+      color: c.ink,
+    },
+    addControl: {
+      minWidth: 92,
+      height: 44,
+      borderRadius: 22,
+      borderCurve: "continuous",
+      paddingHorizontal: 16,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 7,
+    },
+    addControlFallback: {
+      backgroundColor: c.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.hairline,
+    },
+    addControlText: {
+      fontSize: 15,
+      fontWeight: "600",
+      color: c.accent,
+    },
+    captureArea: {
+      marginTop: -12,
+      marginBottom: 28,
+      padding: 16,
+      borderRadius: 16,
+      borderCurve: "continuous",
+      backgroundColor: c.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.hairline,
+    },
+    captureLabel: {
+      marginBottom: 10,
+      fontSize: 13,
+      fontWeight: "600",
       color: c.inkSecondary,
-      marginTop: 8,
-      marginBottom: 18,
     },
     inputRow: {
       flexDirection: "row",
       alignItems: "center",
       gap: 8,
-      marginBottom: 12,
+    },
+    inputRowCompact: {
+      alignItems: "stretch",
+      flexDirection: "column",
     },
     input: {
       flex: 1,
+      minWidth: 0,
       height: 44,
-      backgroundColor: c.surface,
+      backgroundColor: c.background,
       borderWidth: 1,
       borderColor: c.hairline,
       borderRadius: 22,
@@ -625,6 +804,12 @@ const themed = makeThemedStyles((c) =>
       paddingHorizontal: 16,
       fontSize: 15,
       color: c.ink,
+    },
+    captureActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "flex-end",
+      gap: 8,
     },
     addButton: {
       height: 44,
@@ -642,19 +827,26 @@ const themed = makeThemedStyles((c) =>
       fontWeight: "600",
       fontSize: 15,
     },
-    controlsRow: {
+    sectionHeadingRow: {
       flexDirection: "row",
-      alignItems: "center",
+      alignItems: "flex-end",
       justifyContent: "space-between",
       gap: 12,
-      marginBottom: 14,
+      marginBottom: 16,
+    },
+    sectionTitle: {
+      fontFamily: serif,
+      fontSize: 27,
+      lineHeight: 34,
+      fontWeight: "600",
+      color: c.ink,
     },
     filterChips: {
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
       flexWrap: "wrap",
-      flexShrink: 1,
+      marginBottom: 6,
     },
     filterChip: {
       borderRadius: 16,
@@ -688,17 +880,39 @@ const themed = makeThemedStyles((c) =>
       fontWeight: "600",
       color: c.inkSecondary,
     },
+    articleList: {
+      flex: 1,
+      minHeight: 0,
+    },
     list: {
       paddingBottom: 40,
-      gap: 12,
+      flexGrow: 1,
+    },
+    divider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: c.hairline,
     },
     card: {
-      backgroundColor: c.surface,
-      borderRadius: 16,
-      borderCurve: "continuous",
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: c.hairline,
-      padding: 16,
+      minHeight: 112,
+      paddingHorizontal: 4,
+      paddingVertical: 19,
+    },
+    cardHeadingRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 12,
+    },
+    cardHeading: {
+      flex: 1,
+      minWidth: 0,
+    },
+    moreButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: -5,
     },
     rowActionsWrap: {
       flexDirection: "row",
@@ -726,13 +940,13 @@ const themed = makeThemedStyles((c) =>
       fontWeight: "600",
     },
     cardPressed: {
-      opacity: 0.7,
+      opacity: 0.62,
     },
     cardTitle: {
       fontFamily: serif,
-      fontSize: 19,
-      lineHeight: 25,
-      fontWeight: "700",
+      fontSize: 20,
+      lineHeight: 27,
+      fontWeight: "600",
       color: c.ink,
     },
     metaRow: {
@@ -772,9 +986,10 @@ const themed = makeThemedStyles((c) =>
     },
     cardExcerpt: {
       fontSize: 14,
-      lineHeight: 20,
+      lineHeight: 21,
       color: c.inkSecondary,
-      marginTop: 7,
+      marginTop: 9,
+      maxWidth: 720,
     },
     statusRow: {
       flexDirection: "row",
@@ -820,7 +1035,13 @@ const themed = makeThemedStyles((c) =>
     empty: {
       alignItems: "center",
       paddingTop: 70,
-      gap: 14,
+      gap: 9,
+    },
+    emptyTitle: {
+      fontFamily: serif,
+      fontSize: 20,
+      fontWeight: "600",
+      color: c.ink,
     },
     emptyText: {
       fontSize: 14.5,

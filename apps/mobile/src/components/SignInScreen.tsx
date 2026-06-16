@@ -18,8 +18,6 @@ import {
 import { makeThemedStyles, serif, useTheme } from "../lib/theme";
 import { showError } from "../lib/toast";
 
-import { BackdropWash } from "./BackdropWash";
-import { BrushStroke } from "./BrushStroke";
 import { GlassSurface, glassAvailable } from "./glass";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -69,7 +67,7 @@ export function SignInScreen() {
         }
         if (authSessionResult?.type === "cancel") return;
         const message =
-          "Sign-in didn't complete. If this account is new, try again — or use another provider.";
+          "Sign-in didn't complete. If this account is new, try again or use another provider.";
         setError(message);
         showError(message);
       } catch (e) {
@@ -85,17 +83,12 @@ export function SignInScreen() {
 
   return (
     <View style={styles.screen}>
-      <BackdropWash />
       <View style={styles.card}>
+        <Text style={styles.eyebrow}>PRIVATE READING LIBRARY</Text>
         <Text style={styles.title}>Inkwell</Text>
-        <BrushStroke
-          width={118}
-          height={9}
-          color={c.wash}
-          style={{ alignSelf: "center", marginTop: 2 }}
-        />
+        <View style={styles.rule} />
         <Text style={styles.subtitle}>
-          Sign in to sync your library across devices.
+          Keep articles, notes, and voice memos in sync across your devices.
         </Text>
 
         {PROVIDERS.map((provider) => (
@@ -110,6 +103,7 @@ export function SignInScreen() {
           >
             <GlassSurface
               isInteractive
+              effectStyle="clear"
               style={styles.button}
               fallbackStyle={styles.buttonFallback}
             >
@@ -147,21 +141,37 @@ const themed = makeThemedStyles((c) =>
     card: {
       width: "100%",
       maxWidth: 380,
-      gap: 12,
+      gap: 13,
+    },
+    eyebrow: {
+      fontSize: 10.5,
+      fontWeight: "700",
+      letterSpacing: 1.35,
+      color: c.inkFaint,
+      textAlign: "center",
     },
     title: {
       fontFamily: serif,
-      fontSize: 34,
-      fontWeight: "700",
+      fontSize: 38,
+      lineHeight: 44,
+      fontWeight: "600",
       color: c.ink,
       textAlign: "center",
     },
+    rule: {
+      width: 42,
+      height: StyleSheet.hairlineWidth,
+      alignSelf: "center",
+      backgroundColor: c.inkFaint,
+      marginTop: 2,
+      marginBottom: 4,
+    },
     subtitle: {
-      fontSize: 14,
+      fontSize: 14.5,
+      lineHeight: 21,
       color: c.inkSecondary,
       textAlign: "center",
-      marginTop: 6,
-      marginBottom: 14,
+      marginBottom: 18,
     },
     button: {
       flexDirection: "row",

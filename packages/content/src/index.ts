@@ -10,3 +10,4 @@ export * from "./normalize";
 export * from "./exportMarkdown";
 export * from "./blocksToMarkdown";
 export * from "./strokePath";
+export * from "./documentOutline";

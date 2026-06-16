@@ -2,8 +2,10 @@ import { useAuth } from "@clerk/expo";
 import { api } from "@inkwell/backend/convex/_generated/api";
 import type { Id } from "@inkwell/backend/convex/_generated/dataModel";
 import {
+  buildDocumentOutline,
   buildExportMarkdown,
   emptyAnnotations,
+  inferDocumentHeadings,
   type Annotations,
   type Block,
   type BlockLayout,
@@ -28,6 +30,7 @@ import {
   ActivityIndicator,
   Platform,
   Pressable,
+  ScrollView,
   Share,
   StyleSheet,
   Text,
@@ -47,7 +50,12 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { BlockRenderer } from "../../components/BlockRenderer";
-import { BrushStroke } from "../../components/BrushStroke";
+import {
+  DOCUMENT_START_ID,
+  DocumentOutline,
+  DocumentOutlineDrawer,
+  OUTLINE_RAIL_WIDTH,
+} from "../../components/document-outline";
 import { GlassIconButton } from "../../components/glass";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { BoxesLayer } from "../../components/annotation/BoxesLayer";
@@ -82,6 +90,8 @@ import {
 } from "../../lib/theme";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
+const OUTLINE_RAIL_BREAKPOINT = 1320;
+const IS_IPHONE = Platform.OS === "ios" && !Platform.isPad;
 
 type UndoOp =
   | { kind: "stroke" | "box" | "note" | "memo"; id: string }
@@ -203,13 +213,23 @@ export default function ArticleScreen() {
   const [memoPhase, setMemoPhase] = useState<MemoPhase | null>(null);
   const [playerMemoId, setPlayerMemoId] = useState<string | null>(null);
   const [undoStack, setUndoStack] = useState<UndoOp[]>([]);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [activeOutlineId, setActiveOutlineId] = useState(DOCUMENT_START_ID);
   const { getToken } = useAuth();
 
-  const blocks = useMemo<Block[]>(
-    () =>
-      article?.blocksJson ? (JSON.parse(article.blocksJson) as Block[]) : [],
-    [article?.blocksJson]
-  );
+  const blocksJson = article?.blocksJson;
+  const blocks = useMemo<Block[]>(() => {
+    if (!blocksJson) return [];
+    try {
+      return inferDocumentHeadings(JSON.parse(blocksJson) as Block[]);
+    } catch {
+      return [];
+    }
+  }, [blocksJson]);
+  const outline = useMemo(() => buildDocumentOutline(blocks), [blocks]);
+  const hasOutline = outline.length > 0;
+  const showOutlineRail =
+    hasOutline && windowWidth >= OUTLINE_RAIL_BREAKPOINT;
 
   // undefined = still loading, null = no annotations row yet.
   const loadedAnnotations = useMemo<Annotations | null | undefined>(() => {
@@ -227,20 +247,57 @@ export default function ArticleScreen() {
     };
   }, [remoteAnnotations]);
 
+  const readerViewportWidth = showOutlineRail
+    ? windowWidth - OUTLINE_RAIL_WIDTH
+    : windowWidth;
   const contentWidth = Math.min(
     MAX_CONTENT_WIDTH,
-    windowWidth - CONTENT_PADDING * 2
+    readerViewportWidth - CONTENT_PADDING * 2
   );
-  const offsetX = (windowWidth - contentWidth) / 2;
+  const offsetX = (readerViewportWidth - contentWidth) / 2;
   const scale = annotations ? contentWidth / annotations.contentWidth : 1;
+
+  const scrollRef = useRef<ScrollView>(null);
+  const layoutsRef = useRef(new Map<number, BlockLayout>());
+  const updateActiveOutline = useCallback(
+    (offset: number, contentHeight: number, viewportHeight: number) => {
+      let nextId = DOCUMENT_START_ID;
+      const threshold = offset + 88;
+      for (const entry of outline) {
+        const layout = layoutsRef.current.get(entry.blockIndex);
+        if (!layout || layout.y > threshold) break;
+        nextId = entry.id;
+      }
+      const scrollable = contentHeight > viewportHeight + 4;
+      const atBottom =
+        scrollable && offset + viewportHeight >= contentHeight - 4;
+      if (atBottom && outline.length > 0) {
+        nextId = outline[outline.length - 1].id;
+      }
+      setActiveOutlineId((current) => (current === nextId ? current : nextId));
+    },
+    [outline]
+  );
 
   const scrollY = useSharedValue(0);
   const scrollContentHeight = useSharedValue(0);
   const scrollViewportHeight = useSharedValue(0);
+  const lastOutlineOffset = useSharedValue(-100);
   const scrollHandler = useAnimatedScrollHandler((event) => {
     scrollY.value = event.contentOffset.y;
     scrollContentHeight.value = event.contentSize.height;
     scrollViewportHeight.value = event.layoutMeasurement.height;
+    if (
+      hasOutline &&
+      Math.abs(event.contentOffset.y - lastOutlineOffset.value) >= 16
+    ) {
+      lastOutlineOffset.value = event.contentOffset.y;
+      runOnJS(updateActiveOutline)(
+        event.contentOffset.y,
+        event.contentSize.height,
+        event.layoutMeasurement.height
+      );
+    }
   });
 
   // Reading progress: scaleX is cheaper than animating width, and the bar
@@ -291,7 +348,6 @@ export default function ArticleScreen() {
   const previewBoxRef = useRef<BoxAnnotation | null>(null);
   const noteSizesRef = useRef(new Map<string, { w: number; h: number }>());
   const memoSizesRef = useRef(new Map<string, { w: number; h: number }>());
-  const layoutsRef = useRef(new Map<number, BlockLayout>());
   const annotationsRef = useRef<Annotations | null>(null);
   const memoPhaseRef = useRef<MemoPhase | null>(null);
   const dirtyRef = useRef(false);
@@ -982,6 +1038,22 @@ export default function ArticleScreen() {
     layoutsRef.current.set(index, layout);
   }, []);
 
+  const onOutlineNavigate = useCallback(
+    (entry: (typeof outline)[number] | null) => {
+      const y = entry
+        ? layoutsRef.current.get(entry.blockIndex)?.y
+        : 0;
+      if (y === undefined) return;
+      scrollRef.current?.scrollTo({
+        y: Math.max(0, y - 18),
+        animated: true,
+      });
+      setActiveOutlineId(entry?.id ?? DOCUMENT_START_ID);
+      setOutlineOpen(false);
+    },
+    []
+  );
+
   // ---- header actions ----
   const onOpenOriginal = useCallback(() => {
     if (article?.url) void Linking.openURL(article.url);
@@ -1051,27 +1123,49 @@ export default function ArticleScreen() {
         year: "numeric",
       })
     : "";
+  const compactHeaderActions =
+    !showOutlineRail && hasOutline && !isUpload;
+  const headerButtonSize = compactHeaderActions ? 32 : 40;
 
   return (
     <View style={styles.screen}>
       <ScreenHeader
         title={article?.title ?? ""}
+        subtitle={
+          article
+            ? [article.siteName, savedDate].filter(Boolean).join("  ·  ")
+            : undefined
+        }
+        compact={IS_IPHONE}
         right={
           ready ? (
-            <>
+            <View style={styles.headerActions}>
+              {!showOutlineRail && hasOutline ? (
+                <GlassIconButton
+                  icon="format-list-bulleted"
+                  onPress={() => setOutlineOpen(true)}
+                  accessibilityLabel="Open document outline"
+                  size={headerButtonSize}
+                  iconSize={18}
+                />
+              ) : null}
               {isUpload ? null : (
                 <GlassIconButton
                   icon="apple-safari"
                   onPress={onOpenOriginal}
                   accessibilityLabel="Open original article in browser"
+                  size={headerButtonSize}
+                  iconSize={18}
                 />
               )}
               <GlassIconButton
                 icon="file-export-outline"
                 onPress={onExport}
                 accessibilityLabel="Export markup as Markdown"
+                size={headerButtonSize}
+                iconSize={18}
               />
-            </>
+            </View>
           ) : null
         }
       />
@@ -1096,98 +1190,118 @@ export default function ArticleScreen() {
               ]}
             />
           </View>
-          <GestureDetector gesture={nativeScroll}>
-            <Animated.ScrollView
-              onScroll={scrollHandler}
-              scrollEventThrottle={16}
-              scrollEnabled={tool === "read" || hasStylus}
-              onContentSizeChange={(_w, h) => {
-                scrollContentHeight.value = h;
-              }}
-              onLayout={(e) => {
-                scrollViewportHeight.value = e.nativeEvent.layout.height;
-              }}
-            >
-              <GestureDetector gesture={drawGestures}>
-                <View collapsable={false} style={styles.scrollContent}>
-                  <View style={{ width: contentWidth, alignSelf: "center" }}>
-              <Text style={styles.title}>{article.title}</Text>
-              <Text style={styles.meta}>
-                {[article.byline, article.siteName, savedDate]
-                  .filter(Boolean)
-                  .join("  ·  ")}
-              </Text>
-              <BrushStroke
-                width={Math.min(220, contentWidth * 0.4)}
-                height={8}
-                color={c.wash}
-                opacity={0.75}
-                style={{ marginBottom: 26 }}
-              />
-              <BlockRenderer
-                blocks={blocks}
-                contentWidth={contentWidth}
-                onBlockLayout={onBlockLayout}
-              />
-              <BoxesLayer
-                boxes={annotations.boxes}
-                previewBox={previewBox}
-                scale={scale}
-              />
-              <NotesLayer
-                notes={annotations.notes}
-                scale={scale}
-                onPressNote={onPressNote}
-                onNoteLayout={onNoteLayout}
-              />
-              <MemosLayer
-                memos={annotations.memos}
-                scale={scale}
-                onPressMemo={onPressMemo}
-                onMemoLayout={onMemoLayout}
-              />
-              <View style={styles.readFooter}>
-                <Pressable
-                  onPress={onToggleRead}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    isRead ? "Mark as unread" : "Mark as read"
-                  }
-                  style={({ pressed }) => [
-                    styles.markReadButton,
-                    isRead && styles.markReadButtonDone,
-                    pressed && { opacity: 0.8 },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.markReadText,
-                      isRead && styles.markReadTextDone,
-                    ]}
-                  >
-                    {isRead ? "✓ Read — mark as unread" : "Mark as read"}
-                  </Text>
-                </Pressable>
-                {isRead ? null : (
-                  <Text style={styles.readFooterHint}>
-                    Finished? This moves it to your Read list everywhere.
-                  </Text>
-                )}
+          <View style={styles.readerLayout}>
+            {showOutlineRail ? (
+              <View style={styles.outlineRail}>
+                <DocumentOutline
+                  entries={outline}
+                  activeId={activeOutlineId}
+                  onNavigate={onOutlineNavigate}
+                />
               </View>
-                  </View>
-                </View>
+            ) : null}
+            <View style={styles.readerPane}>
+              <GestureDetector gesture={nativeScroll}>
+                <Animated.ScrollView
+                  ref={scrollRef}
+                  onScroll={scrollHandler}
+                  scrollEventThrottle={16}
+                  scrollEnabled={tool === "read" || hasStylus}
+                  onContentSizeChange={(_w, h) => {
+                    scrollContentHeight.value = h;
+                  }}
+                  onLayout={(e) => {
+                    scrollViewportHeight.value = e.nativeEvent.layout.height;
+                  }}
+                >
+                  <GestureDetector gesture={drawGestures}>
+                    <View
+                      collapsable={false}
+                      style={styles.scrollContent}
+                    >
+                      <View
+                        style={{ width: contentWidth, alignSelf: "center" }}
+                      >
+                        <Text
+                          style={[styles.title, IS_IPHONE && styles.phoneTitle]}
+                        >
+                          {article.title}
+                        </Text>
+                        <Text style={styles.meta}>
+                          {[article.byline, article.siteName, savedDate]
+                            .filter(Boolean)
+                            .join("  ·  ")}
+                        </Text>
+                        <View style={styles.titleRule} />
+                        <BlockRenderer
+                          blocks={blocks}
+                          contentWidth={contentWidth}
+                          onBlockLayout={onBlockLayout}
+                        />
+                        <BoxesLayer
+                          boxes={annotations.boxes}
+                          previewBox={previewBox}
+                          scale={scale}
+                        />
+                        <NotesLayer
+                          notes={annotations.notes}
+                          scale={scale}
+                          onPressNote={onPressNote}
+                          onNoteLayout={onNoteLayout}
+                        />
+                        <MemosLayer
+                          memos={annotations.memos}
+                          scale={scale}
+                          onPressMemo={onPressMemo}
+                          onMemoLayout={onMemoLayout}
+                        />
+                        <View style={styles.readFooter}>
+                          <Pressable
+                            onPress={onToggleRead}
+                            accessibilityRole="button"
+                            accessibilityLabel={
+                              isRead ? "Mark as unread" : "Mark as read"
+                            }
+                            style={({ pressed }) => [
+                              styles.markReadButton,
+                              isRead && styles.markReadButtonDone,
+                              pressed && { opacity: 0.8 },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.markReadText,
+                                isRead && styles.markReadTextDone,
+                              ]}
+                            >
+                              {isRead
+                                ? "Read. Mark as unread"
+                                : "Mark as read"}
+                            </Text>
+                          </Pressable>
+                          {isRead ? null : (
+                            <Text style={styles.readFooterHint}>
+                              Finished? This moves it to your Read list
+                              everywhere.
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+                    </View>
+                  </GestureDetector>
+                </Animated.ScrollView>
               </GestureDetector>
-            </Animated.ScrollView>
-          </GestureDetector>
 
-          <StrokesCanvas
-            strokes={annotations.strokes}
-            activeStroke={activeStroke}
-            scrollY={scrollY}
-            offsetX={offsetX}
-            offsetY={READER_TOP_PADDING}
-            scale={scale}
-          />
+              <StrokesCanvas
+                strokes={annotations.strokes}
+                activeStroke={activeStroke}
+                scrollY={scrollY}
+                offsetX={offsetX}
+                offsetY={READER_TOP_PADDING}
+                scale={scale}
+              />
+            </View>
+          </View>
 
           <Toolbar
             tool={tool}
@@ -1196,6 +1310,7 @@ export default function ArticleScreen() {
             onPenColorChange={setPenColor}
             canUndo={undoStack.length > 0}
             onUndo={undo}
+            isPhone={IS_IPHONE}
           />
 
           <NoteEditorModal
@@ -1236,6 +1351,15 @@ export default function ArticleScreen() {
           ) : null}
         </View>
       )}
+      {!showOutlineRail && hasOutline ? (
+        <DocumentOutlineDrawer
+          visible={outlineOpen}
+          entries={outline}
+          activeId={activeOutlineId}
+          onNavigate={onOutlineNavigate}
+          onClose={() => setOutlineOpen(false)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -1249,16 +1373,38 @@ const themed = makeThemedStyles((c) =>
     readerArea: {
       flex: 1,
     },
+    readerLayout: {
+      flex: 1,
+      flexDirection: "row",
+    },
+    readerPane: {
+      flex: 1,
+      minWidth: 0,
+      position: "relative",
+    },
+    outlineRail: {
+      width: OUTLINE_RAIL_WIDTH,
+      borderRightWidth: StyleSheet.hairlineWidth,
+      borderRightColor: c.hairline,
+      backgroundColor: c.surface,
+      paddingHorizontal: 18,
+      paddingTop: 24,
+    },
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
     progressTrack: {
       position: "absolute",
       top: 0,
       left: 0,
       right: 0,
-      height: 3,
+      height: 2,
       zIndex: 10,
     },
     progressFill: {
-      height: 3,
+      height: 2,
       backgroundColor: c.accent,
       transformOrigin: "left",
       borderTopRightRadius: 2,
@@ -1282,21 +1428,31 @@ const themed = makeThemedStyles((c) =>
     },
     title: {
       fontFamily: serif,
-      fontSize: 32,
-      lineHeight: 40,
-      fontWeight: "700",
+      fontSize: 40,
+      lineHeight: 48,
+      fontWeight: "600",
       color: c.ink,
-      marginBottom: 12,
+      marginBottom: 14,
+    },
+    phoneTitle: {
+      fontSize: 31,
+      lineHeight: 39,
     },
     meta: {
-      fontSize: 13,
+      fontSize: 12.5,
       color: c.inkFaint,
-      marginBottom: 14,
+      marginBottom: 22,
+    },
+    titleRule: {
+      width: 54,
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: c.inkFaint,
+      marginBottom: 34,
     },
     readFooter: {
       alignItems: "center",
       gap: 10,
-      marginTop: 48,
+      marginTop: 56,
     },
     markReadButton: {
       height: 44,
@@ -1305,17 +1461,17 @@ const themed = makeThemedStyles((c) =>
       paddingHorizontal: 26,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: c.accent,
+      backgroundColor: c.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.hairline,
     },
     markReadButtonDone: {
-      backgroundColor: c.surface,
-      borderWidth: 1,
-      borderColor: c.hairline,
+      backgroundColor: c.surfaceMuted,
     },
     markReadText: {
       fontSize: 15,
       fontWeight: "600",
-      color: c.onAccent,
+      color: c.accent,
     },
     markReadTextDone: {
       color: c.inkSecondary,
