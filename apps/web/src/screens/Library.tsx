@@ -334,7 +334,12 @@ export function Library() {
           </div>
           <BrushStroke width={118} height={9} color={c.wash} />
         </div>
-        <UserButton />
+        <div className="app-header-actions">
+          <Link to="/mcp-setup" className="header-link">
+            Connect MCP
+          </Link>
+          <UserButton />
+        </div>
       </header>
       <p className="app-subtitle">
         Save an article, read it, scribble all over it.
