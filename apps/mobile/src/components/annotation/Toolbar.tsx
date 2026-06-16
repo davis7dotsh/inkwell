@@ -1,6 +1,7 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
@@ -34,6 +35,10 @@ const TOOLS: {
   { tool: "eraser", icon: "eraser", label: "Eraser" },
 ];
 
+const IPHONE_TOOLS = TOOLS.filter(({ tool }) =>
+  ["read", "note", "memo", "eraser"].includes(tool)
+);
+
 // VoiceOver/TalkBack names for the stored pen inks (see penColors in theme).
 const PEN_COLOR_NAMES: Record<string, string> = {
   "#0E2E52": "Deep ink",
@@ -49,6 +54,7 @@ type Props = {
   onPenColorChange: (color: string) => void;
   canUndo: boolean;
   onUndo: () => void;
+  isPhone?: boolean;
 };
 
 export function Toolbar({
@@ -58,72 +64,199 @@ export function Toolbar({
   onPenColorChange,
   canUndo,
   onUndo,
+  isPhone = false,
 }: Props) {
   const insets = useSafeAreaInsets();
   const { scheme, c, isDark } = useTheme();
   const styles = themed[scheme];
+  const tools = isPhone ? IPHONE_TOOLS : TOOLS;
+  const [dismissed, setDismissed] = useState(false);
+
+  const finishDismiss = useCallback(() => {
+    onToolChange("read");
+    setDismissed(true);
+  }, [onToolChange]);
+
+  const restore = useCallback(() => {
+    setDismissed(false);
+  }, []);
+
+  const dismissGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .runOnJS(true)
+        .activeOffsetX(6)
+        .failOffsetY([-20, 20])
+        .onEnd((event) => {
+          if (event.translationX > 18 || event.velocityX > 300) {
+            finishDismiss();
+          }
+        }),
+    [finishDismiss]
+  );
+
+  if (!isPhone && dismissed) {
+    return (
+      <View
+        style={[
+          styles.handleWrap,
+          { right: Math.max(insets.right, 0) - 8 },
+        ]}
+        pointerEvents="box-none"
+      >
+        <Pressable
+          onPress={restore}
+          accessibilityRole="button"
+          accessibilityLabel="Show annotation tools"
+          hitSlop={4}
+          style={styles.handleTarget}
+        >
+          <GlassSurface
+            isInteractive
+            effectStyle="clear"
+            style={styles.handle}
+            fallbackStyle={styles.handleFallback}
+          >
+            <View style={styles.handleLine} />
+          </GlassSurface>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (isPhone) {
+    return (
+      <View
+        style={[styles.phoneWrap, { bottom: Math.max(insets.bottom, 10) }]}
+        pointerEvents="box-none"
+      >
+        <GlassSurface
+          effectStyle="clear"
+          style={[styles.pill, styles.phonePill]}
+          fallbackStyle={styles.pillFallback}
+        >
+          {tools.map(({ tool: t, icon, label }) => (
+            <Pressable
+              key={t}
+              onPress={() => onToolChange(t)}
+              accessibilityRole="button"
+              accessibilityLabel={label}
+              accessibilityState={{ selected: tool === t }}
+              style={[styles.button, tool === t && styles.buttonActive]}
+            >
+              <MaterialCommunityIcons
+                name={icon}
+                size={22}
+                color={tool === t ? c.accent : c.inkSecondary}
+              />
+            </Pressable>
+          ))}
+          {canUndo ? (
+            <>
+              <View style={styles.phoneDivider} />
+              <Pressable
+                onPress={onUndo}
+                accessibilityRole="button"
+                accessibilityLabel="Undo last annotation"
+                style={styles.button}
+              >
+                <MaterialCommunityIcons
+                  name="undo"
+                  size={22}
+                  color={c.inkSecondary}
+                />
+              </Pressable>
+            </>
+          ) : null}
+        </GlassSurface>
+      </View>
+    );
+  }
+
   return (
     <View
       style={[styles.wrap, { right: Math.max(insets.right, 12) + 14 }]}
       pointerEvents="box-none"
     >
-      {tool === "pen" && (
-        <GlassSurface
-          style={[styles.pill, styles.colorRow]}
-          fallbackStyle={styles.pillFallback}
-        >
-          {penColors.map((color) => (
-            <Pressable
-              key={color}
-              onPress={() => onPenColorChange(color)}
-              accessibilityRole="button"
-              accessibilityLabel={`${PEN_COLOR_NAMES[color] ?? color} pen`}
-              accessibilityState={{ selected: color === penColor }}
-              hitSlop={8}
-              style={[
-                styles.colorDot,
-                { backgroundColor: displayInkColor(color, isDark) },
-                color === penColor && styles.colorDotActive,
-              ]}
-            />
-          ))}
-        </GlassSurface>
-      )}
-      <GlassSurface style={styles.pill} fallbackStyle={styles.pillFallback}>
-        {TOOLS.map(({ tool: t, icon, label }) => (
-          <Pressable
-            key={t}
-            onPress={() => onToolChange(t)}
-            accessibilityRole="button"
-            accessibilityLabel={label}
-            accessibilityState={{ selected: tool === t }}
-            style={[styles.button, tool === t && styles.buttonActive]}
+      <GestureDetector gesture={dismissGesture}>
+        <View style={styles.desktopRail}>
+          {tool === "pen" ? (
+            <GlassSurface
+              effectStyle="clear"
+              style={[styles.pill, styles.colorRow]}
+              fallbackStyle={styles.pillFallback}
+            >
+              {penColors.map((color) => (
+                <Pressable
+                  key={color}
+                  onPress={() => onPenColorChange(color)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${PEN_COLOR_NAMES[color] ?? color} pen`}
+                  accessibilityState={{ selected: color === penColor }}
+                  hitSlop={8}
+                  style={[
+                    styles.colorDot,
+                    { backgroundColor: displayInkColor(color, isDark) },
+                    color === penColor && styles.colorDotActive,
+                  ]}
+                />
+              ))}
+            </GlassSurface>
+          ) : null}
+          <GlassSurface
+            effectStyle="clear"
+            style={styles.pill}
+            fallbackStyle={styles.pillFallback}
           >
-            <MaterialCommunityIcons
-              name={icon}
-              size={22}
-              color={tool === t ? c.accent : c.inkSecondary}
-            />
-          </Pressable>
-        ))}
-        {canUndo ? (
-          <>
+            {tools.map(({ tool: t, icon, label }) => (
+              <Pressable
+                key={t}
+                onPress={() => onToolChange(t)}
+                accessibilityRole="button"
+                accessibilityLabel={label}
+                accessibilityState={{ selected: tool === t }}
+                style={[styles.button, tool === t && styles.buttonActive]}
+              >
+                <MaterialCommunityIcons
+                  name={icon}
+                  size={22}
+                  color={tool === t ? c.accent : c.inkSecondary}
+                />
+              </Pressable>
+            ))}
+            {canUndo ? (
+              <>
+                <View style={styles.divider} />
+                <Pressable
+                  onPress={onUndo}
+                  accessibilityRole="button"
+                  accessibilityLabel="Undo last annotation"
+                  style={styles.button}
+                >
+                  <MaterialCommunityIcons
+                    name="undo"
+                    size={22}
+                    color={c.inkSecondary}
+                  />
+                </Pressable>
+              </>
+            ) : null}
             <View style={styles.divider} />
             <Pressable
-              onPress={onUndo}
+              onPress={finishDismiss}
               accessibilityRole="button"
-              accessibilityLabel="Undo last annotation"
+              accessibilityLabel="Hide annotation tools"
               style={styles.button}
             >
               <MaterialCommunityIcons
-                name="undo"
-                size={22}
-                color={c.inkSecondary}
+                name="chevron-right"
+                size={21}
+                color={c.inkFaint}
               />
             </Pressable>
-          </>
-        ) : null}
-      </GlassSurface>
+          </GlassSurface>
+        </View>
+      </GestureDetector>
     </View>
   );
 }
@@ -134,10 +267,52 @@ const themed = makeThemedStyles((c) =>
       position: "absolute",
       top: 0,
       bottom: 0,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    desktopRail: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "flex-end",
       gap: 10,
+    },
+    handleWrap: {
+      position: "absolute",
+      top: 0,
+      bottom: 0,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    handleTarget: {
+      width: 44,
+      height: 88,
+      alignItems: "flex-end",
+      justifyContent: "center",
+    },
+    handle: {
+      width: 15,
+      height: 72,
+      borderRadius: 8,
+      borderCurve: "continuous",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    handleFallback: {
+      backgroundColor: c.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.hairline,
+    },
+    handleLine: {
+      width: 2,
+      height: 30,
+      borderRadius: 1,
+      backgroundColor: c.inkFaint,
+      opacity: 0.42,
+    },
+    phoneWrap: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      alignItems: "center",
     },
     pill: {
       flexDirection: "column",
@@ -148,12 +323,18 @@ const themed = makeThemedStyles((c) =>
       paddingVertical: 8,
       gap: 2,
     },
+    phonePill: {
+      flexDirection: "row",
+      paddingHorizontal: 8,
+      paddingVertical: 6,
+      gap: 2,
+    },
     pillFallback: {
       backgroundColor: c.surface,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.hairline,
-      shadowColor: "#0E2E52",
-      shadowOpacity: 0.16,
+      shadowColor: "#172A3E",
+      shadowOpacity: 0.13,
       shadowRadius: 14,
       shadowOffset: { width: 0, height: 6 },
       elevation: 8,
@@ -173,6 +354,12 @@ const themed = makeThemedStyles((c) =>
       height: StyleSheet.hairlineWidth,
       backgroundColor: c.hairline,
       marginVertical: 4,
+    },
+    phoneDivider: {
+      width: StyleSheet.hairlineWidth,
+      height: 24,
+      backgroundColor: c.hairline,
+      marginHorizontal: 4,
     },
     colorRow: {
       paddingHorizontal: 8,

@@ -1,64 +1,65 @@
-// Ink-wash visual language: cool paper background, deep-ink serif text,
-// blue brush accents — in two finishes.
+// Quiet Shelves visual language: warm paper, blue-black reading ink, and one
+// restrained brush-blue action voice in two finishes.
 //
-// Light — deep ink #0E2E52 (text, headers) · brush blue #1B4F8A (primary,
-// buttons) · stroke blue #3D7BC0 (accents, links, ink) · wash #8FB8DE
-// (highlights) · mist #E4EEF7 (selected states, cards) · paper #F7F8F6.
+// Light keeps content warmer than controls, so the library reads as one open
+// paper surface rather than a stack of cards.
 //
 // Dark — "night study": deep NEUTRAL gray paper (never jet black, never
 // blue-cast), with the brush blues lifted so they read as accents at night.
 import { Platform, StyleSheet, useColorScheme } from "react-native";
 
 const light = {
-  background: "#F7F8F6", // paper
-  surface: "#FFFFFF",
-  ink: "#0E2E52", // deep ink
-  inkSecondary: "#46627F",
-  inkFaint: "#8094A9",
-  hairline: "#DCE5ED",
-  accent: "#1B4F8A", // brush blue
-  onAccent: "#FFFFFF", // text/icons on accent-filled surfaces
-  accentSoft: "#E4EEF7", // mist
-  link: "#3D7BC0", // stroke blue
-  linkUnderline: "#8FB8DE",
-  codeBackground: "#ECF2F8",
+  background: "#F5F3EE", // warm paper
+  surface: "#FCFBF7",
+  surfaceMuted: "#EEEDE8",
+  ink: "#172A3E", // blue-black reading ink
+  inkSecondary: "#526576",
+  inkFaint: "#7B8995",
+  hairline: "#D9D9D3",
+  accent: "#1F5B8B", // brush blue
+  onAccent: "#FAF9F5", // text/icons on accent-filled surfaces
+  accentSoft: "#E4EDF3", // mist
+  link: "#2F6F9D", // stroke blue
+  linkUnderline: "#9CBED3",
+  codeBackground: "#ECEBE6",
   boxStroke: "#3D7BC0",
   boxFill: "rgba(61, 123, 192, 0.08)",
-  noteBackground: "#E4EEF7", // mist
-  noteBorder: "#8FB8DE", // wash
-  noteText: "#0E2E52",
-  wash: "#8FB8DE",
-  mist: "#E4EEF7",
+  noteBackground: "#E8EFF3", // mist
+  noteBorder: "#9CBED3", // wash
+  noteText: "#172A3E",
+  wash: "#A7C5D8",
+  mist: "#E8EFF3",
   danger: "#B0413E", // seal red — destructive text/icons, failures
   dangerSolid: "#B0413E", // filled destructive buttons (white label)
   dangerSoft: "rgba(176, 65, 62, 0.08)",
-  errorSurface: "#FFF1EF",
+  errorSurface: "#FAEFEC",
   errorBorder: "#D98C82",
-  backdrop: "rgba(14, 46, 82, 0.35)",
+  backdrop: "rgba(23, 42, 62, 0.32)",
 };
 
 export type Palette = typeof light;
 
 const dark: Palette = {
-  background: "#17181A", // deep neutral gray, easy on night eyes
-  surface: "#1E2022",
-  ink: "#E7E9EC",
-  inkSecondary: "#A4ABB4",
-  inkFaint: "#737A84",
-  hairline: "#2B2E32",
+  background: "#171716", // deep neutral gray, easy on night eyes
+  surface: "#222220",
+  surfaceMuted: "#2A2A27",
+  ink: "#ECEAE5",
+  inkSecondary: "#B0B0AB",
+  inkFaint: "#81827F",
+  hairline: "#353531",
   accent: "#6FA3DC", // brush blue, lifted
   onAccent: "#0E2238", // deep ink label on the lifted blue
-  accentSoft: "#1E2C3D",
+  accentSoft: "#263442",
   link: "#7FB2E8",
   linkUnderline: "#3D5A7A",
-  codeBackground: "#1D2024",
+  codeBackground: "#262724",
   boxStroke: "#5E97D0",
   boxFill: "rgba(94, 151, 208, 0.10)",
-  noteBackground: "#1E2C3D",
+  noteBackground: "#263442",
   noteBorder: "#3D5A7A",
   noteText: "#E3EAF2",
   wash: "#31506F",
-  mist: "#1E2C3D",
+  mist: "#263442",
   danger: "#E08A85",
   dangerSolid: "#C4524E",
   dangerSoft: "rgba(224, 138, 133, 0.12)",

@@ -59,7 +59,8 @@
     "lint": "expo lint",
     "dev": "expo start",
     "ipad": "cd ios && xcodebuild -workspace Inkwell.xcworkspace -scheme Inkwell -configuration Release -destination 'id=00008142-001839490C22401C' -derivedDataPath ./build -allowProvisioningUpdates -quiet build && xcrun devicectl device install app --device 00008142-001839490C22401C build/Build/Products/Release-iphoneos/Inkwell.app",
-    "ipad:dev": "cd ios && xcodebuild -workspace Inkwell.xcworkspace -scheme Inkwell -configuration Debug -destination 'id=00008142-001839490C22401C' -derivedDataPath ./build -allowProvisioningUpdates -quiet build && xcrun devicectl device install app --device 00008142-001839490C22401C build/Build/Products/Debug-iphoneos/Inkwell.app"
+    "ipad:dev": "cd ios && xcodebuild -workspace Inkwell.xcworkspace -scheme Inkwell -configuration Debug -destination 'id=00008142-001839490C22401C' -derivedDataPath ./build -allowProvisioningUpdates -quiet build && xcrun devicectl device install app --device 00008142-001839490C22401C build/Build/Products/Debug-iphoneos/Inkwell.app",
+    "iphone": "cd ios && xcodebuild -workspace Inkwell.xcworkspace -scheme Inkwell -configuration Release -destination 'id=00008150-000E4DC41E61401C' -derivedDataPath ./build -allowProvisioningUpdates -quiet build && xcrun devicectl device install app --device 00008150-000E4DC41E61401C build/Build/Products/Release-iphoneos/Inkwell.app"
   },
   "private": true,
   "license": "MIT",

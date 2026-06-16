@@ -6,8 +6,6 @@ import { StyleSheet, Text, View } from "react-native";
 
 import { makeThemedStyles, mono, serif, useTheme } from "../lib/theme";
 
-import { BrushStroke } from "./BrushStroke";
-
 function SpanText({ spans }: { spans: Span[] }) {
   const { scheme } = useTheme();
   const styles = themed[scheme];
@@ -89,7 +87,7 @@ function ArticleImage({
 }
 
 function BlockView({ block, contentWidth }: { block: Block; contentWidth: number }) {
-  const { scheme, c } = useTheme();
+  const { scheme } = useTheme();
   const styles = themed[scheme];
   switch (block.type) {
     case "heading":
@@ -146,7 +144,7 @@ function BlockView({ block, contentWidth }: { block: Block; contentWidth: number
     case "rule":
       return (
         <View style={styles.rule}>
-          <BrushStroke width={150} height={7} color={c.wash} opacity={0.6} />
+          <View style={styles.ruleLine} />
         </View>
       );
   }
@@ -193,9 +191,9 @@ const themed = makeThemedStyles((c) =>
     paragraph: {
       fontFamily: serif,
       fontSize: 18,
-      lineHeight: 30,
+      lineHeight: 30.5,
       color: c.ink,
-      marginBottom: 18,
+      marginBottom: 20,
     },
     heading: {
       color: c.ink,
@@ -215,10 +213,14 @@ const themed = makeThemedStyles((c) =>
       textDecorationColor: c.linkUnderline,
     },
     quote: {
-      borderLeftWidth: 3,
-      borderLeftColor: c.accent,
-      paddingLeft: 16,
-      marginBottom: 18,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.hairline,
+      borderRadius: 12,
+      borderCurve: "continuous",
+      backgroundColor: c.surfaceMuted,
+      paddingHorizontal: 18,
+      paddingVertical: 15,
+      marginBottom: 20,
     },
     quoteText: {
       fontStyle: "italic",
@@ -247,9 +249,10 @@ const themed = makeThemedStyles((c) =>
     },
     codeBlock: {
       backgroundColor: c.codeBackground,
-      borderRadius: 8,
-      padding: 14,
-      marginBottom: 18,
+      borderRadius: 10,
+      borderCurve: "continuous",
+      padding: 16,
+      marginBottom: 20,
     },
     codeText: {
       fontFamily: mono,
@@ -258,8 +261,13 @@ const themed = makeThemedStyles((c) =>
       color: c.ink,
     },
     rule: {
-      marginVertical: 18,
+      marginVertical: 24,
       alignItems: "center",
+    },
+    ruleLine: {
+      width: 64,
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: c.hairline,
     },
   })
 );
