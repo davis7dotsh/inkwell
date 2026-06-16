@@ -675,12 +675,47 @@ button {
   margin: 14px 0 24px;
 }
 
-.mcp-intro > p:last-child {
+.mcp-intro-copy {
   max-width: 62ch;
   margin: 0;
   color: var(--ink-secondary);
   font-size: 17px;
   line-height: 1.65;
+}
+
+.mcp-agent-copy {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 24px;
+}
+
+.mcp-agent-copy button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 22px;
+  background: var(--accent);
+  padding: 0 18px;
+  color: var(--on-accent);
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.mcp-agent-copy button:hover {
+  background: var(--accent-strong);
+}
+
+.mcp-agent-copy button:focus-visible {
+  outline: 3px solid var(--mist);
+  outline-offset: 2px;
+}
+
+.mcp-agent-copy span {
+  max-width: 220px;
+  color: var(--ink-faint);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .mcp-step {
@@ -1652,6 +1687,12 @@ h4.article-heading {
 
   .mcp-intro {
     margin-bottom: 48px;
+  }
+
+  .mcp-agent-copy {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
   }
 
   .mcp-step-content {
