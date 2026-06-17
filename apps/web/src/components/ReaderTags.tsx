@@ -61,10 +61,10 @@ export function ReaderTags({
     try {
       const id = await createTag({ name });
       await addToArticle({ articleId, tagId: id });
+      setDraft(""); // only clear once the tag is created and attached
     } catch {
-      // Creation can race or fail; the live query reflects the real state.
+      // Creation can race or fail; keep the draft so the user can retry.
     }
-    setDraft("");
   };
 
   const resolved = tagIds

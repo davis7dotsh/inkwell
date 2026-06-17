@@ -178,8 +178,8 @@ function ConfigNeededScreen() {
     <View style={styles.configScreen}>
       <Text style={styles.configTitle}>Inkwell</Text>
       <Text style={styles.configText}>
-        Almost there. This build is missing configuration. Copy
-        {" .env.example"} to {".env.local"} and set:
+        Almost there. This build is missing configuration. Set the matching
+        values in {".env.development"} or {".env.production"}:
       </Text>
       {missing.map((name) => (
         <Text key={name} style={styles.configVar}>

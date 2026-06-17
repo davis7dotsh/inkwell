@@ -110,6 +110,17 @@ export const tagColors = [
 
 export const DEFAULT_TAG_COLOR = tagColors[0];
 
+/**
+ * Canonicalize a hex color to `#RRGGBB` uppercase. Tags set through the app
+ * always come from the swatch palette, but an agent can store any-cased or
+ * hash-less hex via MCP — normalize so the NIGHT_TAG lookup hits and the chip
+ * text color stays a valid string. Non-hex input passes through trimmed.
+ */
+function normalizeHex(input: string): string {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(input.trim());
+  return m ? `#${m[1].toUpperCase()}` : input.trim();
+}
+
 /** Add an alpha channel to a #RRGGBB hex (0–1). */
 function withAlpha(hex: string, alpha: number): string {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
@@ -130,7 +141,7 @@ export function tagChipColors(
   color: string | undefined,
   isDark: boolean
 ): { fill: string; text: string; border: string } {
-  const base = color?.trim() || DEFAULT_TAG_COLOR;
+  const base = normalizeHex(color?.trim() || DEFAULT_TAG_COLOR);
   if (isDark) {
     const lifted = NIGHT_TAG[base] ?? base;
     return {

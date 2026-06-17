@@ -345,8 +345,10 @@ function ArticleTagEditor({
     const name = draft.trim();
     if (!name) return;
     const id = await onCreateTag(name);
-    if (id) onAttachTag(article._id, id);
-    setDraft("");
+    if (id) {
+      onAttachTag(article._id, id);
+      setDraft(""); // keep the draft if creation failed, so retry is painless
+    }
   };
 
   return (
@@ -444,6 +446,8 @@ function TagManager({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // An inline row editor that handled Escape marks it; don't also close.
+      if (e.defaultPrevented) return;
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
@@ -467,12 +471,12 @@ function TagManager({
         </div>
         <form
           className="tag-modal-create"
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
             const name = newName.trim();
             if (!name) return;
-            void onCreateTag(name);
-            setNewName("");
+            const created = await onCreateTag(name);
+            if (created) setNewName(""); // preserve input if creation failed
           }}
         >
           <input
@@ -556,7 +560,12 @@ function TagManagerRow({
             aria-label="Tag name"
             autoFocus
             onKeyDown={(e) => {
-              if (e.key === "Escape") setEditing(false);
+              if (e.key === "Escape") {
+                // Stop the modal's window-level Escape listener from also firing.
+                e.preventDefault();
+                e.stopPropagation();
+                setEditing(false);
+              }
             }}
           />
           <button type="submit" className="rename-action" disabled={!nameDraft.trim()}>

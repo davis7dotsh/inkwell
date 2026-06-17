@@ -365,6 +365,15 @@ export default function LibraryScreen() {
     return map;
   }, [tags]);
 
+  // A selected tag can outlive the selection (deleted on another device, in
+  // the web app, or by an agent). Derive the live subset so a stale id never
+  // leaves an invisible filter pinning the list to empty — no reconciling
+  // effect needed.
+  const activeTagIds = useMemo(
+    () => selectedTagIds.filter((id) => tagsById.has(String(id))),
+    [selectedTagIds, tagsById]
+  );
+
   // Live view of the article the tag manager targets — keeps its attach
   // checkmarks in sync as addToArticle/removeFromArticle land.
   const liveTagArticle = useMemo(() => {
@@ -483,7 +492,9 @@ export default function LibraryScreen() {
 
   const onTogglePin = useCallback(
     (item: ArticleListItem) => {
-      void setPinned({ id: item._id, pinned: !item.pinned });
+      void setPinned({ id: item._id, pinned: !item.pinned }).catch((e) =>
+        showError(e instanceof Error ? e.message : "Couldn't update pin.")
+      );
     },
     [setPinned]
   );
@@ -505,7 +516,9 @@ export default function LibraryScreen() {
 
   const onCreateTag = useCallback(
     (name: string, color?: string) => {
-      void createTag({ name, color });
+      void createTag({ name, color }).catch((e) =>
+        showError(e instanceof Error ? e.message : "Couldn't create tag.")
+      );
     },
     [createTag]
   );
@@ -521,7 +534,9 @@ export default function LibraryScreen() {
 
   const onSetTagColor = useCallback(
     (id: Id<"tags">, color?: string) => {
-      void setTagColor({ id, color });
+      void setTagColor({ id, color }).catch((e) =>
+        showError(e instanceof Error ? e.message : "Couldn't update color.")
+      );
     },
     [setTagColor]
   );
@@ -540,7 +555,9 @@ export default function LibraryScreen() {
             text: "Delete",
             style: "destructive",
             onPress: () => {
-              void removeTag({ id });
+              void removeTag({ id }).catch((e) =>
+                showError(e instanceof Error ? e.message : "Couldn't delete tag.")
+              );
               // Drop it from the active filter if it was selected.
               setSelectedTagIds((ids) => ids.filter((t) => t !== id));
             },
@@ -553,14 +570,18 @@ export default function LibraryScreen() {
 
   const onAttachTag = useCallback(
     (articleId: Id<"articles">, tagId: Id<"tags">) => {
-      void addTagToArticle({ articleId, tagId });
+      void addTagToArticle({ articleId, tagId }).catch((e) =>
+        showError(e instanceof Error ? e.message : "Couldn't add tag.")
+      );
     },
     [addTagToArticle]
   );
 
   const onDetachTag = useCallback(
     (articleId: Id<"articles">, tagId: Id<"tags">) => {
-      void removeTagFromArticle({ articleId, tagId });
+      void removeTagFromArticle({ articleId, tagId }).catch((e) =>
+        showError(e instanceof Error ? e.message : "Couldn't remove tag.")
+      );
     },
     [removeTagFromArticle]
   );
@@ -612,11 +633,11 @@ export default function LibraryScreen() {
     // Tag filter: OR semantics — keep articles carrying at least one of the
     // selected tags.
     const tagFiltered =
-      selectedTagIds.length === 0
+      activeTagIds.length === 0
         ? statusFiltered
         : statusFiltered.filter((item) => {
             const ids = new Set(item.tags.map(String));
-            return selectedTagIds.some((id) => ids.has(String(id)));
+            return activeTagIds.some((id) => ids.has(String(id)));
           });
     const normalizedQuery = query.trim().toLocaleLowerCase();
     const filtered = normalizedQuery
@@ -635,7 +656,7 @@ export default function LibraryScreen() {
     const pinned = sorted.filter((item) => item.pinned);
     const rest = sorted.filter((item) => !item.pinned);
     return pinned.length > 0 ? [...pinned, ...rest] : sorted;
-  }, [articles, filter, selectedTagIds, query, sortOrder]);
+  }, [articles, filter, activeTagIds, query, sortOrder]);
 
   const toggleAdd = useCallback(() => {
     setAddOpen((open) => {
@@ -831,7 +852,7 @@ export default function LibraryScreen() {
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={styles.tagBar}
           >
-            {selectedTagIds.length > 0 ? (
+            {activeTagIds.length > 0 ? (
               <Pressable
                 onPress={() => setSelectedTagIds([])}
                 accessibilityRole="button"

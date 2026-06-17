@@ -62,8 +62,10 @@ export function tagDisplayColor(color: string | undefined): TagChipColors {
     };
   }
   const { r, g, b } = rgb;
+  // Rebuild fg from the parsed channels so a hash-less or odd-cased input
+  // (an agent can store either via MCP) still yields a valid CSS color.
   return {
-    fg: color,
+    fg: `rgb(${r}, ${g}, ${b})`,
     bg: `rgba(${r}, ${g}, ${b}, 0.12)`,
     border: `rgba(${r}, ${g}, ${b}, 0.45)`,
   };
