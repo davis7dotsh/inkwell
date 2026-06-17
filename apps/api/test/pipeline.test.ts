@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Block } from "@inkwell/content";
+import { Effect } from "effect";
 
-import { processArticleEffect } from "../src/pipeline";
+import {
+  processArticleEffect,
+  runPipelineEffect,
+} from "../src/pipeline";
 import {
   makeRequestLayer,
   runRequestEffect,
@@ -125,5 +129,35 @@ describe("processArticle", () => {
       })
     ).resolves.toEqual({ status: "failed", error: "network down" });
     expect(consoleError).toHaveBeenCalledOnce();
+  });
+
+  it("logs unexpected defects and still marks the article failed", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const { impl, ingest } = fakeNetwork(() =>
+      firecrawlOk({ markdown: "unused", metadata: {} })
+    );
+
+    const outcome = await runRequestEffect(
+      runPipelineEffect({
+        userId: "user_test",
+        articleId: "art1",
+        fetchContent: Effect.die(new Error("programmer bug")),
+      }),
+      makeRequestLayer({
+        env: { ...TEST_ENV, MEMOS: {} as R2Bucket },
+        userId: "user_test",
+        executionCtx: { waitUntil: () => undefined },
+        fetchImpl: impl,
+      })
+    );
+
+    expect(outcome).toEqual({ status: "failed", error: "programmer bug" });
+    expect(ingest.fail).toHaveLength(1);
+    expect(consoleError).toHaveBeenCalledWith(
+      "pipeline: unexpected defect while processing article art1",
+      expect.objectContaining({ message: "programmer bug" })
+    );
   });
 });

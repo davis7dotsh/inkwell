@@ -44,7 +44,7 @@ export const ArticleNormalizerLive = Layer.succeed(
   })
 );
 
-const runPipelineEffect = (options: {
+export const runPipelineEffect = (options: {
   readonly articleId: string;
   readonly userId: string;
   readonly fetchContent: Effect.Effect<FirecrawlScrape, unknown>;
@@ -99,7 +99,16 @@ const runPipelineEffect = (options: {
     });
 
     return yield* program.pipe(
-      Effect.catchCause((cause) => markFailed(Cause.squash(cause)))
+      Effect.catch(markFailed),
+      Effect.catchCause((cause) => {
+        const defect = Cause.squash(cause);
+        return Effect.sync(() => {
+          console.error(
+            `pipeline: unexpected defect while processing article ${options.articleId}`,
+            defect
+          );
+        }).pipe(Effect.andThen(markFailed(defect)));
+      })
     );
   });
 

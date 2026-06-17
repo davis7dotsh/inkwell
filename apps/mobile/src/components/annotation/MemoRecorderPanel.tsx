@@ -18,10 +18,7 @@ import {
   NativeCommandError,
   unknownErrorMessage,
 } from "../../effect/errors";
-import {
-  runMobileEffect,
-  useMobileEffectRunner,
-} from "../../effect/react";
+import { useMobileEffectRunner } from "../../effect/react";
 import { makeThemedStyles, useTheme } from "../../lib/theme";
 import { prepareTranscription } from "../../lib/voiceMemos";
 
@@ -72,6 +69,22 @@ export function MemoRecorderPanel({ onComplete, onCancel }: Props) {
       onFailure: (error) =>
         console.info("[Inkwell] Transcription preparation:", error.message),
     });
+    const restorePlaybackAudioMode = Effect.tryPromise({
+      try: () =>
+        setAudioModeAsync({
+          allowsRecording: false,
+          playsInSilentMode: true,
+        }),
+      catch: (error) =>
+        new NativeCommandError({
+          operation: "restore playback audio mode",
+          message: unknownErrorMessage(error),
+        }),
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("Could not restore playback audio mode", error)
+      )
+    );
     const cancelStart = run(
       Effect.gen(function* () {
         const permission = yield* Effect.tryPromise({
@@ -99,7 +112,7 @@ export function MemoRecorderPanel({ onComplete, onCancel }: Props) {
               operation: "enable recording audio mode",
               message: unknownErrorMessage(error),
             }),
-        });
+        }).pipe(Effect.uninterruptible);
         yield* Effect.tryPromise({
           try: () => recorder.prepareToRecordAsync(),
           catch: (error) =>
@@ -117,7 +130,11 @@ export function MemoRecorderPanel({ onComplete, onCancel }: Props) {
             }),
         });
         startedRef.current = true;
-      }),
+        // Keep the audio-mode finalizer owned by this fiber for the lifetime
+        // of the take. Interrupting while Expo's uncancellable mode switch is
+        // pending now waits for it before restoring playback mode.
+        return yield* Effect.never;
+      }).pipe(Effect.ensuring(restorePlaybackAudioMode)),
       {
         onFailure: (error) => onCancel(error.message),
         onDefect: () => onCancel("Couldn't start recording."),
@@ -126,20 +143,6 @@ export function MemoRecorderPanel({ onComplete, onCancel }: Props) {
     return () => {
       cancelTranscriptionPreparation();
       cancelStart();
-      runMobileEffect(
-        Effect.tryPromise({
-          try: () =>
-            setAudioModeAsync({
-              allowsRecording: false,
-              playsInSilentMode: true,
-            }),
-          catch: (error) =>
-            new NativeCommandError({
-              operation: "restore playback audio mode",
-              message: unknownErrorMessage(error),
-            }),
-        })
-      );
     };
     // Runs once for the lifetime of the panel (one take per mount).
     // eslint-disable-next-line react-hooks/exhaustive-deps
