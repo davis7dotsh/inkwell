@@ -8,11 +8,11 @@ import type { ArticleContent, Block } from "./types";
 
 /** The slice of Firecrawl v2 `data.metadata` that normalization consumes. */
 export type FirecrawlMetadata = {
-  title?: string;
-  description?: string;
-  ogTitle?: string;
-  ogDescription?: string;
-  sourceURL?: string;
+  title?: string | null;
+  description?: string | null;
+  ogTitle?: string | null;
+  ogDescription?: string | null;
+  sourceURL?: string | null;
 };
 
 /** The slice of a Firecrawl v2 `data` payload that normalization consumes. */

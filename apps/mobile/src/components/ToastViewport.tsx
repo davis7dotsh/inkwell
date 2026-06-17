@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as Effect from "effect/Effect";
 
+import { useMobileEffectRunner } from "../effect/react";
 import {
   subscribeToToasts,
   type ToastMessage,
@@ -16,16 +18,26 @@ export function ToastViewport() {
   const insets = useSafeAreaInsets();
   const { scheme, c } = useTheme();
   const styles = themed[scheme];
+  const run = useMobileEffectRunner();
   const [toast, setToast] = useState<ToastMessage | null>(null);
+  const cancelDismissRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    return subscribeToToasts((nextToast) => {
-      if (timeout) clearTimeout(timeout);
+    const unsubscribe = subscribeToToasts((nextToast) => {
+      cancelDismissRef.current?.();
       setToast(nextToast);
-      timeout = setTimeout(() => setToast(null), TOAST_DURATION_MS);
+      cancelDismissRef.current = run(Effect.sleep(TOAST_DURATION_MS), {
+        onSuccess: () => {
+          setToast(null);
+          cancelDismissRef.current = null;
+        },
+      });
     });
-  }, []);
+    return () => {
+      cancelDismissRef.current?.();
+      unsubscribe();
+    };
+  }, [run]);
 
   if (!toast) return null;
 

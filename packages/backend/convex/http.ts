@@ -2,52 +2,37 @@
 // the scrape pipeline, `/agent/*` reads for MCP tools. These routes live on
 // the `.convex.site` origin and are guarded by a shared secret.
 import { httpRouter } from "convex/server";
+import { Effect, Schema } from "effect";
 
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
+import { HttpResponseError } from "../src/domainErrors";
+import { promise, runHttpEffect } from "../src/effect";
 
 function authorized(req: Request) {
   const secret = process.env.WORKER_SHARED_SECRET;
   return Boolean(secret) && req.headers.get("x-inkwell-key") === secret;
 }
 
-const http = httpRouter();
+function httpError(status: number, body: string) {
+  return Effect.fail(new HttpResponseError({ status, body }));
+}
 
-http.route({
-  path: "/ingest/create-pending",
-  method: "POST",
-  handler: httpAction(async (ctx, req) => {
-    if (!authorized(req)) return new Response("forbidden", { status: 403 });
-    const body = await req.json();
-    const articleId = await ctx.runMutation(
-      internal.articles.createPending,
-      body
-    );
-    return Response.json({ articleId });
-  }),
-});
+function authorize(req: Request) {
+  return authorized(req) ? Effect.void : httpError(403, "forbidden");
+}
 
-http.route({
-  path: "/ingest/complete",
-  method: "POST",
-  handler: httpAction(async (ctx, req) => {
-    if (!authorized(req)) return new Response("forbidden", { status: 403 });
-    const body = await req.json();
-    await ctx.runMutation(internal.articles.complete, body);
-    return Response.json({ ok: true });
-  }),
-});
+function decode<S extends Schema.Top>(schema: S, input: unknown) {
+  return Schema.decodeUnknownEffect(schema, {
+    onExcessProperty: "error",
+  })(input).pipe(Effect.orDie);
+}
 
-http.route({
-  path: "/ingest/fail",
-  method: "POST",
-  handler: httpAction(async (ctx, req) => {
-    if (!authorized(req)) return new Response("forbidden", { status: 403 });
-    const body = await req.json();
-    await ctx.runMutation(internal.articles.fail, body);
-    return Response.json({ ok: true });
-  }),
-});
+function decodeBody<S extends Schema.Top>(req: Request, schema: S) {
+  return Effect.promise(() => req.json()).pipe(
+    Effect.flatMap((body) => decode(schema, body))
+  );
+}
 
 function param(req: Request, name: string) {
   return new URL(req.url).searchParams.get(name) ?? undefined;
@@ -62,174 +47,368 @@ const isOneOf = <T extends string>(
 ): value is T | undefined =>
   value === undefined || (allowed as readonly string[]).includes(value);
 
+const CreatePendingBody = Schema.Struct({
+  userId: Schema.String,
+  url: Schema.String,
+  kind: Schema.Literals(["web", "pdf"]),
+  title: Schema.String,
+  savedAt: Schema.Number,
+});
+
+const CompleteBody = Schema.Struct({
+  articleId: Schema.String,
+  expectedUserId: Schema.String,
+  title: Schema.String,
+  byline: Schema.optional(Schema.String),
+  siteName: Schema.optional(Schema.String),
+  excerpt: Schema.optional(Schema.String),
+  blocksJson: Schema.String,
+});
+
+const FailBody = Schema.Struct({
+  articleId: Schema.String,
+  expectedUserId: Schema.String,
+  error: Schema.String,
+});
+
+const ArticleListQuery = Schema.Struct({
+  userId: Schema.String,
+  readStatus: Schema.optional(Schema.Literals(READ_STATUSES)),
+  status: Schema.optional(Schema.Literals(ARTICLE_STATUSES)),
+  tagIds: Schema.optional(Schema.Array(Schema.String)),
+  limit: Schema.optional(Schema.Number),
+});
+
+const UserIdQuery = Schema.Struct({
+  userId: Schema.String,
+});
+
+const ArticleQuery = Schema.Struct({
+  userId: Schema.String,
+  id: Schema.String,
+});
+
+const AnnotationsQuery = Schema.Struct({
+  userId: Schema.String,
+  articleId: Schema.String,
+});
+
+const CreateTagBody = Schema.Struct({
+  userId: Schema.String,
+  name: Schema.String,
+  color: Schema.optional(Schema.String),
+});
+
+const RenameTagBody = Schema.Struct({
+  userId: Schema.String,
+  tagId: Schema.String,
+  name: Schema.String,
+});
+
+const RemoveTagBody = Schema.Struct({
+  userId: Schema.String,
+  tagId: Schema.String,
+});
+
+const ArticleTagBody = Schema.Struct({
+  userId: Schema.String,
+  articleId: Schema.String,
+  tagId: Schema.String,
+});
+
+const PinArticleBody = Schema.Struct({
+  userId: Schema.String,
+  id: Schema.String,
+  pinned: Schema.Boolean,
+});
+
+const http = httpRouter();
+
+http.route({
+  path: "/ingest/create-pending",
+  method: "POST",
+  handler: httpAction((ctx, req) =>
+    runHttpEffect(
+      Effect.gen(function* () {
+        yield* authorize(req);
+        const body = yield* decodeBody(req, CreatePendingBody);
+        const articleId = yield* promise(() =>
+          ctx.runMutation(internal.articles.createPending, body)
+        );
+        return Response.json({ articleId });
+      })
+    )
+  ),
+});
+
+http.route({
+  path: "/ingest/complete",
+  method: "POST",
+  handler: httpAction((ctx, req) =>
+    runHttpEffect(
+      Effect.gen(function* () {
+        yield* authorize(req);
+        const body = yield* decodeBody(req, CompleteBody);
+        yield* promise(() => ctx.runMutation(internal.articles.complete, body));
+        return Response.json({ ok: true });
+      })
+    )
+  ),
+});
+
+http.route({
+  path: "/ingest/fail",
+  method: "POST",
+  handler: httpAction((ctx, req) =>
+    runHttpEffect(
+      Effect.gen(function* () {
+        yield* authorize(req);
+        const body = yield* decodeBody(req, FailBody);
+        yield* promise(() => ctx.runMutation(internal.articles.fail, body));
+        return Response.json({ ok: true });
+      })
+    )
+  ),
+});
+
 http.route({
   path: "/agent/articles",
   method: "GET",
-  handler: httpAction(async (ctx, req) => {
-    if (!authorized(req)) return new Response("forbidden", { status: 403 });
-    const userId = param(req, "userId");
-    if (!userId) return new Response("userId required", { status: 400 });
+  handler: httpAction((ctx, req) =>
+    runHttpEffect(
+      Effect.gen(function* () {
+        yield* authorize(req);
+        const userId = param(req, "userId");
+        if (!userId) {
+          return yield* httpError(400, "userId required");
+        }
 
-    const limitRaw = param(req, "limit");
-    const limit = limitRaw === undefined ? undefined : Number(limitRaw);
-    if (
-      limit !== undefined &&
-      (!Number.isInteger(limit) || limit < 1 || limit > 200)
-    ) {
-      return new Response("limit must be an integer from 1 to 200", {
-        status: 400,
-      });
-    }
+        const limitRaw = param(req, "limit");
+        const limit = limitRaw === undefined ? undefined : Number(limitRaw);
+        if (
+          limit !== undefined &&
+          (!Number.isInteger(limit) || limit < 1 || limit > 200)
+        ) {
+          return yield* httpError(
+            400,
+            "limit must be an integer from 1 to 200"
+          );
+        }
 
-    const readStatus = param(req, "readStatus");
-    if (!isOneOf(readStatus, READ_STATUSES)) {
-      return new Response(
-        `readStatus must be one of: ${READ_STATUSES.join(", ")}`,
-        { status: 400 }
-      );
-    }
-    const status = param(req, "status");
-    if (!isOneOf(status, ARTICLE_STATUSES)) {
-      return new Response(
-        `status must be one of: ${ARTICLE_STATUSES.join(", ")}`,
-        { status: 400 }
-      );
-    }
+        const readStatus = param(req, "readStatus");
+        if (!isOneOf(readStatus, READ_STATUSES)) {
+          return yield* httpError(
+            400,
+            `readStatus must be one of: ${READ_STATUSES.join(", ")}`
+          );
+        }
+        const status = param(req, "status");
+        if (!isOneOf(status, ARTICLE_STATUSES)) {
+          return yield* httpError(
+            400,
+            `status must be one of: ${ARTICLE_STATUSES.join(", ")}`
+          );
+        }
 
-    // Comma-separated tag ids; an article matches if it has ANY of them.
-    const tagIdsRaw = param(req, "tagIds");
-    const tagIds = tagIdsRaw
-      ? tagIdsRaw
-          .split(",")
-          .map((id) => id.trim())
-          .filter(Boolean)
-      : undefined;
+        // Comma-separated tag ids; an article matches if it has ANY of them.
+        const tagIdsRaw = param(req, "tagIds");
+        const tagIds = tagIdsRaw
+          ? tagIdsRaw
+              .split(",")
+              .map((id) => id.trim())
+              .filter(Boolean)
+          : undefined;
 
-    const articles = await ctx.runQuery(internal.articles.listForAgent, {
-      userId,
-      readStatus,
-      status,
-      tagIds,
-      limit,
-    });
-    return Response.json({ articles });
-  }),
+        const input = yield* decode(ArticleListQuery, {
+          userId,
+          readStatus,
+          status,
+          tagIds,
+          limit,
+        });
+        const articles = yield* promise(() =>
+          ctx.runQuery(internal.articles.listForAgent, {
+            ...input,
+            tagIds: input.tagIds ? [...input.tagIds] : undefined,
+          })
+        );
+        return Response.json({ articles });
+      })
+    )
+  ),
 });
 
 http.route({
   path: "/agent/article",
   method: "GET",
-  handler: httpAction(async (ctx, req) => {
-    if (!authorized(req)) return new Response("forbidden", { status: 403 });
-    const userId = param(req, "userId");
-    const id = param(req, "id");
-    if (!userId || !id) {
-      return new Response("userId and id required", { status: 400 });
-    }
-    const article = await ctx.runQuery(internal.articles.getForAgent, {
-      userId,
-      id,
-    });
-    if (!article) return new Response("not found", { status: 404 });
-    return Response.json({ article });
-  }),
+  handler: httpAction((ctx, req) =>
+    runHttpEffect(
+      Effect.gen(function* () {
+        yield* authorize(req);
+        const userId = param(req, "userId");
+        const id = param(req, "id");
+        if (!userId || !id) {
+          return yield* httpError(400, "userId and id required");
+        }
+        const input = yield* decode(ArticleQuery, { userId, id });
+        const article = yield* promise(() =>
+          ctx.runQuery(internal.articles.getForAgent, input)
+        );
+        if (!article) {
+          return yield* httpError(404, "not found");
+        }
+        return Response.json({ article });
+      })
+    )
+  ),
 });
 
 http.route({
   path: "/agent/tags",
   method: "GET",
-  handler: httpAction(async (ctx, req) => {
-    if (!authorized(req)) return new Response("forbidden", { status: 403 });
-    const userId = param(req, "userId");
-    if (!userId) return new Response("userId required", { status: 400 });
-    const tags = await ctx.runQuery(internal.tags.listForAgent, { userId });
-    return Response.json({ tags });
-  }),
+  handler: httpAction((ctx, req) =>
+    runHttpEffect(
+      Effect.gen(function* () {
+        yield* authorize(req);
+        const userId = param(req, "userId");
+        if (!userId) {
+          return yield* httpError(400, "userId required");
+        }
+        const input = yield* decode(UserIdQuery, { userId });
+        const tags = yield* promise(() =>
+          ctx.runQuery(internal.tags.listForAgent, input)
+        );
+        return Response.json({ tags });
+      })
+    )
+  ),
 });
 
 http.route({
   path: "/agent/tags/create",
   method: "POST",
-  handler: httpAction(async (ctx, req) => {
-    if (!authorized(req)) return new Response("forbidden", { status: 403 });
-    const body = await req.json();
-    const tag = await ctx.runMutation(internal.tags.createForAgent, body);
-    return Response.json({ tag });
-  }),
+  handler: httpAction((ctx, req) =>
+    runHttpEffect(
+      Effect.gen(function* () {
+        yield* authorize(req);
+        const body = yield* decodeBody(req, CreateTagBody);
+        const tag = yield* promise(() =>
+          ctx.runMutation(internal.tags.createForAgent, body)
+        );
+        return Response.json({ tag });
+      })
+    )
+  ),
 });
 
 http.route({
   path: "/agent/tags/rename",
   method: "POST",
-  handler: httpAction(async (ctx, req) => {
-    if (!authorized(req)) return new Response("forbidden", { status: 403 });
-    const body = await req.json();
-    await ctx.runMutation(internal.tags.renameForAgent, body);
-    return Response.json({ ok: true });
-  }),
+  handler: httpAction((ctx, req) =>
+    runHttpEffect(
+      Effect.gen(function* () {
+        yield* authorize(req);
+        const body = yield* decodeBody(req, RenameTagBody);
+        yield* promise(() =>
+          ctx.runMutation(internal.tags.renameForAgent, body)
+        );
+        return Response.json({ ok: true });
+      })
+    )
+  ),
 });
 
 http.route({
   path: "/agent/tags/remove",
   method: "POST",
-  handler: httpAction(async (ctx, req) => {
-    if (!authorized(req)) return new Response("forbidden", { status: 403 });
-    const body = await req.json();
-    await ctx.runMutation(internal.tags.removeForAgent, body);
-    return Response.json({ ok: true });
-  }),
+  handler: httpAction((ctx, req) =>
+    runHttpEffect(
+      Effect.gen(function* () {
+        yield* authorize(req);
+        const body = yield* decodeBody(req, RemoveTagBody);
+        yield* promise(() =>
+          ctx.runMutation(internal.tags.removeForAgent, body)
+        );
+        return Response.json({ ok: true });
+      })
+    )
+  ),
 });
 
 http.route({
   path: "/agent/article-tags/add",
   method: "POST",
-  handler: httpAction(async (ctx, req) => {
-    if (!authorized(req)) return new Response("forbidden", { status: 403 });
-    const body = await req.json();
-    await ctx.runMutation(internal.tags.addToArticleForAgent, body);
-    return Response.json({ ok: true });
-  }),
+  handler: httpAction((ctx, req) =>
+    runHttpEffect(
+      Effect.gen(function* () {
+        yield* authorize(req);
+        const body = yield* decodeBody(req, ArticleTagBody);
+        yield* promise(() =>
+          ctx.runMutation(internal.tags.addToArticleForAgent, body)
+        );
+        return Response.json({ ok: true });
+      })
+    )
+  ),
 });
 
 http.route({
   path: "/agent/article-tags/remove",
   method: "POST",
-  handler: httpAction(async (ctx, req) => {
-    if (!authorized(req)) return new Response("forbidden", { status: 403 });
-    const body = await req.json();
-    await ctx.runMutation(internal.tags.removeFromArticleForAgent, body);
-    return Response.json({ ok: true });
-  }),
+  handler: httpAction((ctx, req) =>
+    runHttpEffect(
+      Effect.gen(function* () {
+        yield* authorize(req);
+        const body = yield* decodeBody(req, ArticleTagBody);
+        yield* promise(() =>
+          ctx.runMutation(internal.tags.removeFromArticleForAgent, body)
+        );
+        return Response.json({ ok: true });
+      })
+    )
+  ),
 });
 
 http.route({
   path: "/agent/article/pin",
   method: "POST",
-  handler: httpAction(async (ctx, req) => {
-    if (!authorized(req)) return new Response("forbidden", { status: 403 });
-    const body = await req.json();
-    await ctx.runMutation(internal.articles.setPinnedForAgent, body);
-    return Response.json({ ok: true });
-  }),
+  handler: httpAction((ctx, req) =>
+    runHttpEffect(
+      Effect.gen(function* () {
+        yield* authorize(req);
+        const body = yield* decodeBody(req, PinArticleBody);
+        yield* promise(() =>
+          ctx.runMutation(internal.articles.setPinnedForAgent, body)
+        );
+        return Response.json({ ok: true });
+      })
+    )
+  ),
 });
 
 http.route({
   path: "/agent/annotations",
   method: "GET",
-  handler: httpAction(async (ctx, req) => {
-    if (!authorized(req)) return new Response("forbidden", { status: 403 });
-    const userId = param(req, "userId");
-    const articleId = param(req, "articleId");
-    if (!userId || !articleId) {
-      return new Response("userId and articleId required", { status: 400 });
-    }
-    const result = await ctx.runQuery(internal.annotations.getForAgent, {
-      userId,
-      articleId,
-    });
-    if (!result) return new Response("not found", { status: 404 });
-    return Response.json(result);
-  }),
+  handler: httpAction((ctx, req) =>
+    runHttpEffect(
+      Effect.gen(function* () {
+        yield* authorize(req);
+        const userId = param(req, "userId");
+        const articleId = param(req, "articleId");
+        if (!userId || !articleId) {
+          return yield* httpError(400, "userId and articleId required");
+        }
+        const input = yield* decode(AnnotationsQuery, { userId, articleId });
+        const result = yield* promise(() =>
+          ctx.runQuery(internal.annotations.getForAgent, input)
+        );
+        if (!result) {
+          return yield* httpError(404, "not found");
+        }
+        return Response.json(result);
+      })
+    )
+  ),
 });
 
 export default http;

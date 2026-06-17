@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Block } from "@inkwell/content";
 
-import { createConvexService } from "../src/convexService";
-import { processArticle } from "../src/pipeline";
+import { processArticleEffect } from "../src/pipeline";
+import {
+  makeRequestLayer,
+  runRequestEffect,
+} from "../src/requestContext";
 import { FIXTURE_HTML, TEST_ENV, fakeNetwork, firecrawlOk } from "./helpers";
 
 afterEach(() => {
@@ -10,6 +13,24 @@ afterEach(() => {
 });
 
 describe("processArticle", () => {
+  const processArticle = (
+    fetchImpl: typeof fetch,
+    options: {
+      articleId: string;
+      userId: string;
+      url: string;
+    }
+  ) =>
+    runRequestEffect(
+      processArticleEffect(options),
+      makeRequestLayer({
+        env: { ...TEST_ENV, MEMOS: {} as R2Bucket },
+        userId: options.userId,
+        executionCtx: { waitUntil: () => undefined },
+        fetchImpl,
+      })
+    );
+
   it("scrapes, parses through @inkwell/content, and completes", async () => {
     const { impl, ingest } = fakeNetwork(() =>
       firecrawlOk({
@@ -22,13 +43,10 @@ describe("processArticle", () => {
       })
     );
 
-    await processArticle({
-      fetchImpl: impl,
-      env: TEST_ENV,
+    await processArticle(impl, {
       userId: "user_test",
       articleId: "art1",
       url: "https://example.com/hello",
-      convex: createConvexService(impl, TEST_ENV),
     });
 
     expect(ingest.fail).toHaveLength(0);
@@ -59,13 +77,10 @@ describe("processArticle", () => {
       () => new Response("kaboom", { status: 500 })
     );
 
-    await processArticle({
-      fetchImpl: impl,
-      env: TEST_ENV,
+    await processArticle(impl, {
       userId: "user_test",
       articleId: "art1",
       url: "https://example.com/hello",
-      convex: createConvexService(impl, TEST_ENV),
     });
 
     expect(ingest.complete).toHaveLength(0);
@@ -80,13 +95,10 @@ describe("processArticle", () => {
     // success: true but no html/markdown — the real firecrawlToArticle throws.
     const { impl, ingest } = fakeNetwork(() => firecrawlOk({ metadata: {} }));
 
-    await processArticle({
-      fetchImpl: impl,
-      env: TEST_ENV,
+    await processArticle(impl, {
       userId: "user_test",
       articleId: "art1",
       url: "https://example.com/empty",
-      convex: createConvexService(impl, TEST_ENV),
     });
 
     expect(ingest.complete).toHaveLength(0);
@@ -106,13 +118,10 @@ describe("processArticle", () => {
     }) as unknown as typeof fetch;
 
     await expect(
-      processArticle({
-        fetchImpl: impl,
-        env: TEST_ENV,
+      processArticle(impl, {
         userId: "user_test",
         articleId: "art1",
         url: "https://example.com",
-        convex: createConvexService(impl, TEST_ENV),
       })
     ).resolves.toEqual({ status: "failed", error: "network down" });
     expect(consoleError).toHaveBeenCalledOnce();

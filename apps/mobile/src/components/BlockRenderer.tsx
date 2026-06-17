@@ -1,18 +1,23 @@
 import type { Block, Span } from "@inkwell/content";
 import { Image } from "expo-image";
-import * as WebBrowser from "expo-web-browser";
 import React, { memo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
+import { operationalErrorMessage } from "../effect/errors";
+import { useMobileEffectRunner } from "../effect/react";
+import { openBrowser } from "../lib/nativeCommands";
 import { makeThemedStyles, mono, serif, useTheme } from "../lib/theme";
+import { showError } from "../lib/toast";
 
 function SpanText({ spans }: { spans: Span[] }) {
   const { scheme } = useTheme();
   const styles = themed[scheme];
+  const run = useMobileEffectRunner();
   return (
     <>
       {spans.map((span, i) => {
-        const isLink = !!span.href;
+        const href = span.href;
+        const isLink = !!href;
         return (
           <Text
             key={i}
@@ -24,7 +29,13 @@ function SpanText({ spans }: { spans: Span[] }) {
             ]}
             onPress={
               isLink
-                ? () => WebBrowser.openBrowserAsync(span.href!).catch(() => {})
+                ? () =>
+                    run(openBrowser(href), {
+                      onFailure: (error) =>
+                        showError(
+                          `Couldn't open link: ${operationalErrorMessage(error)}`
+                        ),
+                    })
                 : undefined
             }
           >

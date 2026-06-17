@@ -13,6 +13,7 @@ import {
   type BlockLayout,
 } from "@inkwell/content";
 import { useMutation, useQuery } from "convex/react";
+import { Exit } from "effect";
 import React, {
   useCallback,
   useEffect,
@@ -29,6 +30,16 @@ import { BrushStroke } from "../components/BrushStroke";
 import { DocumentOutline } from "../components/DocumentOutline";
 import { MemosOverlay } from "../components/MemosOverlay";
 import { ReaderTags } from "../components/ReaderTags";
+import {
+  decodeAnnotationsJson,
+  decodeBlocksJson,
+} from "../lib/effect/contentSchemas";
+import { convexCommand } from "../lib/effect/convex";
+import {
+  exitFailureMessage,
+  runBrowserEffect,
+  runBrowserSyncEffect,
+} from "../lib/effect/react";
 import { MAX_CONTENT_WIDTH, useTheme } from "../lib/theme";
 
 const DOCUMENT_START_ID = "document-start";
@@ -214,27 +225,6 @@ class ReaderBoundary extends React.Component<
   }
 }
 
-function parseAnnotations(doc: {
-  contentWidth: number;
-  strokesJson: string;
-  boxesJson: string;
-  notesJson: string;
-  /** Rows written before voice memos existed lack the column. */
-  memosJson?: string;
-}): Annotations | null {
-  try {
-    return {
-      contentWidth: doc.contentWidth,
-      strokes: JSON.parse(doc.strokesJson),
-      boxes: JSON.parse(doc.boxesJson),
-      notes: JSON.parse(doc.notesJson),
-      memos: JSON.parse(doc.memosJson ?? "[]"),
-    };
-  } catch {
-    return null;
-  }
-}
-
 function ReaderInner({ id }: { id: Id<"articles"> }) {
   const { c } = useTheme();
   const article = useQuery(api.articles.get, { id });
@@ -244,6 +234,25 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
   );
   const setReadStatus = useMutation(api.articles.setReadStatus);
   const [outlineOpen, setOutlineOpen] = useState(false);
+  const [commandError, setCommandError] = useState<string | null>(null);
+
+  const updateReadStatus = useCallback(
+    (status: "unread" | "in_progress" | "read") => {
+      setCommandError(null);
+      void runBrowserEffect(
+        convexCommand("Update reading status", () =>
+          setReadStatus({ id, status }),
+        ),
+      ).then((exit) => {
+        if (Exit.isFailure(exit)) {
+          setCommandError(
+            exitFailureMessage(exit, "Couldn't update the reading status."),
+          );
+        }
+      });
+    },
+    [id, setReadStatus],
+  );
 
   // Opening an unread article flips it to in-progress — once per visit, so
   // "mark as unread" from the footer isn't immediately undone.
@@ -253,23 +262,43 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
     if (article?.status !== "ready") return;
     autoStartedRef.current = true;
     if ((article.readStatus ?? "unread") === "unread") {
-      void setReadStatus({ id, status: "in_progress" });
+      updateReadStatus("in_progress");
     }
-  }, [article, id, setReadStatus]);
+  }, [article, updateReadStatus]);
 
-  const blocks = useMemo<Block[]>(() => {
-    if (!article?.blocksJson) return [];
-    try {
-      return inferDocumentHeadings(JSON.parse(article.blocksJson) as Block[]);
-    } catch {
-      return [];
-    }
+  const decodedBlocks = useMemo(() => {
+    if (!article?.blocksJson) return null;
+    return runBrowserSyncEffect(decodeBlocksJson(article.blocksJson));
   }, [article?.blocksJson]);
 
-  const annotations = useMemo<Annotations | null>(
-    () => (annotationDoc ? parseAnnotations(annotationDoc) : null),
+  const blocks = useMemo<Block[]>(
+    () =>
+      decodedBlocks && Exit.isSuccess(decodedBlocks)
+        ? inferDocumentHeadings(decodedBlocks.value)
+        : [],
+    [decodedBlocks],
+  );
+
+  const decodedAnnotations = useMemo(
+    () =>
+      annotationDoc
+        ? runBrowserSyncEffect(decodeAnnotationsJson(annotationDoc))
+        : null,
     [annotationDoc],
   );
+  const annotations: Annotations | null =
+    decodedAnnotations && Exit.isSuccess(decodedAnnotations)
+      ? decodedAnnotations.value
+      : null;
+  const persistedContentError =
+    decodedBlocks && Exit.isFailure(decodedBlocks)
+      ? exitFailureMessage(decodedBlocks, "Couldn't decode article content.")
+      : decodedAnnotations && Exit.isFailure(decodedAnnotations)
+        ? exitFailureMessage(
+            decodedAnnotations,
+            "Couldn't decode saved annotations.",
+          )
+        : null;
   const outline = useMemo(() => buildDocumentOutline(blocks), [blocks]);
   const headingIds = useMemo(
     () =>
@@ -542,6 +571,16 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
             </h1>
             <p className="article-meta">{meta}</p>
             <ReaderTags articleId={article._id} tagIds={article.tags} />
+            {commandError || persistedContentError ? (
+              <p
+                className="save-error"
+                role="alert"
+                title={persistedContentError ?? undefined}
+              >
+                {commandError ??
+                  "Some saved article content couldn't be displayed."}
+              </p>
+            ) : null}
             <BrushStroke
               width={Math.min(220, (columnWidth ?? MAX_CONTENT_WIDTH) * 0.4)}
               height={8}
@@ -555,12 +594,7 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
             <footer className="read-footer">
               <button
                 className={`mark-read-button${isRead ? " mark-read-button-done" : ""}`}
-                onClick={() =>
-                  void setReadStatus({
-                    id,
-                    status: isRead ? "unread" : "read",
-                  })
-                }
+                onClick={() => updateReadStatus(isRead ? "unread" : "read")}
               >
                 {isRead ? "✓ Read — mark as unread" : "Mark as read"}
               </button>

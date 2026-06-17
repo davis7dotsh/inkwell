@@ -1,8 +1,7 @@
 // Shared fetch stubs for the worker tests. No network anywhere: Firecrawl
 // and the Convex HTTP actions are dispatched on URL.
 
-import type { ConvexServiceEnv } from "../src/convexService";
-import type { PipelineEnv } from "../src/pipeline";
+import type { WorkerBindings } from "../src/requestContext";
 
 export type RecordedCall = {
   url: string;
@@ -10,11 +9,7 @@ export type RecordedCall = {
   body: unknown;
 };
 
-export const TEST_ENV: PipelineEnv &
-  ConvexServiceEnv & {
-  CLERK_SECRET_KEY: string;
-  CLERK_PUBLISHABLE_KEY: string;
-} = {
+export const TEST_ENV: Omit<WorkerBindings, "MEMOS"> = {
   FIRECRAWL_API_KEY: "fc-test-key",
   CLERK_SECRET_KEY: "sk_test",
   CLERK_PUBLISHABLE_KEY: "pk_test",
@@ -44,21 +39,35 @@ export const firecrawlOk = (data: unknown): Response =>
 function headersOf(init?: RequestInit): Record<string, string> {
   const headers = init?.headers;
   if (!headers) return {};
+  let result: Record<string, string>;
   if (headers instanceof Headers) {
-    return Object.fromEntries(headers.entries());
+    result = Object.fromEntries(headers.entries());
+  } else if (Array.isArray(headers)) {
+    result = Object.fromEntries(headers);
+  } else {
+    result = { ...headers } as Record<string, string>;
   }
-  if (Array.isArray(headers)) {
-    return Object.fromEntries(headers);
+  // Effect's header model normalizes names to lowercase. Keep the legacy
+  // alias so the original assertions remain unchanged.
+  if (result.authorization && !result.Authorization) {
+    result.Authorization = result.authorization;
   }
-  return { ...headers };
+  return result;
 }
 
 function parseBody(init?: RequestInit): unknown {
   const body = init?.body;
   if (!body) return undefined;
   // Multipart bodies (FormData) pass through as-is; JSON bodies are parsed.
-  if (typeof body !== "string") return body;
-  return JSON.parse(body);
+  if (body instanceof FormData) return body;
+  if (typeof body === "string") return JSON.parse(body);
+  if (body instanceof Uint8Array) {
+    return JSON.parse(new TextDecoder().decode(body));
+  }
+  if (body instanceof ArrayBuffer) {
+    return JSON.parse(new TextDecoder().decode(body));
+  }
+  return body;
 }
 
 /** Sequential stub: returns canned responses in order, recording each call. */

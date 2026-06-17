@@ -9,7 +9,18 @@
     "api": "pnpm --filter @inkwell/api dev",
     "test": "pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck",
+    "check:effect": "effect-language-service diagnostics --project tsconfig.json --format text --strict --severity error,warning --log-level none",
+    "check:convex-codegen": "pnpm --filter @inkwell/backend codegen:check",
+    "lint:mobile": "pnpm --filter inkwell-mobile lint",
+    "build:web": "pnpm --filter inkwell-web build",
+    "build:api": "pnpm --filter @inkwell/api build",
+    "export:mobile:ios": "pnpm --filter inkwell-mobile export:ios",
+    "check": "pnpm typecheck && pnpm check:effect && pnpm test && pnpm lint:mobile && pnpm build:web && pnpm build:api && pnpm export:mobile:ios && pnpm check:convex-codegen",
     "ipad": "pnpm --filter inkwell-mobile ipad",
     "iphone": "pnpm --filter inkwell-mobile iphone"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.86.2",
+    "typescript": "5.9.3"
   }
 }

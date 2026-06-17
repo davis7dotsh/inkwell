@@ -70,8 +70,31 @@ function Root() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(
+const root = createRoot(document.getElementById("root")!);
+
+root.render(
   <StrictMode>
     <Root />
   </StrictMode>
 );
+
+let disposed = false;
+const dispose = () => {
+  if (disposed) return;
+  disposed = true;
+  root.unmount();
+  void import("./lib/effect/runtime").then(({ disposeBrowserRuntime }) =>
+    disposeBrowserRuntime(),
+  );
+};
+
+window.addEventListener(
+  "pagehide",
+  (event) => {
+    if (!event.persisted) dispose();
+  },
+);
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(dispose);
+}

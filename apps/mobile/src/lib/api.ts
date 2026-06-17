@@ -1,71 +1,118 @@
-// Typed Hono RPC client for the inkwell-api worker (save/retry articles),
-// plus a plain-fetch helper for multipart PDF uploads (React Native's
-// FormData file parts don't fit the RPC client's web File typing).
-//
-// INTERIM: the canonical contract is `@inkwell/api`'s exported `AppType` +
-// `hcWithType` (PLAN-integration-notes.md "Hono RPC"). That package's source
-// had not landed when this was written, so the schema below hand-mirrors
-// PLAN.md §6. Once `@inkwell/api` is linked into this app, replace
-// `InkwellApi` with the type-only import and delete the schema:
-//   import { hcWithType } from "@inkwell/api";
-import type { Env, Hono } from "hono";
-import { hc } from "hono/client";
+import { File } from "expo-file-system";
+import * as Effect from "effect/Effect";
 
-type InkwellApiSchema = {
-  "/articles": {
-    $post: {
-      input: { json: { url: string } };
-      output: { articleId: string };
-      outputFormat: "json";
-      status: 202;
-    };
-  };
-  // Retry needs the article's url in the body: the worker's Convex access is
-  // write-only (ingest endpoints), so the client supplies it from its live
-  // articles.list data.
-  "/articles/:id/retry": {
-    $post: {
-      input: { param: { id: string }; json: { url: string } };
-      output: { articleId: string };
-      outputFormat: "json";
-      status: 202;
-    };
-  };
+import { decodeArticleIdResponse } from "../effect/codecs";
+import {
+  ConfigurationError,
+  DecodeError,
+  HttpResponseError,
+  unknownErrorMessage,
+} from "../effect/errors";
+import { MobileConfig, MobileHttp } from "../effect/services";
+
+export type ArticleCommandResult = {
+  readonly articleId: string;
 };
 
-type InkwellApi = Hono<Env, InkwellApiSchema, "/">;
+const apiUrl = Effect.gen(function* () {
+  const config = yield* MobileConfig;
+  if (!config.apiUrl) {
+    return yield* new ConfigurationError({
+      key: "EXPO_PUBLIC_API_URL",
+      message: "Set EXPO_PUBLIC_API_URL in .env.local to save articles.",
+    });
+  }
+  return config.apiUrl.replace(/\/+$/, "");
+});
 
-/** Client bound to one base URL + Clerk bearer token (fetch per call site). */
-export function apiClient(baseUrl: string, token: string) {
-  return hc<InkwellApi>(baseUrl, {
-    headers: { Authorization: `Bearer ${token}` },
+const responseJson = (
+  operation: string,
+  response: Response
+): Effect.Effect<unknown, DecodeError> =>
+  Effect.tryPromise({
+    try: () => response.json(),
+    catch: (error) =>
+      new DecodeError({
+        source: `${operation} response`,
+        message: unknownErrorMessage(error),
+      }),
   });
-}
 
-/**
- * Uploads a picked PDF to POST /articles/upload as multipart form data.
- * React Native's fetch accepts `{ uri, name, type }` file descriptors in
- * FormData; the worker receives a standard File.
- */
-export async function uploadPdf(
-  baseUrl: string,
-  token: string,
-  file: { uri: string; name: string; mimeType?: string }
-): Promise<{ articleId: string }> {
-  const form = new FormData();
-  form.append("file", {
-    uri: file.uri,
-    name: file.name,
-    type: file.mimeType ?? "application/pdf",
-  } as unknown as Blob);
-  const res = await fetch(
-    `${baseUrl.replace(/\/+$/, "")}/articles/upload`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: form,
+const acceptedArticleResponse = (
+  operation: string,
+  response: Response
+): Effect.Effect<ArticleCommandResult, HttpResponseError | DecodeError> =>
+  Effect.gen(function* () {
+    if (!response.ok) {
+      return yield* new HttpResponseError({
+        operation,
+        status: response.status,
+        message: `The server said ${response.status}.`,
+      });
     }
-  );
-  if (!res.ok) throw new Error(`The server said ${res.status}.`);
-  return (await res.json()) as { articleId: string };
-}
+    const body = yield* responseJson(operation, response);
+    return yield* decodeArticleIdResponse(body, `${operation} response`);
+  });
+
+export const saveArticle = (input: {
+  readonly token: string;
+  readonly url: string;
+}) =>
+  Effect.gen(function* () {
+    const baseUrl = yield* apiUrl;
+    const http = yield* MobileHttp;
+    const response = yield* http.request("save article", `${baseUrl}/articles`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${input.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ url: input.url }),
+    });
+    return yield* acceptedArticleResponse("save article", response);
+  });
+
+export const retryArticle = (input: {
+  readonly token: string;
+  readonly articleId: string;
+  readonly url: string;
+}) =>
+  Effect.gen(function* () {
+    const baseUrl = yield* apiUrl;
+    const http = yield* MobileHttp;
+    const response = yield* http.request(
+      "retry article",
+      `${baseUrl}/articles/${encodeURIComponent(input.articleId)}/retry`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${input.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ url: input.url }),
+      }
+    );
+    return yield* acceptedArticleResponse("retry article", response);
+  });
+
+/** Uploads a picked PDF using the Blob-compatible SDK 56 File implementation. */
+export const uploadPdf = (input: {
+  readonly token: string;
+  readonly file: { uri: string; name: string; mimeType?: string };
+}) =>
+  Effect.gen(function* () {
+    const baseUrl = yield* apiUrl;
+    const http = yield* MobileHttp;
+    const form = new FormData();
+    form.append("file", new File(input.file.uri), input.file.name);
+    const response = yield* http.request(
+      "upload PDF",
+      `${baseUrl}/articles/upload`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${input.token}` },
+        body: form,
+      }
+    );
+    return yield* acceptedArticleResponse("upload PDF", response);
+  });

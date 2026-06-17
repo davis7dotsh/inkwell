@@ -4,8 +4,6 @@ import { api } from "@inkwell/backend/convex/_generated/api";
 import type { Id } from "@inkwell/backend/convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import * as Clipboard from "expo-clipboard";
-import * as DocumentPicker from "expo-document-picker";
 import { router } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
@@ -24,6 +22,7 @@ import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as Effect from "effect/Effect";
 
 import { RenameModal } from "../components/RenameModal";
 import { TagManagerModal } from "../components/TagManagerModal";
@@ -32,7 +31,12 @@ import {
   GlassSurface,
   glassAvailable,
 } from "../components/glass";
-import { apiClient, uploadPdf } from "../lib/api";
+import { authCommand, authToken, convexCommand } from "../effect/commands";
+import { mobileConfig } from "../effect/codecs";
+import { operationalErrorMessage } from "../effect/errors";
+import { useMobileEffectRunner } from "../effect/react";
+import { retryArticle, saveArticle, uploadPdf } from "../lib/api";
+import { pickPdf, readClipboardText } from "../lib/nativeCommands";
 import {
   makeThemedStyles,
   serif,
@@ -41,7 +45,7 @@ import {
 } from "../lib/theme";
 import { showError } from "../lib/toast";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL;
+const API_URL = mobileConfig.apiUrl;
 
 type ArticleListItem = FunctionReturnType<typeof api.articles.list>[number];
 type Tag = FunctionReturnType<typeof api.tags.list>[number];
@@ -321,6 +325,7 @@ export default function LibraryScreen() {
   const { scheme, c } = useTheme();
   const styles = themed[scheme];
   const { getToken, signOut } = useAuth();
+  const run = useMobileEffectRunner();
   const articles = useQuery(api.articles.list);
   const tags = useQuery(api.tags.list);
   const removeArticle = useMutation(api.articles.remove);
@@ -399,33 +404,39 @@ export default function LibraryScreen() {
     }
     setUrl("");
     setAddOpen(false);
-    void (async () => {
-      try {
-        const token = await getToken();
-        if (!token) throw new Error("You're not signed in.");
-        const res = await apiClient(API_URL, token).articles.$post({
-          json: { url: normalized },
-        });
-        if (!res.ok) throw new Error(`The server said ${res.status}.`);
-        // The pending card arrives via the live query — nothing else to do.
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        showError(`Couldn't save: ${message}`);
-        Alert.alert(
-          "Couldn't save",
-          message
-        );
-        setUrl(normalized); // hand the URL back for another go
+    run(
+      Effect.gen(function* () {
+        const token = yield* authToken("save article", getToken);
+        yield* saveArticle({ token, url: normalized });
+      }),
+      {
+        onFailure: (error) => {
+          const message = operationalErrorMessage(error);
+          showError(`Couldn't save: ${message}`);
+          Alert.alert("Couldn't save", message);
+          setUrl(normalized);
+        },
+        onDefect: (error) => {
+          const message = operationalErrorMessage(error);
+          showError(`Couldn't save: ${message}`);
+          Alert.alert("Couldn't save", message);
+          setUrl(normalized);
+        },
       }
-    })();
-  }, [url, getToken]);
+    );
+  }, [url, getToken, run]);
 
-  const onPaste = useCallback(async () => {
-    const text = await Clipboard.getStringAsync();
-    if (text) setUrl(text.trim());
-  }, []);
+  const onPaste = useCallback(() => {
+    run(readClipboardText, {
+      onSuccess: (text) => {
+        if (text) setUrl(text.trim());
+      },
+      onFailure: (error) =>
+        showError(`Couldn't paste: ${operationalErrorMessage(error)}`),
+    });
+  }, [run]);
 
-  const onUpload = useCallback(async () => {
+  const onUpload = useCallback(() => {
     if (!API_URL) {
       Alert.alert(
         "Not configured",
@@ -433,39 +444,51 @@ export default function LibraryScreen() {
       );
       return;
     }
-    const result = await DocumentPicker.getDocumentAsync({
-      type: "application/pdf",
-      copyToCacheDirectory: true,
-      multiple: false,
+    run(pickPdf, {
+      onSuccess: (asset) => {
+        if (!asset) return;
+        setUploading(true);
+        run(
+          Effect.gen(function* () {
+            const token = yield* authToken("upload PDF", getToken);
+            yield* uploadPdf({ token, file: asset });
+          }),
+          {
+            onSuccess: () => {
+              setUploading(false);
+              setAddOpen(false);
+            },
+            onFailure: (error) => {
+              setUploading(false);
+              const message = operationalErrorMessage(error);
+              showError(`Couldn't upload: ${message}`);
+              Alert.alert("Couldn't upload", message);
+            },
+            onDefect: (error) => {
+              setUploading(false);
+              const message = operationalErrorMessage(error);
+              showError(`Couldn't upload: ${message}`);
+              Alert.alert("Couldn't upload", message);
+            },
+          }
+        );
+      },
+      onFailure: (error) => {
+        const message = operationalErrorMessage(error);
+        showError(`Couldn't choose a PDF: ${message}`);
+        Alert.alert("Couldn't upload", message);
+      },
     });
-    if (result.canceled) return;
-    const asset = result.assets[0];
-    if (!asset) return;
-    setUploading(true);
-    try {
-      const token = await getToken();
-      if (!token) throw new Error("You're not signed in.");
-      await uploadPdf(API_URL, token, {
-        uri: asset.uri,
-        name: asset.name ?? "document.pdf",
-        mimeType: asset.mimeType,
-      });
-      setAddOpen(false);
-      // The pending card arrives via the live query — nothing else to do.
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      showError(`Couldn't upload: ${message}`);
-      Alert.alert("Couldn't upload", message);
-    } finally {
-      setUploading(false);
-    }
-  }, [getToken]);
+  }, [getToken, run]);
 
   const onDelete = useCallback(
     (id: Id<"articles">) => {
-      void removeArticle({ id });
+      run(convexCommand("delete article", () => removeArticle({ id })), {
+        onFailure: (error) =>
+          showError(`Couldn't delete: ${operationalErrorMessage(error)}`),
+      });
     },
-    [removeArticle]
+    [removeArticle, run]
   );
 
   const onRename = useCallback((item: ArticleListItem) => {
@@ -475,20 +498,34 @@ export default function LibraryScreen() {
   const onSaveRename = useCallback(
     (title: string) => {
       if (renameTarget) {
-        void renameArticle({ id: renameTarget._id, title });
+        run(
+          convexCommand("rename article", () =>
+            renameArticle({ id: renameTarget._id, title })
+          ),
+          {
+            onFailure: (error) =>
+              showError(`Couldn't rename: ${operationalErrorMessage(error)}`),
+          }
+        );
       }
       setRenameTarget(null);
     },
-    [renameTarget, renameArticle]
+    [renameTarget, renameArticle, run]
   );
 
   const onTogglePin = useCallback(
     (item: ArticleListItem) => {
-      void setPinned({ id: item._id, pinned: !item.pinned }).catch((e) =>
-        showError(e instanceof Error ? e.message : "Couldn't update pin.")
+      run(
+        convexCommand("update pin", () =>
+          setPinned({ id: item._id, pinned: !item.pinned })
+        ),
+        {
+          onFailure: (error) =>
+            showError(`Couldn't update pin: ${operationalErrorMessage(error)}`),
+        }
       );
     },
-    [setPinned]
+    [run, setPinned]
   );
 
   const onEditTags = useCallback((item: ArticleListItem) => {
@@ -508,29 +545,37 @@ export default function LibraryScreen() {
 
   const onCreateTag = useCallback(
     (name: string, color?: string) => {
-      void createTag({ name, color }).catch((e) =>
-        showError(e instanceof Error ? e.message : "Couldn't create tag.")
-      );
+      run(convexCommand("create tag", () => createTag({ name, color })), {
+        onFailure: (error) =>
+          showError(`Couldn't create tag: ${operationalErrorMessage(error)}`),
+      });
     },
-    [createTag]
+    [createTag, run]
   );
 
   const onRenameTag = useCallback(
     (id: Id<"tags">, name: string) => {
-      void renameTag({ id, name }).catch((e) =>
-        showError(e instanceof Error ? e.message : "Couldn't rename tag.")
-      );
+      run(convexCommand("rename tag", () => renameTag({ id, name })), {
+        onFailure: (error) =>
+          showError(`Couldn't rename tag: ${operationalErrorMessage(error)}`),
+      });
     },
-    [renameTag]
+    [renameTag, run]
   );
 
   const onSetTagColor = useCallback(
     (id: Id<"tags">, color?: string) => {
-      void setTagColor({ id, color }).catch((e) =>
-        showError(e instanceof Error ? e.message : "Couldn't update color.")
+      run(
+        convexCommand("set tag color", () => setTagColor({ id, color })),
+        {
+          onFailure: (error) =>
+            showError(
+              `Couldn't update color: ${operationalErrorMessage(error)}`
+            ),
+        }
       );
     },
-    [setTagColor]
+    [run, setTagColor]
   );
 
   const onRemoveTag = useCallback(
@@ -547,9 +592,12 @@ export default function LibraryScreen() {
             text: "Delete",
             style: "destructive",
             onPress: () => {
-              void removeTag({ id }).catch((e) =>
-                showError(e instanceof Error ? e.message : "Couldn't delete tag.")
-              );
+              run(convexCommand("delete tag", () => removeTag({ id })), {
+                onFailure: (error) =>
+                  showError(
+                    `Couldn't delete tag: ${operationalErrorMessage(error)}`
+                  ),
+              });
               // Drop it from the active filter if it was selected.
               setSelectedTagIds((ids) => ids.filter((t) => t !== id));
             },
@@ -557,25 +605,37 @@ export default function LibraryScreen() {
         ]
       );
     },
-    [removeTag, tagsById]
+    [removeTag, run, tagsById]
   );
 
   const onAttachTag = useCallback(
     (articleId: Id<"articles">, tagId: Id<"tags">) => {
-      void addTagToArticle({ articleId, tagId }).catch((e) =>
-        showError(e instanceof Error ? e.message : "Couldn't add tag.")
+      run(
+        convexCommand("add tag to article", () =>
+          addTagToArticle({ articleId, tagId })
+        ),
+        {
+          onFailure: (error) =>
+            showError(`Couldn't add tag: ${operationalErrorMessage(error)}`),
+        }
       );
     },
-    [addTagToArticle]
+    [addTagToArticle, run]
   );
 
   const onDetachTag = useCallback(
     (articleId: Id<"articles">, tagId: Id<"tags">) => {
-      void removeTagFromArticle({ articleId, tagId }).catch((e) =>
-        showError(e instanceof Error ? e.message : "Couldn't remove tag.")
+      run(
+        convexCommand("remove tag from article", () =>
+          removeTagFromArticle({ articleId, tagId })
+        ),
+        {
+          onFailure: (error) =>
+            showError(`Couldn't remove tag: ${operationalErrorMessage(error)}`),
+        }
       );
     },
-    [removeTagFromArticle]
+    [removeTagFromArticle, run]
   );
 
   const toggleTagFilter = useCallback((id: Id<"tags">) => {
@@ -593,27 +653,30 @@ export default function LibraryScreen() {
         );
         return;
       }
-      void (async () => {
-        try {
-          const token = await getToken();
-          if (!token) throw new Error("You're not signed in.");
-          // The url travels in the body — the worker's Convex access is
-          // write-only, so it can't look the article up itself.
-          const res = await apiClient(API_URL, token).articles[":id"].retry.$post(
-            { param: { id: item._id }, json: { url: item.url } }
-          );
-          if (!res.ok) throw new Error(`The server said ${res.status}.`);
-        } catch (e) {
-          const message = e instanceof Error ? e.message : String(e);
-          showError(`Couldn't retry: ${message}`);
-          Alert.alert(
-            "Couldn't retry",
-            message
-          );
+      run(
+        Effect.gen(function* () {
+          const token = yield* authToken("retry article", getToken);
+          yield* retryArticle({
+            token,
+            articleId: item._id,
+            url: item.url,
+          });
+        }),
+        {
+          onFailure: (error) => {
+            const message = operationalErrorMessage(error);
+            showError(`Couldn't retry: ${message}`);
+            Alert.alert("Couldn't retry", message);
+          },
+          onDefect: (error) => {
+            const message = operationalErrorMessage(error);
+            showError(`Couldn't retry: ${message}`);
+            Alert.alert("Couldn't retry", message);
+          },
         }
-      })();
+      );
     },
-    [getToken]
+    [getToken, run]
   );
 
   const visibleArticles = useMemo(() => {
@@ -647,14 +710,14 @@ export default function LibraryScreen() {
   }, [articles, activeTagIds, query, sortOrder]);
 
   const toggleAdd = useCallback(() => {
-    setAddOpen((open) => {
-      const next = !open;
-      if (next) {
-        setTimeout(() => urlInputRef.current?.focus(), 50);
-      }
-      return next;
-    });
-  }, []);
+    const next = !addOpen;
+    setAddOpen(next);
+    if (next) {
+      run(Effect.sleep(50), {
+        onSuccess: () => urlInputRef.current?.focus(),
+      });
+    }
+  }, [addOpen, run]);
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top + 18 }]}>
@@ -673,7 +736,12 @@ export default function LibraryScreen() {
           </View>
           <GlassIconButton
             icon="logout-variant"
-            onPress={() => void signOut()}
+            onPress={() =>
+              run(authCommand("sign out", signOut), {
+                onFailure: (error) =>
+                  showError(`Couldn't sign out: ${operationalErrorMessage(error)}`),
+              })
+            }
             accessibilityLabel="Sign out"
             size={38}
             iconSize={18}
@@ -746,7 +814,7 @@ export default function LibraryScreen() {
               <View style={styles.captureActions}>
                 <GlassIconButton
                   icon="content-paste"
-                  onPress={() => void onPaste()}
+                  onPress={onPaste}
                   accessibilityLabel="Paste from clipboard"
                   size={44}
                   iconSize={19}
@@ -754,7 +822,7 @@ export default function LibraryScreen() {
                 />
                 <GlassIconButton
                   icon={uploading ? "progress-upload" : "file-upload-outline"}
-                  onPress={() => void onUpload()}
+                  onPress={onUpload}
                   accessibilityLabel="Upload a PDF"
                   disabled={uploading}
                   size={44}

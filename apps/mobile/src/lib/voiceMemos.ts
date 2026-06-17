@@ -1,10 +1,16 @@
-// Voice memo plumbing: on-device transcription (Apple SpeechAnalyzer via
-// @react-native-ai/apple), the local audio store, and audio upload to R2
-// through the api worker. The annotation JSON that syncs through Convex
-// carries only placement + transcript + upload status; the m4a bytes live at
-// PUT/GET /memos/:articleId/:memoId (see PLAN-voice-memos.md).
-import { Directory, File, Paths } from "expo-file-system";
-import { fetch as expoFetch } from "expo/fetch";
+// Voice memo orchestration. Expo audio hooks remain in React components; this
+// module owns the typed file, transcription, and network Effects around them.
+import type { File } from "expo-file-system";
+import * as Effect from "effect/Effect";
+
+import {
+  ConfigurationError,
+  FileOperationError,
+  HttpResponseError,
+  TranscriptionError,
+  unknownErrorMessage,
+} from "../effect/errors";
+import { MobileConfig, MobileFiles, MobileHttp } from "../effect/services";
 
 const LANGUAGE = "en-US";
 
@@ -18,9 +24,8 @@ type AppleTranscription = {
 };
 
 /**
- * Lazy + guarded: in a dev client built before this native module existed,
- * TurboModuleRegistry.getEnforcing throws at import time — degrade to
- * "no transcription" instead of a red screen.
+ * Lazy + guarded: an older development client may not contain this native
+ * module, and TurboModuleRegistry.getEnforcing throws during require().
  */
 function loadTranscription(): AppleTranscription | null {
   try {
@@ -34,65 +39,73 @@ function loadTranscription(): AppleTranscription | null {
 let transcription: AppleTranscription | null | undefined;
 let prepared: Promise<void> | null = null;
 
-// Not `??=`: a null result (module unavailable) must cache too, or every
-// call re-pays the throwing require().
 const getTranscription = (): AppleTranscription | null => {
   if (transcription === undefined) transcription = loadTranscription();
   return transcription;
 };
 
-/**
- * Kicks off the speech model asset install (no-op when already on device).
- * Called when recording starts so the download overlaps with speaking.
- */
-export function prepareTranscription(): void {
-  const t = getTranscription();
-  if (!t?.isAvailable(LANGUAGE)) return;
-  prepared ??= t.prepare(LANGUAGE).catch(() => {
-    prepared = null; // failed installs (e.g. offline) retry on the next memo
+const transcriptionFailure = (operation: string, error: unknown) =>
+  new TranscriptionError({
+    operation,
+    message: unknownErrorMessage(error),
   });
-}
 
 /**
- * Transcribes a recorded memo on-device. Returns "" when speech recognition
- * is unavailable or fails — a memo is never blocked on its transcript.
+ * Starts the speech model install so it can overlap with recording. Failure is
+ * typed and resets the cached attempt, allowing a later memo to retry.
  */
-export async function transcribeMemo(file: File): Promise<string> {
-  const t = getTranscription();
-  if (!t?.isAvailable(LANGUAGE)) return "";
-  try {
-    prepareTranscription();
-    await prepared;
-    const audio = await file.arrayBuffer();
-    const { segments } = await t.transcribe(audio, LANGUAGE);
-    return segments
-      .map((s) => s.text)
+export const prepareTranscription = Effect.suspend(() => {
+  const service = getTranscription();
+  if (!service?.isAvailable(LANGUAGE)) return Effect.void;
+  const preparation = prepared ?? service.prepare(LANGUAGE);
+  prepared = preparation;
+  return Effect.tryPromise({
+    try: () => preparation,
+    catch: (error) => {
+      prepared = null;
+      return transcriptionFailure("prepare transcription", error);
+    },
+  });
+});
+
+/** Transcribes one stored recording. Callers decide whether to use a fallback. */
+export const transcribeMemo = (
+  file: File
+): Effect.Effect<string, TranscriptionError> =>
+  Effect.gen(function* () {
+    const service = getTranscription();
+    if (!service?.isAvailable(LANGUAGE)) {
+      return yield* new TranscriptionError({
+        operation: "transcribe memo",
+        message: "On-device transcription is unavailable.",
+      });
+    }
+    yield* prepareTranscription;
+    const audio = yield* Effect.tryPromise({
+      try: () => file.arrayBuffer(),
+      catch: (error) => transcriptionFailure("read memo audio", error),
+    });
+    const result = yield* Effect.tryPromise({
+      try: () => service.transcribe(audio, LANGUAGE),
+      catch: (error) => transcriptionFailure("transcribe memo", error),
+    });
+    return result.segments
+      .map((segment) => segment.text)
       .join("")
       .trim();
-  } catch {
-    return "";
-  }
-}
+  });
 
-/**
- * Local audio store: documents/memos/<memoId>.m4a. A recording lives here
- * from capture until upload, and stays after as a playback cache (memos are
- * ~0.5MB/min; cheap next to offline playback working).
- */
-export function memoFile(memoId: string): File {
-  const dir = new Directory(Paths.document, "memos");
-  if (!dir.exists) dir.create({ intermediates: true });
-  return new File(dir, `${memoId}.m4a`);
-}
+export const findMemoFile = (memoId: string) =>
+  Effect.gen(function* () {
+    const files = yield* MobileFiles;
+    return yield* files.findMemoFile(memoId);
+  });
 
-/** Moves a fresh recording out of the evictable caches dir into the store. */
-export function storeRecording(recordingUri: string, memoId: string): File {
-  const src = new File(recordingUri);
-  const dest = memoFile(memoId);
-  if (dest.exists) dest.delete();
-  src.move(dest);
-  return dest;
-}
+export const storeRecording = (recordingUri: string, memoId: string) =>
+  Effect.gen(function* () {
+    const files = yield* MobileFiles;
+    return yield* files.storeRecording(recordingUri, memoId);
+  });
 
 export const memoAudioUrl = (
   apiUrl: string,
@@ -100,56 +113,89 @@ export const memoAudioUrl = (
   memoId: string
 ): string => `${apiUrl.replace(/\/+$/, "")}/memos/${articleId}/${memoId}`;
 
-/** Raw-body PUT of the stored m4a. Returns whether the upload landed. */
-export async function uploadMemoAudio(opts: {
-  apiUrl: string;
-  token: string;
-  articleId: string;
-  memoId: string;
-}): Promise<boolean> {
-  const file = memoFile(opts.memoId);
-  if (!file.exists) return false;
-  try {
-    const res = await expoFetch(
-      memoAudioUrl(opts.apiUrl, opts.articleId, opts.memoId),
+const configuredApiUrl = Effect.gen(function* () {
+  const config = yield* MobileConfig;
+  if (!config.apiUrl) {
+    return yield* new ConfigurationError({
+      key: "EXPO_PUBLIC_API_URL",
+      message: "Set EXPO_PUBLIC_API_URL in .env.local to sync voice memos.",
+    });
+  }
+  return config.apiUrl;
+});
+
+/** Raw-body PUT of a stored m4a. */
+export const uploadMemoAudio = (input: {
+  readonly token: string;
+  readonly articleId: string;
+  readonly memoId: string;
+}) =>
+  Effect.gen(function* () {
+    const apiUrl = yield* configuredApiUrl;
+    const files = yield* MobileFiles;
+    const file = yield* files.findMemoFile(input.memoId);
+    if (!file) {
+      return yield* new FileOperationError({
+        operation: "upload memo",
+        path: input.memoId,
+        message: "The local recording is missing.",
+      });
+    }
+    const http = yield* MobileHttp;
+    const response = yield* http.request(
+      "upload memo audio",
+      memoAudioUrl(apiUrl, input.articleId, input.memoId),
       {
         method: "PUT",
         headers: {
-          Authorization: `Bearer ${opts.token}`,
+          Authorization: `Bearer ${input.token}`,
           "Content-Type": "audio/mp4",
         },
         body: file,
       }
     );
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
+    if (!response.ok) {
+      return yield* new HttpResponseError({
+        operation: "upload memo audio",
+        status: response.status,
+        message: `The server said ${response.status}.`,
+      });
+    }
+  });
 
 /**
- * Best-effort cleanup when a memo is deleted or its creation is undone.
- * Orphaned R2 objects cost effectively nothing, so failures are ignored.
+ * Best-effort deletion still reports failures to Effect logging instead of
+ * discarding rejected promises. Missing API configuration/token only skips R2.
  */
-export async function deleteMemoAudio(opts: {
-  apiUrl: string | undefined;
-  token: string | null;
-  articleId: string;
-  memoId: string;
-}): Promise<void> {
-  try {
-    const file = memoFile(opts.memoId);
-    if (file.exists) file.delete();
-  } catch {
-    // Local cache cleanup is opportunistic.
-  }
-  if (!opts.apiUrl || !opts.token) return;
-  try {
-    await expoFetch(memoAudioUrl(opts.apiUrl, opts.articleId, opts.memoId), {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${opts.token}` },
-    });
-  } catch {
-    // Remote cleanup is opportunistic too.
-  }
-}
+export const deleteMemoAudio = (input: {
+  readonly token: string | null;
+  readonly articleId: string;
+  readonly memoId: string;
+}) =>
+  Effect.gen(function* () {
+    const files = yield* MobileFiles;
+    yield* files.deleteMemoFile(input.memoId).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("Could not delete local memo audio", error)
+      )
+    );
+
+    const config = yield* MobileConfig;
+    if (!config.apiUrl || !input.token) return;
+    const http = yield* MobileHttp;
+    const response = yield* http.request(
+      "delete memo audio",
+      memoAudioUrl(config.apiUrl, input.articleId, input.memoId),
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${input.token}` },
+      }
+    );
+    if (!response.ok) {
+      return yield* new HttpResponseError({
+        operation: "delete memo audio",
+        status: response.status,
+        message: `The server said ${response.status}.`,
+      });
+    }
+  });

@@ -6,6 +6,7 @@
   "types": "./src/index.ts",
   "scripts": {
     "dev": "wrangler dev --env dev --env-file ../../.env.local",
+    "build": "wrangler deploy --dry-run --env=\"\" --outdir dist",
     "deploy": "wrangler deploy",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
@@ -16,12 +17,14 @@
     "@hono/zod-validator": "^0.8.0",
     "@inkwell/content": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "effect": "4.0.0-beta.84",
     "hono": "^4.12.24",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260608.1",
-    "typescript": "~5.9.3",
+    "@effect/vitest": "4.0.0-beta.84",
+    "typescript": "5.9.3",
     "vitest": "^4.1.8",
     "wrangler": "^4.98.0"
   }

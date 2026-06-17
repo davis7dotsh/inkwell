@@ -16,8 +16,6 @@ import {
   type VoiceMemoAnnotation,
 } from "@inkwell/content";
 import { useMutation, useQuery } from "convex/react";
-import { File, Paths } from "expo-file-system";
-import * as Linking from "expo-linking";
 import { useLocalSearchParams } from "expo-router";
 import React, {
   useCallback,
@@ -31,7 +29,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   View,
@@ -48,6 +45,8 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
 } from "react-native-reanimated";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 
 import { BlockRenderer } from "../../components/BlockRenderer";
 import {
@@ -66,12 +65,25 @@ import { NoteEditorModal } from "../../components/annotation/NoteEditorModal";
 import { NotesLayer } from "../../components/annotation/NotesLayer";
 import { StrokesCanvas } from "../../components/annotation/StrokesCanvas";
 import { Toolbar, type Tool } from "../../components/annotation/Toolbar";
+import { authToken, convexCommand } from "../../effect/commands";
+import {
+  decodeAnnotations,
+  decodeArticleBlocks,
+  mobileConfig,
+} from "../../effect/codecs";
+import { operationalErrorMessage } from "../../effect/errors";
+import {
+  runMobileEffect,
+  runMobileEffectSync,
+  useMobileEffectRunner,
+} from "../../effect/react";
 import { newId } from "../../lib/ids";
+import { openUrl, shareMarkdown } from "../../lib/nativeCommands";
 import { loadStylusSeen, persistStylusSeen } from "../../lib/stylus";
 import { showError } from "../../lib/toast";
 import {
   deleteMemoAudio,
-  memoFile,
+  findMemoFile,
   storeRecording,
   transcribeMemo,
   uploadMemoAudio,
@@ -89,7 +101,7 @@ import {
   useTheme,
 } from "../../lib/theme";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL;
+const API_URL = mobileConfig.apiUrl;
 const OUTLINE_RAIL_BREAKPOINT = 1320;
 const IS_IPHONE = Platform.OS === "ios" && !Platform.isPad;
 
@@ -185,6 +197,7 @@ export default function ArticleScreen() {
   const remoteAnnotations = useQuery(api.annotations.get, { articleId });
   const saveAnnotations = useMutation(api.annotations.save);
   const setReadStatus = useMutation(api.articles.setReadStatus);
+  const run = useMobileEffectRunner();
 
   // Opening an unread article flips it to in-progress — once per visit, so
   // "mark as unread" from the footer isn't immediately undone.
@@ -194,9 +207,19 @@ export default function ArticleScreen() {
     if (article?.status !== "ready") return;
     autoStartedRef.current = true;
     if ((article.readStatus ?? "unread") === "unread") {
-      void setReadStatus({ id: articleId, status: "in_progress" });
+      run(
+        convexCommand("mark article in progress", () =>
+          setReadStatus({ id: articleId, status: "in_progress" })
+        ),
+        {
+          onFailure: (error) =>
+            showError(
+              `Couldn't update reading status: ${operationalErrorMessage(error)}`
+            ),
+        }
+      );
     }
-  }, [article, articleId, setReadStatus]);
+  }, [article, articleId, run, setReadStatus]);
 
   // Local annotation state is the source of truth while the screen is open;
   // the live query only seeds it once on load.
@@ -218,34 +241,59 @@ export default function ArticleScreen() {
   const { getToken } = useAuth();
 
   const blocksJson = article?.blocksJson;
-  const blocks = useMemo<Block[]>(() => {
-    if (!blocksJson) return [];
-    try {
-      return inferDocumentHeadings(JSON.parse(blocksJson) as Block[]);
-    } catch {
-      return [];
-    }
-  }, [blocksJson]);
+  const [blocks, setBlocks] = useState<Block[]>([]);
+  useEffect(() => {
+    return run(
+      blocksJson ? decodeArticleBlocks(blocksJson) : Effect.succeed<Block[]>([]),
+      {
+        onSuccess: (decoded) => setBlocks(inferDocumentHeadings(decoded)),
+        onFailure: (error) => {
+          setBlocks([]);
+          showError(
+            `Couldn't decode article content: ${operationalErrorMessage(error)}`
+          );
+        },
+      }
+    );
+  }, [blocksJson, run]);
   const outline = useMemo(() => buildDocumentOutline(blocks), [blocks]);
   const hasOutline = outline.length > 0;
   const showOutlineRail =
     hasOutline && windowWidth >= OUTLINE_RAIL_BREAKPOINT;
 
   // undefined = still loading, null = no annotations row yet.
-  const loadedAnnotations = useMemo<Annotations | null | undefined>(() => {
-    if (remoteAnnotations === undefined) return undefined;
-    if (remoteAnnotations === null) return null;
-    return {
-      contentWidth: remoteAnnotations.contentWidth,
-      strokes: JSON.parse(remoteAnnotations.strokesJson) as Stroke[],
-      boxes: JSON.parse(remoteAnnotations.boxesJson) as BoxAnnotation[],
-      notes: JSON.parse(remoteAnnotations.notesJson) as NoteAnnotation[],
-      // Rows written before voice memos existed lack the column.
-      memos: JSON.parse(
-        remoteAnnotations.memosJson ?? "[]"
-      ) as VoiceMemoAnnotation[],
-    };
-  }, [remoteAnnotations]);
+  const [loadedAnnotations, setLoadedAnnotations] = useState<
+    Annotations | null | undefined
+  >(undefined);
+  const [annotationLoadError, setAnnotationLoadError] = useState<string | null>(
+    null
+  );
+  useEffect(() => {
+    const load =
+      remoteAnnotations === undefined
+        ? Effect.sync((): Annotations | null | undefined => undefined)
+        : remoteAnnotations === null
+          ? Effect.succeed<Annotations | null | undefined>(null)
+          : decodeAnnotations({
+              contentWidth: remoteAnnotations.contentWidth,
+              strokesJson: remoteAnnotations.strokesJson,
+              boxesJson: remoteAnnotations.boxesJson,
+              notesJson: remoteAnnotations.notesJson,
+              memosJson: remoteAnnotations.memosJson,
+            });
+    return run(load, {
+      onSuccess: (value) => {
+        setAnnotationLoadError(null);
+        setLoadedAnnotations(value);
+      },
+      onFailure: (error) => {
+        const message = operationalErrorMessage(error);
+        setLoadedAnnotations(undefined);
+        setAnnotationLoadError(message);
+        showError(`Couldn't decode annotations: ${message}`);
+      },
+    });
+  }, [remoteAnnotations, run]);
 
   const readerViewportWidth = showOutlineRail
     ? windowWidth - OUTLINE_RAIL_WIDTH
@@ -313,19 +361,32 @@ export default function ArticleScreen() {
   // fingers scroll while the pencil draws. Until then, fingers draw.
   const [hasStylus, setHasStylus] = useState(false);
   const hasStylusSV = useSharedValue(false);
-  useEffect(() => {
-    void loadStylusSeen().then((seen) => {
-      if (seen) {
-        setHasStylus(true);
-        hasStylusSV.value = true;
-      }
-    });
+  useEffect(
+    () =>
+      run(loadStylusSeen, {
+        onSuccess: (seen) => {
+          if (seen) {
+            setHasStylus(true);
+            hasStylusSV.value = true;
+          }
+        },
+        onFailure: (error) =>
+          showError(
+            `Couldn't load Pencil preference: ${operationalErrorMessage(error)}`
+          ),
+      }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    []
+  );
   const markStylusSeen = useCallback(() => {
     setHasStylus(true);
-    persistStylusSeen();
-  }, []);
+    run(persistStylusSeen, {
+      onFailure: (error) =>
+        showError(
+          `Couldn't remember Pencil use: ${operationalErrorMessage(error)}`
+        ),
+    });
+  }, [run]);
 
   // Refs so the (stable) gesture callbacks never see stale values. Updated in
   // an effect (not during render) to stay React-Compiler-safe.
@@ -360,13 +421,13 @@ export default function ArticleScreen() {
   // ---- load & persist ----
   useEffect(() => {
     if (loadedAnnotations === undefined) return;
-    // Seed once; later live updates don't clobber in-progress local edits.
-    setAnnotations(
-      (current) => current ?? loadedAnnotations ?? emptyAnnotations(contentWidth)
-    );
+    return run(Effect.succeed(loadedAnnotations ?? emptyAnnotations(contentWidth)), {
+      // Seed once; later live updates don't clobber in-progress local edits.
+      onSuccess: (seed) => setAnnotations((current) => current ?? seed),
+    });
     // contentWidth intentionally omitted: only used to seed new annotations.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadedAnnotations]);
+  }, [loadedAnnotations, run]);
 
   const persistAnnotations = useCallback(
     (a: Annotations) => {
@@ -376,35 +437,47 @@ export default function ArticleScreen() {
       // annotations were authored at — so the width travels with it and the
       // reader scales by (layout width / a.contentWidth).
       const layouts = layoutsRef.current;
-      void saveAnnotations({
-        articleId,
-        contentWidth: a.contentWidth,
-        strokesJson: JSON.stringify(a.strokes),
-        boxesJson: JSON.stringify(a.boxes),
-        notesJson: JSON.stringify(a.notes),
-        memosJson: JSON.stringify(a.memos),
-        layoutJson:
-          layouts.size > 0
-            ? JSON.stringify({
-                width: contentWidth,
-                layouts: Array.from(layouts.entries()),
-              })
-            : undefined,
-      });
+      return convexCommand("save annotations", () =>
+        saveAnnotations({
+          articleId,
+          contentWidth: a.contentWidth,
+          strokesJson: JSON.stringify(a.strokes),
+          boxesJson: JSON.stringify(a.boxes),
+          notesJson: JSON.stringify(a.notes),
+          memosJson: JSON.stringify(a.memos),
+          layoutJson:
+            layouts.size > 0
+              ? JSON.stringify({
+                  width: contentWidth,
+                  layouts: Array.from(layouts.entries()),
+                })
+              : undefined,
+        })
+      );
     },
     [articleId, saveAnnotations, contentWidth]
   );
 
   useEffect(() => {
     if (!annotations || !dirtyRef.current) return;
-    const timer = setTimeout(() => persistAnnotations(annotations), 600);
-    return () => clearTimeout(timer);
-  }, [annotations, persistAnnotations]);
+    return run(
+      Effect.sleep(600).pipe(Effect.andThen(persistAnnotations(annotations))),
+      {
+        onFailure: (error) =>
+          showError(
+            `Couldn't save annotations: ${operationalErrorMessage(error)}`
+          ),
+      }
+    );
+  }, [annotations, persistAnnotations, run]);
 
   useEffect(
     () => () => {
       if (annotationsRef.current && dirtyRef.current) {
-        persistAnnotations(annotationsRef.current);
+        runMobileEffect(persistAnnotations(annotationsRef.current), {
+          onFailure: (error) =>
+            console.error("[Inkwell] Couldn't flush annotations", error),
+        });
       }
     },
     [persistAnnotations]
@@ -427,35 +500,46 @@ export default function ArticleScreen() {
   // ---- voice memos: audio pipeline ----
   /** Best-effort removal of a deleted memo's audio (local cache + R2). */
   const cleanupMemoAudio = useCallback(
-    async (memoId: string) => {
-      const token = await getToken().catch(() => null);
-      await deleteMemoAudio({ apiUrl: API_URL, token, articleId, memoId });
+    (memoId: string) => {
+      run(
+        authToken("delete voice memo", getToken).pipe(
+          Effect.catch(() => Effect.succeed(null)),
+          Effect.flatMap((token) =>
+            deleteMemoAudio({ token, articleId, memoId })
+          )
+        ),
+        {
+          onFailure: (error) =>
+            console.info("[Inkwell] Voice memo cleanup deferred", error),
+        }
+      );
     },
-    [articleId, getToken]
+    [articleId, getToken, run]
   );
 
   /** Background audio upload; flips the memo to "uploaded" when it lands. */
   const uploadMemo = useCallback(
-    async (memoId: string) => {
+    (memoId: string) => {
       if (!API_URL) return;
-      const token = await getToken().catch(() => null);
-      if (!token) return;
-      const ok = await uploadMemoAudio({
-        apiUrl: API_URL,
-        token,
-        articleId,
-        memoId,
-      });
-      if (ok) {
-        update((a) => ({
-          ...a,
-          memos: a.memos.map((m) =>
-            m.id === memoId ? { ...m, status: "uploaded" as const } : m
-          ),
-        }));
-      }
+      run(
+        Effect.gen(function* () {
+          const token = yield* authToken("upload voice memo", getToken);
+          yield* uploadMemoAudio({ token, articleId, memoId });
+        }),
+        {
+          onSuccess: () =>
+            update((a) => ({
+              ...a,
+              memos: a.memos.map((m) =>
+                m.id === memoId ? { ...m, status: "uploaded" as const } : m
+              ),
+            })),
+          onFailure: (error) =>
+            console.info("[Inkwell] Voice memo upload deferred", error),
+        }
+      );
     },
-    [articleId, getToken, update]
+    [articleId, getToken, run, update]
   );
 
   // Re-uploads any memo whose audio never left this device (e.g. recorded
@@ -465,39 +549,90 @@ export default function ArticleScreen() {
     if (retriedUploadsRef.current || !annotations) return;
     retriedUploadsRef.current = true;
     for (const memo of annotations.memos) {
-      if (memo.status === "local" && memoFile(memo.id).exists) {
-        void uploadMemo(memo.id);
-      }
+      if (memo.status !== "local") continue;
+      run(findMemoFile(memo.id), {
+        onSuccess: (file) => {
+          if (file) uploadMemo(memo.id);
+        },
+        onFailure: (error) =>
+          console.info("[Inkwell] Could not inspect local memo", error),
+      });
     }
-  }, [annotations, uploadMemo]);
+  }, [annotations, run, uploadMemo]);
 
   const onMemoRecorded = useCallback(
-    async (at: Point, recording: { uri: string; durationMs: number }) => {
+    (at: Point, recording: { uri: string; durationMs: number }) => {
       setMemoPhase({ mode: "processing" });
-      try {
-        const memoId = newId();
-        const file = storeRecording(recording.uri, memoId);
-        // On-device SpeechAnalyzer; "" when unavailable — never blocks.
-        const transcript = await transcribeMemo(file);
-        const memo: VoiceMemoAnnotation = {
-          id: memoId,
-          x: at.x,
-          y: at.y,
-          durationMs: recording.durationMs,
-          transcript,
-          status: "local",
-          createdAt: Date.now(),
-        };
-        update((a) => ({ ...a, memos: [...a.memos, memo] }));
-        pushUndo({ kind: "memo", id: memoId });
-        void uploadMemo(memoId);
-      } catch {
-        showError("Couldn't save the voice memo.");
-      } finally {
-        setMemoPhase(null);
-      }
+      run(
+        Effect.acquireUseRelease(
+          Effect.gen(function* () {
+            const memoId = yield* newId;
+            const file = yield* storeRecording(recording.uri, memoId);
+            return { file, memoId };
+          }),
+          ({ file, memoId }) =>
+            Effect.gen(function* () {
+              const transcript = yield* transcribeMemo(file).pipe(
+                Effect.catch((error) =>
+                  Effect.logWarning(
+                    "Voice memo transcription unavailable",
+                    error
+                  ).pipe(Effect.as(""))
+                )
+              );
+              const createdAt = yield* Effect.sync(() => Date.now());
+              const memo = {
+                id: memoId,
+                x: at.x,
+                y: at.y,
+                durationMs: recording.durationMs,
+                transcript,
+                status: "local" as const,
+                createdAt,
+              } satisfies VoiceMemoAnnotation;
+              yield* Effect.sync(() => {
+                update((a) => ({ ...a, memos: [...a.memos, memo] }));
+                pushUndo({ kind: "memo", id: memo.id });
+              });
+              return memo;
+            }),
+          ({ memoId }, exit) =>
+            Exit.isSuccess(exit)
+              ? Effect.void
+              : deleteMemoAudio({
+                  token: null,
+                  articleId,
+                  memoId,
+                }).pipe(
+                  Effect.catch((error) =>
+                    Effect.logWarning(
+                      "Could not clean up interrupted voice memo",
+                      error
+                    )
+                  )
+                )
+        ),
+        {
+          onSuccess: (memo) => {
+            uploadMemo(memo.id);
+            setMemoPhase(null);
+          },
+          onFailure: (error) => {
+            showError(
+              `Couldn't save the voice memo: ${operationalErrorMessage(error)}`
+            );
+            setMemoPhase(null);
+          },
+          onDefect: (error) => {
+            showError(
+              `Couldn't save the voice memo: ${operationalErrorMessage(error)}`
+            );
+            setMemoPhase(null);
+          },
+        }
+      );
     },
-    [pushUndo, update, uploadMemo]
+    [articleId, pushUndo, run, update, uploadMemo]
   );
 
   const onDeleteMemo = useCallback(
@@ -507,7 +642,7 @@ export default function ArticleScreen() {
         memos: a.memos.filter((m) => m.id !== memo.id),
       }));
       setPlayerMemoId(null);
-      void cleanupMemoAudio(memo.id);
+      cleanupMemoAudio(memo.id);
     },
     [cleanupMemoAudio, update]
   );
@@ -565,7 +700,7 @@ export default function ArticleScreen() {
               : a.memos,
         }));
         // Undoing a memo's creation also drops its recording.
-        if (op.kind === "memo") void cleanupMemoAudio(op.id);
+        if (op.kind === "memo") cleanupMemoAudio(op.id);
       }
       return stack.slice(0, -1);
     });
@@ -721,7 +856,7 @@ export default function ArticleScreen() {
       const p = toPoint(x, y);
       if (t === "pen" || t === "highlighter") {
         const stroke: Stroke = {
-          id: newId(),
+          id: runMobileEffectSync(newId),
           tool: t === "highlighter" ? "highlighter" : "pen",
           color: t === "highlighter" ? HIGHLIGHTER_COLOR : color,
           width: (t === "highlighter" ? HIGHLIGHTER_WIDTH : PEN_WIDTH) / s,
@@ -806,7 +941,7 @@ export default function ArticleScreen() {
       previewBoxRef.current = null;
       setPreviewBox(null);
       if (box && box.w * s > 16 && box.h * s > 16) {
-        const committed = { ...box, id: newId() };
+        const committed = { ...box, id: runMobileEffectSync(newId) };
         update((a) => ({ ...a, boxes: [...a.boxes, committed] }));
         pushUndo({ kind: "box", id: committed.id });
       }
@@ -878,6 +1013,9 @@ export default function ArticleScreen() {
   // reposition: the worklet parks the touch (manual activation) while the JS
   // thread hit-tests, then moveHitSV tells it to activate (drag) or fail
   // (the pencil scrolls like before). Fingers always scroll.
+  /* eslint-disable react-hooks/refs, react-hooks/immutability --
+   * Reanimated gesture callbacks are worklets; shared values and captured
+   * runOnJS callbacks are intentionally read/mutated on the UI thread. */
   const panGesture = useMemo(
     () =>
       Gesture.Pan()
@@ -992,6 +1130,7 @@ export default function ArticleScreen() {
     () => Gesture.Race(panGesture, tapGesture),
     [panGesture, tapGesture]
   );
+  /* eslint-enable react-hooks/refs, react-hooks/immutability */
 
   // ---- note editor actions ----
   const saveNote = useCallback(
@@ -1006,7 +1145,7 @@ export default function ArticleScreen() {
         }));
       } else {
         const note: NoteAnnotation = {
-          id: newId(),
+          id: runMobileEffectSync(newId),
           x: noteEditor.at.x,
           y: noteEditor.at.y,
           text,
@@ -1069,8 +1208,12 @@ export default function ArticleScreen() {
 
   // ---- header actions ----
   const onOpenOriginal = useCallback(() => {
-    if (article?.url) void Linking.openURL(article.url);
-  }, [article?.url]);
+    if (!article?.url) return;
+    run(openUrl(article.url), {
+      onFailure: (error) =>
+        showError(`Couldn't open article: ${operationalErrorMessage(error)}`),
+    });
+  }, [article, run]);
 
   // Exports a real .md file (named after the article) so the share sheet
   // offers AirDrop / Save to Files / app handoff instead of a wall of text.
@@ -1090,26 +1233,21 @@ export default function ArticleScreen() {
       layoutsRef.current,
       stateRef.current.scale
     );
-    let fileUrl: string | null = null;
-    try {
-      const name =
-        article.title.replace(/[\\/:*?"<>|\n\r]+/g, " ").trim().slice(0, 80) ||
-        "article";
-      const file = new File(Paths.cache, `${name}.md`);
-      if (file.exists) file.delete();
-      file.write(markdown);
-      fileUrl = file.uri;
-    } catch {
-      // Couldn't write the file — fall back to sharing the raw text.
-    }
-    // Share.share's `url` is iOS-only; Android ignores it and would show an
-    // empty sheet, so Android always gets the markdown text.
-    void Share.share(
-      fileUrl && Platform.OS === "ios"
-        ? { url: fileUrl, title: article.title }
-        : { message: markdown }
+    const fileName =
+      article.title.replace(/[\\/:*?"<>|\n\r]+/g, " ").trim().slice(0, 80) ||
+      "article";
+    run(
+      shareMarkdown({
+        title: article.title,
+        fileName,
+        markdown,
+      }),
+      {
+        onFailure: (error) =>
+          showError(`Couldn't export: ${operationalErrorMessage(error)}`),
+      }
     );
-  }, [article, blocks]);
+  }, [article, blocks, run]);
 
   // Live view of the memo being played, so upload-status changes (synced
   // badge) reach an open player modal.
@@ -1123,11 +1261,21 @@ export default function ArticleScreen() {
   const isUpload = article?.url.startsWith("upload://") ?? false;
 
   const onToggleRead = useCallback(() => {
-    void setReadStatus({
-      id: articleId,
-      status: isRead ? "unread" : "read",
-    });
-  }, [articleId, isRead, setReadStatus]);
+    run(
+      convexCommand("update reading status", () =>
+        setReadStatus({
+          id: articleId,
+          status: isRead ? "unread" : "read",
+        })
+      ),
+      {
+        onFailure: (error) =>
+          showError(
+            `Couldn't update reading status: ${operationalErrorMessage(error)}`
+          ),
+      }
+    );
+  }, [articleId, isRead, run, setReadStatus]);
 
   const savedDate = article
     ? new Date(article.savedAt).toLocaleDateString(undefined, {
@@ -1188,6 +1336,13 @@ export default function ArticleScreen() {
             {article.error ?? "This article failed to save."}
           </Text>
         </View>
+      ) : annotationLoadError ? (
+        <View style={styles.center}>
+          <Text style={styles.missing}>
+            This article&apos;s annotations couldn&apos;t be opened.{"\n"}
+            {annotationLoadError}
+          </Text>
+        </View>
       ) : !ready || !annotations ? (
         <View style={styles.center}>
           <ActivityIndicator color={c.accent} />
@@ -1221,9 +1376,13 @@ export default function ArticleScreen() {
                   scrollEventThrottle={16}
                   scrollEnabled={tool === "read" || hasStylus}
                   onContentSizeChange={(_w, h) => {
+                    // Reanimated shared value; updated by a native UI callback.
+                    // eslint-disable-next-line react-hooks/immutability
                     scrollContentHeight.value = h;
                   }}
                   onLayout={(e) => {
+                    // Reanimated shared value; updated by a native UI callback.
+                    // eslint-disable-next-line react-hooks/immutability
                     scrollViewportHeight.value = e.nativeEvent.layout.height;
                   }}
                 >
@@ -1338,7 +1497,7 @@ export default function ArticleScreen() {
           {memoPhase?.mode === "recording" ? (
             <MemoRecorderPanel
               onComplete={(recording) =>
-                void onMemoRecorded(memoPhase.at, recording)
+                onMemoRecorded(memoPhase.at, recording)
               }
               onCancel={(message) => {
                 setMemoPhase(null);
@@ -1356,6 +1515,7 @@ export default function ArticleScreen() {
           ) : null}
           {playerMemo ? (
             <MemoPlayerModal
+              key={playerMemo.id}
               memo={playerMemo}
               articleId={articleId}
               onDelete={onDeleteMemo}

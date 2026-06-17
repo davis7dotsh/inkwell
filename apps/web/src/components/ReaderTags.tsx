@@ -6,8 +6,14 @@
 import { api } from "@inkwell/backend/convex/_generated/api";
 import type { Id } from "@inkwell/backend/convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
+import { Exit } from "effect";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { convexCommand } from "../lib/effect/convex";
+import {
+  exitFailureMessage,
+  runBrowserEffect,
+} from "../lib/effect/react";
 import { tagDisplayColor } from "../lib/tagColors";
 
 export function ReaderTags({
@@ -24,6 +30,7 @@ export function ReaderTags({
 
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  const [commandError, setCommandError] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   const tagsList = tags ?? [];
@@ -58,13 +65,32 @@ export function ReaderTags({
   const onCreateAndAttach = async () => {
     const name = draft.trim();
     if (!name) return;
-    try {
-      const id = await createTag({ name });
-      await addToArticle({ articleId, tagId: id });
+    setCommandError(null);
+    const exit = await runBrowserEffect(
+      convexCommand("Create and attach tag", async () => {
+        const id = await createTag({ name });
+        await addToArticle({ articleId, tagId: id });
+      }),
+    );
+    if (Exit.isSuccess(exit)) {
       setDraft(""); // only clear once the tag is created and attached
-    } catch {
-      // Creation can race or fail; keep the draft so the user can retry.
+    } else {
+      setCommandError(
+        exitFailureMessage(exit, "Couldn't create and attach this tag."),
+      );
     }
+  };
+
+  const updateAttachedTag = (
+    operation: string,
+    run: () => Promise<unknown>,
+  ) => {
+    setCommandError(null);
+    void runBrowserEffect(convexCommand(operation, run)).then((exit) => {
+      if (Exit.isFailure(exit)) {
+        setCommandError(exitFailureMessage(exit, `${operation} failed.`));
+      }
+    });
   };
 
   const resolved = tagIds
@@ -121,8 +147,15 @@ export function ReaderTags({
                     }
                     onClick={() =>
                       isOn
-                        ? void removeFromArticle({ articleId, tagId: tag._id })
-                        : void addToArticle({ articleId, tagId: tag._id })
+                        ? updateAttachedTag("Remove tag from article", () =>
+                            removeFromArticle({
+                              articleId,
+                              tagId: tag._id,
+                            }),
+                          )
+                        : updateAttachedTag("Add tag to article", () =>
+                            addToArticle({ articleId, tagId: tag._id }),
+                          )
                     }
                   >
                     {isOn ? "✓ " : ""}
@@ -132,6 +165,11 @@ export function ReaderTags({
               })
             )}
           </div>
+          {commandError ? (
+            <p className="save-error" role="alert">
+              {commandError}
+            </p>
+          ) : null}
           <form
             className="tag-editor-create"
             onSubmit={(e) => {

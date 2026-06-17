@@ -13,10 +13,16 @@ import {
 } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import * as Effect from "effect/Effect";
 
 import { FatalErrorScreen } from "../components/FatalErrorScreen";
 import { SignInScreen } from "../components/SignInScreen";
 import { ToastViewport } from "../components/ToastViewport";
+import { authCommand } from "../effect/commands";
+import { mobileConfig } from "../effect/codecs";
+import { operationalErrorMessage } from "../effect/errors";
+import { useMobileEffectRunner } from "../effect/react";
+import { probeClerkEnvironment } from "../lib/authProbe";
 import { createClerkTokenCache } from "../lib/clerkTokenCache";
 import {
   clearLastFatalReport,
@@ -29,9 +35,8 @@ import {
 import { makeThemedStyles, serif, useTheme } from "../lib/theme";
 import { showError } from "../lib/toast";
 
-const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
-const convexUrl = process.env.EXPO_PUBLIC_CONVEX_URL;
-const clerkFrontendApiUrl = "https://clerk.inkwellapp.net";
+const publishableKey = mobileConfig.clerkPublishableKey;
+const convexUrl = mobileConfig.convexUrl;
 const STARTUP_TIMEOUT_MS = 8000;
 const clerkTokenCache = publishableKey
   ? createClerkTokenCache(publishableKey)
@@ -42,16 +47,6 @@ const convex = convexUrl
   ? new ConvexReactClient(convexUrl, { unsavedChangesWarning: false })
   : null;
 
-function getClerkErrorCode(payload: unknown) {
-  if (!payload || typeof payload !== "object") return null;
-  const errors = Reflect.get(payload, "errors");
-  if (!Array.isArray(errors) || !errors[0] || typeof errors[0] !== "object") {
-    return null;
-  }
-  const code = Reflect.get(errors[0], "code");
-  return typeof code === "string" ? code : null;
-}
-
 /** Spinner sign-in/app gate. Convex must validate the Clerk token, so gate on
  * useConvexAuth(), not Clerk's isSignedIn. */
 function AuthGate() {
@@ -59,47 +54,34 @@ function AuthGate() {
   const styles = themed[scheme];
   const clerk = useAuth();
   const convexAuth = useConvexAuth();
+  const run = useMobileEffectRunner();
   const [clerkProbe, setClerkProbe] = useState("pending");
   const [timedOut, setTimedOut] = useState(false);
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const startupPending = !clerk.isLoaded || convexAuth.isLoading;
 
   useEffect(() => {
-    let cancelled = false;
-    void fetch(`${clerkFrontendApiUrl}/v1/environment?_is_native=1`, {
-      headers: {
-        "x-mobile": "1",
-        "x-expo-sdk-version": "3.3.1",
-      },
-    })
-      .then(async (response) => {
-        const payload: unknown = await response.json();
-        const code = getClerkErrorCode(payload);
-        if (!cancelled) {
-          setClerkProbe(code ?? `HTTP ${response.status}`);
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setClerkProbe(
-            error instanceof Error ? error.message : "Unknown network error"
-          );
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    return run(probeClerkEnvironment, {
+      onSuccess: setClerkProbe,
+      onFailure: (error) => setClerkProbe(operationalErrorMessage(error)),
+      onDefect: (error) => setClerkProbe(operationalErrorMessage(error)),
+    });
+  }, [retryAttempt, run]);
 
   useEffect(() => {
-    if (clerk.isLoaded && !convexAuth.isLoading) {
-      setTimedOut(false);
-      return;
+    if (!startupPending) {
+      const reset = setTimeout(() => setTimedOut(false), 0);
+      return () => clearTimeout(reset);
     }
-    const timeout = setTimeout(() => setTimedOut(true), STARTUP_TIMEOUT_MS);
-    return () => clearTimeout(timeout);
-  }, [clerk.isLoaded, convexAuth.isLoading]);
+    return run(Effect.sleep(STARTUP_TIMEOUT_MS), {
+      onSuccess: () => setTimedOut(true),
+      onDefect: (error) =>
+        showError(`Startup timer failed: ${operationalErrorMessage(error)}`),
+    });
+  }, [retryAttempt, run, startupPending]);
 
   useEffect(() => {
-    if (!timedOut) return;
+    if (!timedOut || !startupPending) return;
     showError(
       clerkProbe === "native_api_disabled"
         ? "Clerk Native API is disabled for the production instance."
@@ -107,9 +89,9 @@ function AuthGate() {
         ? "Convex could not validate the production session."
         : "Clerk could not initialize the production session."
     );
-  }, [clerk.isLoaded, clerkProbe, timedOut]);
+  }, [clerk.isLoaded, clerkProbe, startupPending, timedOut]);
 
-  if (timedOut) {
+  if (timedOut && startupPending) {
     const stage = clerk.isLoaded ? "Convex authentication" : "Clerk startup";
     return (
       <View style={styles.startupError}>
@@ -126,14 +108,23 @@ function AuthGate() {
         </Text>
         <Pressable
           style={styles.retryButton}
-          onPress={() => setTimedOut(false)}
+          onPress={() => {
+            setTimedOut(false);
+            setClerkProbe("pending");
+            setRetryAttempt((attempt) => attempt + 1);
+          }}
         >
           <Text style={styles.retryButtonText}>Try again</Text>
         </Pressable>
         {clerk.isLoaded && clerk.isSignedIn ? (
           <Pressable
             style={styles.secondaryButton}
-            onPress={() => void clerk.signOut()}
+            onPress={() =>
+              run(authCommand("reset session", clerk.signOut), {
+                onFailure: (error) =>
+                  showError(operationalErrorMessage(error)),
+              })
+            }
           >
             <Text style={styles.secondaryButtonText}>Reset session</Text>
           </Pressable>
@@ -229,15 +220,33 @@ class RootErrorBoundary extends React.Component<
  * global handler (event handlers, timers) and ones persisted by a previous
  * launch that died. */
 function CrashGate({ children }: { children: React.ReactNode }) {
+  const run = useMobileEffectRunner();
   const [liveReport, setLiveReport] = useState<FatalReport | null>(null);
-  const [previousReport, setPreviousReport] = useState<FatalReport | null>(
-    () => readLastFatalReport()
-  );
+  const [previousReport, setPreviousReport] = useState<
+    FatalReport | null | undefined
+  >(undefined);
 
   useEffect(() => {
     setFatalErrorListener(setLiveReport);
     return () => setFatalErrorListener(null);
   }, []);
+
+  useEffect(
+    () =>
+      run(readLastFatalReport, {
+        onSuccess: setPreviousReport,
+        onFailure: (error) => {
+          clearLastFatalReport();
+          setPreviousReport(null);
+          showError(
+            `The previous crash report was unreadable: ${operationalErrorMessage(
+              error
+            )}`
+          );
+        },
+      }),
+    [run]
+  );
 
   if (liveReport) {
     return (
@@ -260,6 +269,7 @@ function CrashGate({ children }: { children: React.ReactNode }) {
       />
     );
   }
+  if (previousReport === undefined) return null;
   return <>{children}</>;
 }
 

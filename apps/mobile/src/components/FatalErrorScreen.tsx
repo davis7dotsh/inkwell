@@ -1,9 +1,12 @@
-import * as Clipboard from "expo-clipboard";
 import React, { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { operationalErrorMessage } from "../effect/errors";
+import { useMobileEffectRunner } from "../effect/react";
 import type { FatalReport } from "../lib/crashGuard";
+import { writeClipboardText } from "../lib/nativeCommands";
 import { makeThemedStyles, mono, serif, useTheme } from "../lib/theme";
+import { showError } from "../lib/toast";
 
 /**
  * Full-screen diagnostic shown instead of crashing: either right when a
@@ -22,14 +25,22 @@ export function FatalErrorScreen({
 }) {
   const { scheme } = useTheme();
   const styles = themed[scheme];
+  const run = useMobileEffectRunner();
   const [copied, setCopied] = useState(false);
 
   const details = [report.message, report.stack].filter(Boolean).join("\n\n");
 
   const copyDetails = () => {
-    void Clipboard.setStringAsync(
-      `Inkwell fatal error (${report.occurredAt})\n\n${details}`
-    ).then(() => setCopied(true));
+    run(
+      writeClipboardText(
+        `Inkwell fatal error (${report.occurredAt})\n\n${details}`
+      ),
+      {
+        onSuccess: () => setCopied(true),
+        onFailure: (error) =>
+          showError(`Couldn't copy: ${operationalErrorMessage(error)}`),
+      }
+    );
   };
 
   return (

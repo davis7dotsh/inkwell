@@ -1,113 +1,142 @@
-// Scrape → normalize → complete (or fail). Runs inside ctx.waitUntil() after
-// the route has already returned 202, so it must never throw — every outcome
-// lands in Convex as ready (with blocks) or failed (with a readable message).
+// Scrape/parse → normalize → complete (or fail). The Effect program is total:
+// every expected failure and defect becomes a failed PipelineOutcome, and a
+// best-effort Convex fail write prevents rejected waitUntil promises.
 
 import { firecrawlToArticle } from "@inkwell/content";
+import { Cause, Context, Effect, Layer } from "effect";
 
-import type { ConvexService } from "./convexService";
-import { parseFile, scrapeUrl } from "./firecrawl";
-import type { FirecrawlScrape } from "./firecrawl";
+import {
+  ArticleNormalizationError,
+  errorMessage,
+} from "./errors";
+import { ConvexService } from "./convexService";
+import {
+  FirecrawlService,
+  type FirecrawlScrape,
+} from "./firecrawl";
 
-export type PipelineEnv = {
-  FIRECRAWL_API_KEY: string;
-};
-
-/**
- * Where the article landed. The REST routes run the pipeline in waitUntil()
- * and drop this (clients watch the row via Convex live queries); the MCP
- * save_article tool awaits it to answer the agent synchronously.
- */
 export type PipelineOutcome =
   | { status: "ready"; title: string }
   | { status: "failed"; error: string };
 
-async function runPipeline(options: {
-  articleId: string;
-  userId: string;
-  convex: ConvexService;
-  fetchContent: () => Promise<FirecrawlScrape>;
-  /** Used when Firecrawl metadata/content yields no usable title. */
-  fallbackTitle?: string;
-}): Promise<PipelineOutcome> {
-  const { articleId, userId, fetchContent, fallbackTitle, convex } = options;
-  try {
-    const scraped = await fetchContent();
-    const article = firecrawlToArticle(scraped);
-    const title =
-      article.title === "Untitled" && fallbackTitle
-        ? fallbackTitle
-        : article.title;
-    await convex.complete({
-      articleId,
-      expectedUserId: userId,
-      title,
-      byline: article.byline,
-      siteName: article.siteName,
-      excerpt: article.excerpt,
-      blocksJson: JSON.stringify(article.blocks),
-    });
-    return { status: "ready", title };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    try {
-      await convex.fail({
-        articleId,
-        expectedUserId: userId,
-        error: message,
-      });
-    } catch (failError) {
-      // Last resort: surface in worker logs; the row stays pending.
-      console.error(
-        `pipeline: could not mark article ${articleId} as failed`,
-        failError
-      );
-    }
-    return { status: "failed", error: message };
+type NormalizedArticle = ReturnType<typeof firecrawlToArticle>;
+
+export class ArticleNormalizer extends Context.Service<
+  ArticleNormalizer,
+  {
+    readonly normalize: (
+      scraped: FirecrawlScrape
+    ) => Effect.Effect<NormalizedArticle, ArticleNormalizationError>;
   }
-}
+>()("inkwell/api/ArticleNormalizer") {}
 
-export async function processArticle(options: {
-  fetchImpl: typeof fetch;
-  env: PipelineEnv;
-  articleId: string;
-  userId: string;
-  url: string;
-  convex: ConvexService;
-}): Promise<PipelineOutcome> {
-  const { fetchImpl, env, articleId, userId, url, convex } = options;
-  return runPipeline({
-    articleId,
-    userId,
-    convex,
-    fetchContent: () => scrapeUrl(fetchImpl, env.FIRECRAWL_API_KEY, url),
-  });
-}
+export const ArticleNormalizerLive = Layer.succeed(
+  ArticleNormalizer,
+  ArticleNormalizer.of({
+    normalize: (scraped) =>
+      Effect.try({
+        try: () => firecrawlToArticle(scraped),
+        catch: (error) =>
+          new ArticleNormalizationError({
+            message: errorMessage(error),
+          }),
+      }),
+  })
+);
 
-/** Upload variant: the PDF bytes travel with the request, so the content
- * step is a Firecrawl /v2/parse call instead of a scrape. */
-export async function processUpload(options: {
-  fetchImpl: typeof fetch;
-  env: PipelineEnv;
-  articleId: string;
-  userId: string;
-  file: File;
-  fallbackTitle: string;
-  convex: ConvexService;
-}): Promise<PipelineOutcome> {
-  const {
-    fetchImpl,
-    env,
-    articleId,
-    userId,
-    file,
-    fallbackTitle,
-    convex,
-  } = options;
-  return runPipeline({
-    articleId,
-    userId,
-    convex,
-    fallbackTitle,
-    fetchContent: () => parseFile(fetchImpl, env.FIRECRAWL_API_KEY, file),
+const runPipelineEffect = (options: {
+  readonly articleId: string;
+  readonly userId: string;
+  readonly fetchContent: Effect.Effect<FirecrawlScrape, unknown>;
+  readonly fallbackTitle?: string;
+}): Effect.Effect<
+  PipelineOutcome,
+  never,
+  ConvexService | FirecrawlService | ArticleNormalizer
+> =>
+  Effect.gen(function* () {
+    const convex = yield* ConvexService;
+    const normalizer = yield* ArticleNormalizer;
+
+    const markFailed = (failure: unknown): Effect.Effect<PipelineOutcome> => {
+      const message = errorMessage(failure);
+      return convex
+        .fail({
+          articleId: options.articleId,
+          expectedUserId: options.userId,
+          error: message,
+        })
+        .pipe(
+          Effect.catchCause((failCause) =>
+            Effect.sync(() => {
+              console.error(
+                `pipeline: could not mark article ${options.articleId} as failed`,
+                Cause.squash(failCause)
+              );
+            })
+          ),
+          Effect.as({ status: "failed", error: message } as const)
+        );
+    };
+
+    const program = Effect.gen(function* () {
+      const scraped = yield* options.fetchContent;
+      const article = yield* normalizer.normalize(scraped);
+      const title =
+        article.title === "Untitled" && options.fallbackTitle
+          ? options.fallbackTitle
+          : article.title;
+      yield* convex.complete({
+        articleId: options.articleId,
+        expectedUserId: options.userId,
+        title,
+        byline: article.byline,
+        siteName: article.siteName,
+        excerpt: article.excerpt,
+        blocksJson: JSON.stringify(article.blocks),
+      });
+      return { status: "ready", title } as const;
+    });
+
+    return yield* program.pipe(
+      Effect.catchCause((cause) => markFailed(Cause.squash(cause)))
+    );
   });
-}
+
+export const processArticleEffect = (options: {
+  readonly articleId: string;
+  readonly userId: string;
+  readonly url: string;
+}): Effect.Effect<
+  PipelineOutcome,
+  never,
+  ConvexService | FirecrawlService | ArticleNormalizer
+> =>
+  Effect.gen(function* () {
+    const firecrawl = yield* FirecrawlService;
+    return yield* runPipelineEffect({
+      articleId: options.articleId,
+      userId: options.userId,
+      fetchContent: firecrawl.scrapeUrl(options.url),
+    });
+  });
+
+export const processUploadEffect = (options: {
+  readonly articleId: string;
+  readonly userId: string;
+  readonly file: File;
+  readonly fallbackTitle: string;
+}): Effect.Effect<
+  PipelineOutcome,
+  never,
+  ConvexService | FirecrawlService | ArticleNormalizer
+> =>
+  Effect.gen(function* () {
+    const firecrawl = yield* FirecrawlService;
+    return yield* runPipelineEffect({
+      articleId: options.articleId,
+      userId: options.userId,
+      fallbackTitle: options.fallbackTitle,
+      fetchContent: firecrawl.parseFile(options.file),
+    });
+  });

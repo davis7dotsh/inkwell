@@ -19,39 +19,47 @@ import {
 } from "@inkwell/content";
 import type {
   Annotations,
-  Block,
-  BoxAnnotation,
-  NoteAnnotation,
   ResolvedAnnotation,
-  Stroke,
-  VoiceMemoAnnotation,
 } from "@inkwell/content";
+import {
+  BlockSchema,
+  BoxAnnotationSchema,
+  NoteAnnotationSchema,
+  StrokeSchema,
+  VoiceMemoAnnotationSchema,
+  decodeTolerantJsonArray,
+} from "@inkwell/content/schema";
+import { Cause, Effect, Option, Schema } from "effect";
 import { z } from "zod";
 
-import type { ConvexService } from "./convexService";
-import { processArticle } from "./pipeline";
-import type { PipelineEnv } from "./pipeline";
+import { ConvexService } from "./convexService";
+import { ToolOperationError, errorMessage } from "./errors";
+import { processArticleEffect } from "./pipeline";
+import {
+  runRequestEffectTotal,
+  type RequestLayer,
+  type RequestServices,
+} from "./requestContext";
+import { CurrentUser } from "./services";
 import { kindOf, normalizeUrl } from "./url";
 
 // Clients truncate tool results (Claude Code around ~25k tokens); cap the
 // article body well under that and say so, rather than truncating silently.
 const MAX_ARTICLE_CHARS = 80_000;
 
+const parseJsonArray = <T>(
+  json: string,
+  itemSchema: Schema.Decoder<T, never>
+): T[] =>
+  Option.getOrElse(
+    decodeTolerantJsonArray(json, itemSchema),
+    () => []
+  );
+
 const errorResult = (message: string): CallToolResult => ({
   content: [{ type: "text", text: message }],
   isError: true,
 });
-
-/** JSON column → typed array; annotation rows always hold valid JSON, but
- * never let a corrupt row take the whole tool down. */
-function parseJsonArray<T>(json: string): T[] {
-  try {
-    const parsed = JSON.parse(json);
-    return Array.isArray(parsed) ? (parsed as T[]) : [];
-  } catch {
-    return [];
-  }
-}
 
 const KIND_LABEL: Record<ResolvedAnnotation["type"], string> = {
   typed_note: "📝 note",
@@ -93,14 +101,13 @@ function renderNotesText(
   return lines.join("\n");
 }
 
-/** The slice of ExecutionContext the tools need (structural, fake-able). */
-export type WaitUntil = { waitUntil(promise: Promise<unknown>): void };
+export type McpRequestScope = {
+  readonly layer: RequestLayer;
+  readonly waitUntil: (promise: Promise<unknown>) => void;
+};
 
 export function buildInkwellMcp(
-  userId: string,
-  env: PipelineEnv,
-  executionCtx: WaitUntil,
-  convex: ConvexService
+  scope: McpRequestScope
 ): McpServer {
   const server = new McpServer(
     { name: "inkwell", version: "0.1.0" },
@@ -126,6 +133,18 @@ export function buildInkwellMcp(
     }
   );
 
+  const runTool = <A, E>(
+    program: Effect.Effect<A, E, RequestServices>
+  ): Promise<A | CallToolResult> =>
+    runRequestEffectTotal(
+      program,
+      scope.layer,
+      (cause) =>
+        Effect.succeed(
+          errorResult(errorMessage(Cause.squash(cause)))
+        )
+    );
+
   server.registerTool(
     "save_article",
     {
@@ -145,43 +164,60 @@ export function buildInkwellMcp(
       },
       annotations: { destructiveHint: false, openWorldHint: true },
     },
-    async ({ url: rawUrl }) => {
-      const url = normalizeUrl(rawUrl);
-      if (!url) return errorResult(`Not a valid http(s) URL: ${rawUrl}`);
+    ({ url: rawUrl }) => {
+      const program = Effect.gen(function* () {
+        const url = normalizeUrl(rawUrl);
+        if (!url) {
+          return yield* new ToolOperationError({
+            message: `Not a valid http(s) URL: ${rawUrl}`,
+          });
+        }
+        const { userId } = yield* CurrentUser;
+        const convex = yield* ConvexService;
+        const { articleId } = yield* convex.createPending({
+          userId,
+          url: url.toString(),
+          kind: kindOf(url),
+          title: url.toString(),
+          savedAt: Date.now(),
+        });
+        const outcome = yield* processArticleEffect({
+          articleId,
+          userId,
+          url: url.toString(),
+        });
 
-      const { articleId } = await convex.createPending({
-        userId,
-        url: url.toString(),
-        kind: kindOf(url),
-        title: url.toString(), // placeholder until the scrape completes
-        savedAt: Date.now(),
+        const structuredContent =
+          outcome.status === "ready"
+            ? {
+                articleId,
+                status: outcome.status,
+                title: outcome.title,
+              }
+            : {
+                articleId,
+                status: outcome.status,
+                error: outcome.error,
+              };
+        const text =
+          outcome.status === "ready"
+            ? `Saved "${outcome.title}" (article id: ${articleId}).`
+            : `Save failed: ${outcome.error} (article id: ${articleId} — ` +
+              `retry by saving the same URL again).`;
+        return {
+          content: [{ type: "text" as const, text }],
+          structuredContent,
+        };
       });
-      const pipeline = processArticle({
-        fetchImpl: fetch,
-        env,
-        articleId,
-        userId,
-        url: url.toString(),
-        convex,
-      });
-      // Backstop: if the client disconnects mid-save (timeout, ctrl-C), the
-      // runtime would cancel this invocation and strand the row in pending —
-      // waitUntil keeps the pipeline (and its complete/fail write) running.
-      // Note waitUntil only extends ~30s past a disconnect; if that ever
-      // bites, the full fix is a stale-pending sweep in Convex.
-      executionCtx.waitUntil(pipeline.catch(() => undefined));
-      const outcome = await pipeline;
-
-      const structuredContent =
-        outcome.status === "ready"
-          ? { articleId, status: outcome.status, title: outcome.title }
-          : { articleId, status: outcome.status, error: outcome.error };
-      const text =
-        outcome.status === "ready"
-          ? `Saved "${outcome.title}" (article id: ${articleId}).`
-          : `Save failed: ${outcome.error} (article id: ${articleId} — ` +
-            `retry by saving the same URL again).`;
-      return { content: [{ type: "text", text }], structuredContent };
+      // Register the exact same, total Promise that the MCP adapter awaits.
+      // There is one Effect execution and waitUntil can never observe a
+      // rejection because runTool maps every cause to a tool error result.
+      // This remains best-effort: Cloudflare's post-disconnect window can be
+      // shorter than Firecrawl's timeout, and durable execution would require
+      // a separately approved Queue or Workflow.
+      const promise = runTool(program);
+      scope.waitUntil(promise);
+      return promise;
     }
   );
 
@@ -234,34 +270,44 @@ export function buildInkwellMcp(
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ readStatus, status, tagIds, limit }) => {
-      const rows = await convex.listArticles({
-        userId,
-        readStatus,
-        status,
-        tagIds,
-        limit,
-      });
-      const articles = rows.map((row) => ({
-        id: row.id,
-        title: row.title,
-        url: row.url,
-        kind: row.kind,
-        status: row.status,
-        error: row.error,
-        readStatus: row.readStatus,
-        byline: row.byline,
-        siteName: row.siteName,
-        excerpt: row.excerpt,
-        savedAt: new Date(row.savedAt).toISOString(),
-        pinned: row.pinned,
-        tags: row.tags,
-      }));
-      return {
-        content: [{ type: "text", text: JSON.stringify({ articles }) }],
-        structuredContent: { articles },
-      };
-    }
+    ({ readStatus, status, tagIds, limit }) =>
+      runTool(
+        Effect.gen(function* () {
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          const rows = yield* convex.listArticles({
+            userId,
+            readStatus,
+            status,
+            tagIds,
+            limit,
+          });
+          const articles = rows.map((row) => ({
+            id: row.id,
+            title: row.title,
+            url: row.url,
+            kind: row.kind,
+            status: row.status,
+            error: row.error,
+            readStatus: row.readStatus,
+            byline: row.byline,
+            siteName: row.siteName,
+            excerpt: row.excerpt,
+            savedAt: new Date(row.savedAt).toISOString(),
+            pinned: row.pinned,
+            tags: Array.from(row.tags),
+          }));
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ articles }),
+              },
+            ],
+            structuredContent: { articles },
+          };
+        })
+      )
   );
 
   server.registerTool(
@@ -301,28 +347,36 @@ export function buildInkwellMcp(
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ articleId, section, offset, limit }) => {
+    ({ articleId, section, offset, limit }) =>
+      runTool(Effect.gen(function* () {
       // Section mode and char paging are alternative retrieval modes; mixing
       // them silently drops the paging args, so reject it outright.
       if (section !== undefined && (offset !== undefined || limit !== undefined)) {
-        return errorResult(
-          "Pass either `section` or `offset`/`limit`, not both."
-        );
+        return yield* new ToolOperationError({
+          message: "Pass either `section` or `offset`/`limit`, not both.",
+        });
       }
-      const article = await convex.getArticle({ userId, id: articleId });
-      if (!article) return errorResult(`No article with id ${articleId}.`);
+      const { userId } = yield* CurrentUser;
+      const convex = yield* ConvexService;
+      const article = yield* convex.getArticle({ userId, id: articleId });
+      if (!article) {
+        return yield* new ToolOperationError({
+          message: `No article with id ${articleId}.`,
+        });
+      }
       if (article.status !== "ready" || !article.blocksJson) {
-        return errorResult(
-          article.status === "failed"
+        return yield* new ToolOperationError({
+          message:
+            article.status === "failed"
             ? `Article "${article.title}" failed to process: ${article.error ?? "unknown error"}.`
-            : `Article "${article.title}" is still processing — try again shortly.`
-        );
+            : `Article "${article.title}" is still processing — try again shortly.`,
+        });
       }
 
       // Recover heading semantics (numbered PDFs) so section ids and slicing
       // line up with what the reader renders.
       const blocks = inferDocumentHeadings(
-        parseJsonArray<Block>(article.blocksJson)
+        parseJsonArray(article.blocksJson, BlockSchema)
       );
       const outline = buildDocumentOutline(blocks);
       const header = [
@@ -346,11 +400,12 @@ export function buildInkwellMcp(
         const index = outline.findIndex((entry) => entry.id === section);
         if (index === -1) {
           const ids = outline.slice(0, 50).map((e) => `- ${e.id}`);
-          return errorResult(
-            ids.length
+          return yield* new ToolOperationError({
+            message:
+              ids.length
               ? `No section "${section}" in "${article.title}". Sections:\n${ids.join("\n")}`
-              : `Article "${article.title}" has no addressable sections.`
-          );
+              : `Article "${article.title}" has no addressable sections.`,
+          });
         }
         const entry = outline[index];
         const next = outline
@@ -416,7 +471,7 @@ export function buildInkwellMcp(
           },
         ],
       };
-    }
+      }))
   );
 
   server.registerTool(
@@ -470,16 +525,38 @@ export function buildInkwellMcp(
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ articleId }) => {
-      const result = await convex.getAnnotations({ userId, articleId });
-      if (!result) return errorResult(`No article with id ${articleId}.`);
+    ({ articleId }) =>
+      runTool(Effect.gen(function* () {
+      const { userId } = yield* CurrentUser;
+      const convex = yield* ConvexService;
+      const result = yield* convex.getAnnotations({ userId, articleId });
+      if (!result) {
+        return yield* new ToolOperationError({
+          message: `No article with id ${articleId}.`,
+        });
+      }
 
       const row = result.annotations;
-      const strokes = row ? parseJsonArray<Stroke>(row.strokesJson) : [];
-      const boxes = row ? parseJsonArray<BoxAnnotation>(row.boxesJson) : [];
-      const notes = row ? parseJsonArray<NoteAnnotation>(row.notesJson) : [];
+      const strokes = row
+        ? parseJsonArray(row.strokesJson, StrokeSchema)
+        : [];
+      const boxes = row
+        ? parseJsonArray(
+            row.boxesJson,
+            BoxAnnotationSchema
+          )
+        : [];
+      const notes = row
+        ? parseJsonArray(
+            row.notesJson,
+            NoteAnnotationSchema
+          )
+        : [];
       const memos = row
-        ? parseJsonArray<VoiceMemoAnnotation>(row.memosJson)
+        ? parseJsonArray(
+            row.memosJson,
+            VoiceMemoAnnotationSchema
+          )
         : [];
 
       // Resolve pixel anchors to text using the persisted layout snapshot. With
@@ -487,7 +564,7 @@ export function buildInkwellMcp(
       // is then false), so the output shape is stable either way.
       const snapshot = row ? parseLayoutSnapshot(row.layoutJson) : null;
       const blocks = result.blocksJson
-        ? parseJsonArray<Block>(result.blocksJson)
+        ? parseJsonArray(result.blocksJson, BlockSchema)
         : [];
       const anchored = Boolean(snapshot && blocks.length > 0);
 
@@ -544,7 +621,7 @@ export function buildInkwellMcp(
         ],
         structuredContent,
       };
-    }
+      }))
   );
 
   server.registerTool(
@@ -568,19 +645,29 @@ export function buildInkwellMcp(
       },
       annotations: { readOnlyHint: true },
     },
-    async () => {
-      const rows = await convex.listTags({ userId });
-      const tags = rows.map((tag) => ({
-        id: tag.id,
-        name: tag.name,
-        color: tag.color,
-        createdAt: new Date(tag.createdAt).toISOString(),
-      }));
-      return {
-        content: [{ type: "text", text: JSON.stringify({ tags }) }],
-        structuredContent: { tags },
-      };
-    }
+    () =>
+      runTool(
+        Effect.gen(function* () {
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          const rows = yield* convex.listTags({ userId });
+          const tags = rows.map((tag) => ({
+            id: tag.id,
+            name: tag.name,
+            color: tag.color,
+            createdAt: new Date(tag.createdAt).toISOString(),
+          }));
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ tags }),
+              },
+            ],
+            structuredContent: { tags },
+          };
+        })
+      )
   );
 
   server.registerTool(
@@ -605,16 +692,28 @@ export function buildInkwellMcp(
       },
       annotations: { destructiveHint: false },
     },
-    async ({ name, color }) => {
-      const tag = await convex.createTag({ userId, name, color });
-      const structuredContent = { id: tag.id, name: tag.name, color: tag.color };
-      return {
-        content: [
-          { type: "text", text: `Tag "${tag.name}" (id: ${tag.id}).` },
-        ],
-        structuredContent,
-      };
-    }
+    ({ name, color }) =>
+      runTool(
+        Effect.gen(function* () {
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          const tag = yield* convex.createTag({ userId, name, color });
+          const structuredContent = {
+            id: tag.id,
+            name: tag.name,
+            color: tag.color,
+          };
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Tag "${tag.name}" (id: ${tag.id}).`,
+              },
+            ],
+            structuredContent,
+          };
+        })
+      )
   );
 
   server.registerTool(
@@ -629,13 +728,23 @@ export function buildInkwellMcp(
       outputSchema: { ok: z.boolean() },
       annotations: { destructiveHint: false },
     },
-    async ({ tagId, name }) => {
-      await convex.renameTag({ userId, tagId, name });
-      return {
-        content: [{ type: "text", text: `Renamed tag ${tagId} to "${name}".` }],
-        structuredContent: { ok: true },
-      };
-    }
+    ({ tagId, name }) =>
+      runTool(
+        Effect.gen(function* () {
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          yield* convex.renameTag({ userId, tagId, name });
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Renamed tag ${tagId} to "${name}".`,
+              },
+            ],
+            structuredContent: { ok: true },
+          };
+        })
+      )
   );
 
   server.registerTool(
@@ -651,13 +760,23 @@ export function buildInkwellMcp(
       outputSchema: { ok: z.boolean() },
       annotations: { destructiveHint: true },
     },
-    async ({ tagId }) => {
-      await convex.removeTag({ userId, tagId });
-      return {
-        content: [{ type: "text", text: `Deleted tag ${tagId}.` }],
-        structuredContent: { ok: true },
-      };
-    }
+    ({ tagId }) =>
+      runTool(
+        Effect.gen(function* () {
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          yield* convex.removeTag({ userId, tagId });
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Deleted tag ${tagId}.`,
+              },
+            ],
+            structuredContent: { ok: true },
+          };
+        })
+      )
   );
 
   server.registerTool(
@@ -675,18 +794,23 @@ export function buildInkwellMcp(
       outputSchema: { ok: z.boolean() },
       annotations: { destructiveHint: false },
     },
-    async ({ articleId, tagId }) => {
-      await convex.addTagToArticle({ userId, articleId, tagId });
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Added tag ${tagId} to article ${articleId}.`,
-          },
-        ],
-        structuredContent: { ok: true },
-      };
-    }
+    ({ articleId, tagId }) =>
+      runTool(
+        Effect.gen(function* () {
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          yield* convex.addTagToArticle({ userId, articleId, tagId });
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Added tag ${tagId} to article ${articleId}.`,
+              },
+            ],
+            structuredContent: { ok: true },
+          };
+        })
+      )
   );
 
   server.registerTool(
@@ -703,18 +827,27 @@ export function buildInkwellMcp(
       outputSchema: { ok: z.boolean() },
       annotations: { destructiveHint: true },
     },
-    async ({ articleId, tagId }) => {
-      await convex.removeTagFromArticle({ userId, articleId, tagId });
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Removed tag ${tagId} from article ${articleId}.`,
-          },
-        ],
-        structuredContent: { ok: true },
-      };
-    }
+    ({ articleId, tagId }) =>
+      runTool(
+        Effect.gen(function* () {
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          yield* convex.removeTagFromArticle({
+            userId,
+            articleId,
+            tagId,
+          });
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Removed tag ${tagId} from article ${articleId}.`,
+              },
+            ],
+            structuredContent: { ok: true },
+          };
+        })
+      )
   );
 
   server.registerTool(
@@ -733,18 +866,29 @@ export function buildInkwellMcp(
       outputSchema: { ok: z.boolean() },
       annotations: { destructiveHint: false },
     },
-    async ({ articleId, pinned }) => {
-      await convex.setArticlePinned({ userId, id: articleId, pinned });
-      return {
-        content: [
-          {
-            type: "text",
-            text: `${pinned ? "Pinned" : "Unpinned"} article ${articleId}.`,
-          },
-        ],
-        structuredContent: { ok: true },
-      };
-    }
+    ({ articleId, pinned }) =>
+      runTool(
+        Effect.gen(function* () {
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          yield* convex.setArticlePinned({
+            userId,
+            id: articleId,
+            pinned,
+          });
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `${
+                  pinned ? "Pinned" : "Unpinned"
+                } article ${articleId}.`,
+              },
+            ],
+            structuredContent: { ok: true },
+          };
+        })
+      )
   );
 
   return server;

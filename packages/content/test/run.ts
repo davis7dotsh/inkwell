@@ -3,12 +3,19 @@
 // @ts-ignore -- @types/node is not installed in this package; tsx provides
 // the real implementation at runtime.
 import nodeAssert from "node:assert/strict";
+import { Effect, Option, Schema } from "effect";
 
 import { blocksToMarkdown } from "../src/blocksToMarkdown";
 import {
   buildDocumentOutline,
   inferDocumentHeadings,
 } from "../src/documentOutline";
+import {
+  firecrawlToArticleEffect,
+  htmlToBlocksEffect,
+  markdownToBlocksEffect,
+  parseLayoutSnapshotEffect,
+} from "../src/effect";
 import { buildExportMarkdown } from "../src/exportMarkdown";
 import {
   parseLayoutSnapshot,
@@ -17,6 +24,16 @@ import {
 import { htmlToBlocks } from "../src/htmlToBlocks";
 import { markdownToBlocks } from "../src/markdownToBlocks";
 import { firecrawlToArticle } from "../src/normalize";
+import {
+  AnnotationsJsonSchema,
+  ArticleContentJsonSchema,
+  BlockSchema,
+  BoxAnnotationSchema,
+  FirecrawlDocumentJsonSchema,
+  LayoutSnapshotJsonSchema,
+  NoteAnnotationSchema,
+  decodeTolerantJsonArray,
+} from "../src/schema";
 import { emptyAnnotations, type Block, type Span } from "../src/types";
 
 type Assert = {
@@ -1091,6 +1108,392 @@ console.log("inferDocumentHeadings tests passed");
   assert.equal(robust.length, 1, "only the well-formed note survives");
   assert.equal(robust[0].note, "Kept");
   console.log("resolveAnnotations tests passed");
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Effect Schemas/codecs + throwing-boundary adapters
+// ════════════════════════════════════════════════════════════════════
+{
+  const everyBlockVariant: Block[] = [
+    {
+      type: "heading",
+      level: 6,
+      spans: [
+        {
+          text: "Heading",
+          bold: true,
+          italic: true,
+          code: true,
+          href: "https://example.com",
+        },
+      ],
+    },
+    { type: "paragraph", spans: [{ text: "Paragraph" }] },
+    { type: "quote", spans: [{ text: "Quote" }] },
+    {
+      type: "list",
+      ordered: true,
+      items: [[{ text: "One" }], [{ text: "Two", italic: true }]],
+    },
+    {
+      type: "image",
+      src: "https://example.com/image.png",
+      alt: "Alt",
+      caption: "Caption",
+      width: 640,
+      height: 480,
+    },
+    { type: "code", text: "const value = 1;" },
+    { type: "rule" },
+  ];
+
+  const decodeBlock = Schema.decodeUnknownOption(BlockSchema);
+  for (const block of everyBlockVariant) {
+    assert.ok(
+      Option.isSome(decodeBlock(block)),
+      `${block.type} block satisfies BlockSchema`
+    );
+  }
+  assert.ok(
+    Option.isNone(
+      decodeBlock({ type: "heading", level: 7, spans: [{ text: "bad" }] })
+    ),
+    "invalid heading level fails BlockSchema"
+  );
+  assert.ok(
+    Option.isNone(decodeBlock({ type: "unknown" })),
+    "unknown block variant fails BlockSchema"
+  );
+  assert.ok(
+    Option.isNone(
+      decodeBlock({
+        type: "image",
+        src: "https://example.com/non-finite.png",
+        width: Number.POSITIVE_INFINITY,
+      })
+    ),
+    "non-finite block dimensions fail BlockSchema"
+  );
+
+  const article = {
+    title: "All variants",
+    byline: "Inkwell",
+    siteName: "example.com",
+    excerpt: "Schema fixture",
+    blocks: everyBlockVariant,
+  };
+  assert.deepEqual(
+    Schema.decodeUnknownSync(ArticleContentJsonSchema)(
+      JSON.stringify(article)
+    ),
+    article,
+    "article JSON codec decodes all block variants"
+  );
+  assert.throws(
+    () =>
+      Schema.decodeUnknownSync(ArticleContentJsonSchema)(
+        JSON.stringify({
+          ...article,
+          blocks: [{ type: "heading", level: 0, spans: [] }],
+        })
+      ),
+    /heading|level|literal/i,
+    "invalid block JSON fails the article codec"
+  );
+  assert.throws(
+    () => Schema.decodeUnknownSync(ArticleContentJsonSchema)("{not json"),
+    /json/i,
+    "malformed article JSON fails the codec"
+  );
+
+  const annotations = {
+    contentWidth: 800,
+    strokes: [
+      {
+        id: "s1",
+        tool: "highlighter",
+        color: "#ff0",
+        width: 12,
+        points: [
+          { x: 10, y: 20 },
+          { x: 30, y: 40 },
+        ],
+      },
+    ],
+    boxes: [{ id: "b1", x: 1, y: 2, w: 3, h: 4 }],
+    notes: [{ id: "n1", x: 5, y: 6, text: "Remember this" }],
+    memos: [
+      {
+        id: "m1",
+        x: 7,
+        y: 8,
+        durationMs: 9000,
+        transcript: "",
+        status: "local",
+        createdAt: 1750000000000,
+      },
+    ],
+  };
+  assert.deepEqual(
+    Schema.decodeUnknownSync(AnnotationsJsonSchema)(
+      JSON.stringify(annotations)
+    ),
+    annotations,
+    "annotations JSON codec covers strokes, boxes, notes, and voice memos"
+  );
+  assert.throws(
+    () =>
+      Schema.decodeUnknownSync(AnnotationsJsonSchema)(
+        JSON.stringify({
+          ...annotations,
+          strokes: [{ ...annotations.strokes[0], tool: "pencil" }],
+        })
+      ),
+    /tool|literal/i,
+    "invalid annotation variants fail decoding"
+  );
+  assert.throws(
+    () => Schema.decodeUnknownSync(AnnotationsJsonSchema)("[]"),
+    /object|struct/i,
+    "wrong annotations JSON shape fails decoding"
+  );
+  assert.ok(
+    Option.isNone(
+      Schema.decodeUnknownOption(BoxAnnotationSchema)({
+        id: "infinite",
+        x: Number.POSITIVE_INFINITY,
+        y: 1,
+        w: 2,
+        h: 3,
+      })
+    ),
+    "non-finite annotation coordinates fail shared schemas"
+  );
+  assert.throws(
+    () =>
+      Schema.decodeUnknownSync(AnnotationsJsonSchema)(
+        JSON.stringify({ ...annotations, contentWidth: 0 })
+      ),
+    /contentWidth|greater than/i,
+    "non-positive annotation widths fail shared schemas"
+  );
+
+  const tolerantNotes = decodeTolerantJsonArray(
+    JSON.stringify([
+      { id: "n1", x: 1, y: 2, text: "First" },
+      { id: "bad", x: "nope", y: 3, text: "Skipped" },
+      null,
+      { id: "n2", x: 4, y: 5, text: "Second" },
+    ]),
+    NoteAnnotationSchema
+  );
+  assert.ok(
+    Option.isSome(tolerantNotes),
+    "valid annotation array survives malformed individual items"
+  );
+  assert.deepEqual(
+    Option.getOrElse(tolerantNotes, () => []),
+    [
+      { id: "n1", x: 1, y: 2, text: "First" },
+      { id: "n2", x: 4, y: 5, text: "Second" },
+    ],
+    "tolerant annotation decoder skips malformed siblings"
+  );
+  assert.ok(
+    Option.isNone(decodeTolerantJsonArray("{}", NoteAnnotationSchema)),
+    "tolerant annotation decoder still rejects a non-array top level"
+  );
+  assert.ok(
+    Option.isNone(decodeTolerantJsonArray("not json", NoteAnnotationSchema)),
+    "tolerant annotation decoder still rejects malformed JSON"
+  );
+
+  const strictLayoutJson = JSON.stringify({
+    width: 800,
+    layouts: [
+      [0, { y: 0, height: 20 }],
+      [1, { y: 20, height: 30 }],
+    ],
+  });
+  assert.deepEqual(
+    Schema.decodeUnknownSync(LayoutSnapshotJsonSchema)(strictLayoutJson),
+    {
+      width: 800,
+      layouts: [
+        [0, { y: 0, height: 20 }],
+        [1, { y: 20, height: 30 }],
+      ],
+    },
+    "strict layout JSON codec accepts a complete snapshot"
+  );
+  assert.throws(
+    () =>
+      Schema.decodeUnknownSync(LayoutSnapshotJsonSchema)(
+        JSON.stringify({
+          width: 800,
+          layouts: [[0, { y: 0, height: 0 }]],
+        })
+      ),
+    /height|greater than/i,
+    "strict layout codec rejects invalid entries"
+  );
+
+  const tolerantLayout = parseLayoutSnapshot(
+    JSON.stringify({
+      width: 800,
+      layouts: [
+        ["bad", { y: 0, height: 20 }],
+        [0, { y: 0, height: 20 }],
+        [1, { y: "bad", height: 30 }],
+        [2, { y: 40, height: -1 }],
+      ],
+    })
+  );
+  assert.ok(tolerantLayout, "valid layout entries survive malformed siblings");
+  assert.deepEqual(
+    [...tolerantLayout!.layouts],
+    [[0, { y: 0, height: 20 }]],
+    "malformed individual layout entries are ignored"
+  );
+  assert.equal(
+    parseLayoutSnapshot(
+      JSON.stringify({
+        width: 800,
+        layouts: [["bad", { y: 0, height: 20 }]],
+      })
+    ),
+    null,
+    "snapshot with no valid entries remains null"
+  );
+  assert.equal(
+    parseLayoutSnapshot(
+      JSON.stringify({
+        width: "800",
+        layouts: [[0, { y: 0, height: 20 }]],
+      })
+    ),
+    null,
+    "invalid top-level layout shape remains null"
+  );
+
+  assert.deepEqual(
+    Schema.decodeUnknownSync(FirecrawlDocumentJsonSchema)(
+      JSON.stringify({
+        html: null,
+        markdown: "# Valid",
+        metadata: {
+          title: "Valid",
+          description: null,
+          ogTitle: null,
+          ogDescription: null,
+          sourceURL: "https://example.com/doc",
+        },
+      })
+    ),
+    {
+      html: null,
+      markdown: "# Valid",
+      metadata: {
+        title: "Valid",
+        description: null,
+        ogTitle: null,
+        ogDescription: null,
+        sourceURL: "https://example.com/doc",
+      },
+    },
+    "Firecrawl input JSON codec accepts the consumed payload slice"
+  );
+  assert.throws(
+    () =>
+      Schema.decodeUnknownSync(FirecrawlDocumentJsonSchema)(
+        JSON.stringify({ html: 42 })
+      ),
+    /html|string/i,
+    "Firecrawl input codec rejects invalid content fields"
+  );
+  assert.throws(
+    () => Schema.decodeUnknownSync(FirecrawlDocumentJsonSchema)("not json"),
+    /json/i,
+    "malformed Firecrawl JSON fails decoding"
+  );
+
+  const parityHtml = "<h2>Parity</h2><p>Same output.</p>";
+  assert.deepEqual(
+    Effect.runSync(htmlToBlocksEffect(parityHtml)),
+    htmlToBlocks(parityHtml),
+    "HTML sync and Effect adapters are equivalent"
+  );
+  const parityMarkdown = "## Parity\n\nSame output.";
+  assert.deepEqual(
+    Effect.runSync(markdownToBlocksEffect(parityMarkdown)),
+    markdownToBlocks(parityMarkdown),
+    "Markdown sync and Effect adapters are equivalent"
+  );
+  const parityFirecrawl = {
+    html: "<h1>Effect parity</h1><p>Body.</p>",
+    markdown: "# Ignored",
+    metadata: {
+      description: "Description",
+      sourceURL: "https://example.com/parity",
+    },
+  };
+  assert.deepEqual(
+    Effect.runSync(firecrawlToArticleEffect(parityFirecrawl)),
+    firecrawlToArticle(parityFirecrawl),
+    "Firecrawl sync and Effect normalization are equivalent"
+  );
+  const explicitUndefinedFirecrawl = {
+    html: undefined,
+    markdown: "# Explicit undefined\n\nStill valid.",
+    metadata: undefined,
+  };
+  assert.deepEqual(
+    Effect.runSync(firecrawlToArticleEffect(explicitUndefinedFirecrawl)),
+    firecrawlToArticle(explicitUndefinedFirecrawl),
+    "Effect normalization accepts explicit undefined optional fields"
+  );
+  assert.deepEqual(
+    Effect.runSync(parseLayoutSnapshotEffect(strictLayoutJson)),
+    parseLayoutSnapshot(strictLayoutJson),
+    "layout sync and Effect adapters are equivalent"
+  );
+  assert.equal(
+    Effect.runSync(parseLayoutSnapshotEffect("not json")),
+    null,
+    "layout Effect adapter preserves tolerant malformed-JSON behavior"
+  );
+
+  const normalizationError = Effect.runSync(
+    Effect.flip(firecrawlToArticleEffect({}))
+  );
+  assert.equal(
+    normalizationError._tag,
+    "FirecrawlNormalizationError",
+    "normalization failures use a tagged error"
+  );
+  assert.ok(
+    normalizationError.message.includes("both html and markdown are empty"),
+    "normalization error preserves the sync failure message"
+  );
+  const schemaError = Effect.runSync(
+    Effect.flip(firecrawlToArticleEffect({ html: 42 }))
+  );
+  assert.equal(
+    schemaError._tag,
+    "ContentSchemaError",
+    "invalid normalization input uses a tagged schema error"
+  );
+  const parserError = Effect.runSync(
+    Effect.flip(markdownToBlocksEffect(null as never))
+  );
+  assert.equal(
+    parserError._tag,
+    "ContentParserError",
+    "throwing parser boundaries use a tagged parser error"
+  );
+  assert.equal(parserError.parser, "markdown");
+
+  console.log("Effect schema and adapter tests passed");
 }
 
 console.log("\nALL CONTENT TESTS PASSED");

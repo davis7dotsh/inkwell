@@ -20,12 +20,22 @@ import {
   Text,
   View,
 } from "react-native";
+import * as Effect from "effect/Effect";
 
+import { authToken } from "../../effect/commands";
+import { mobileConfig } from "../../effect/codecs";
+import {
+  NativeCommandError,
+  operationalErrorMessage,
+  unknownErrorMessage,
+} from "../../effect/errors";
+import { useMobileEffectRunner } from "../../effect/react";
 import { makeThemedStyles, useTheme } from "../../lib/theme";
-import { memoAudioUrl, memoFile } from "../../lib/voiceMemos";
+import { showError } from "../../lib/toast";
+import { findMemoFile, memoAudioUrl } from "../../lib/voiceMemos";
 import { formatMemoDuration } from "./MemosLayer";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL;
+const API_URL = mobileConfig.apiUrl;
 
 type Props = {
   memo: VoiceMemoAnnotation;
@@ -38,39 +48,67 @@ export function MemoPlayerModal({ memo, articleId, onDelete, onClose }: Props) {
   const { scheme, c } = useTheme();
   const styles = themed[scheme];
   const { getToken } = useAuth();
+  const run = useMobileEffectRunner();
 
   // The local recording wins when it's still on this device; otherwise the
   // audio streams from the worker (resolved async below, needs a token).
-  const [source, setSource] = useState<AudioSource | null>(() => {
-    const local = memoFile(memo.id);
-    return local.exists ? { uri: local.uri } : null;
-  });
+  const [source, setSource] = useState<AudioSource | null>(null);
+  const [localChecked, setLocalChecked] = useState(false);
   const [remoteFailed, setRemoteFailed] = useState(false);
   const player = useAudioPlayer(undefined, { updateInterval: 100 });
   const status = useAudioPlayerStatus(player);
+  const playbackError = status.error;
   const [barWidth, setBarWidth] = useState(0);
 
   const unavailable =
-    !source && (memo.status !== "uploaded" || !API_URL || remoteFailed);
+    localChecked &&
+    !source &&
+    (memo.status !== "uploaded" || !API_URL || remoteFailed);
 
   useEffect(() => {
-    if (source || memo.status !== "uploaded" || !API_URL) return;
-    let cancelled = false;
-    void getToken().then((token) => {
-      if (cancelled) return;
-      if (!token) {
-        setRemoteFailed(true);
-        return;
-      }
-      setSource({
-        uri: memoAudioUrl(API_URL, articleId, memo.id),
-        headers: { Authorization: `Bearer ${token}` },
-      });
+    return run(findMemoFile(memo.id), {
+      onSuccess: (file) => {
+        if (file) setSource({ uri: file.uri });
+        setLocalChecked(true);
+      },
+      onFailure: (error) => {
+        setLocalChecked(true);
+        showError(`Couldn't read memo audio: ${operationalErrorMessage(error)}`);
+      },
     });
-    return () => {
-      cancelled = true;
-    };
-  }, [source, memo.status, memo.id, articleId, getToken]);
+  }, [memo.id, run]);
+
+  useEffect(() => {
+    if (
+      !localChecked ||
+      source ||
+      memo.status !== "uploaded" ||
+      !API_URL ||
+      remoteFailed
+    ) {
+      return;
+    }
+    return run(authToken("load voice memo", getToken), {
+      onSuccess: (token) =>
+        setSource({
+          uri: memoAudioUrl(API_URL, articleId, memo.id),
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      onFailure: (error) => {
+        setRemoteFailed(true);
+        showError(`Couldn't load memo audio: ${operationalErrorMessage(error)}`);
+      },
+    });
+  }, [
+    localChecked,
+    source,
+    memo.status,
+    memo.id,
+    articleId,
+    getToken,
+    remoteFailed,
+    run,
+  ]);
 
   useEffect(() => {
     if (source) player.replace(source);
@@ -78,25 +116,57 @@ export function MemoPlayerModal({ memo, articleId, onDelete, onClose }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source]);
 
+  useEffect(() => {
+    if (!status.error) return;
+    showError("This voice memo could not be played.");
+  }, [status.error]);
+
   const duration = status.duration > 0 ? status.duration : memo.durationMs / 1000;
   const progress =
     duration > 0 ? Math.min(1, status.currentTime / duration) : 0;
 
   const togglePlayback = () => {
-    if (!source) return;
+    if (!source || playbackError) return;
     if (status.playing) {
       player.pause();
       return;
     }
     if (status.didJustFinish || progress >= 1) {
-      void player.seekTo(0);
+      run(
+        Effect.tryPromise({
+          try: () => player.seekTo(0),
+          catch: (error) =>
+            new NativeCommandError({
+              operation: "restart voice memo",
+              message: unknownErrorMessage(error),
+            }),
+        }),
+        {
+          onFailure: (error) =>
+            showError(`Couldn't restart audio: ${error.message}`),
+        }
+      );
     }
     player.play();
   };
 
   const seekToFraction = (fraction: number) => {
     if (!source || duration <= 0) return;
-    void player.seekTo(Math.max(0, Math.min(1, fraction)) * duration);
+    run(
+      Effect.tryPromise({
+        try: () =>
+          player.seekTo(Math.max(0, Math.min(1, fraction)) * duration),
+        catch: (error) =>
+          new NativeCommandError({
+            operation: "seek voice memo",
+            message: unknownErrorMessage(error),
+          }),
+      }),
+      {
+        onFailure: (error) =>
+          showError(`Couldn't seek audio: ${error.message}`),
+      }
+    );
   };
 
   const confirmDelete = () =>
@@ -120,10 +190,13 @@ export function MemoPlayerModal({ memo, articleId, onDelete, onClose }: Props) {
           <View style={styles.playerRow}>
             <Pressable
               onPress={togglePlayback}
-              disabled={!source}
+              disabled={!source || Boolean(playbackError)}
               accessibilityRole="button"
               accessibilityLabel={status.playing ? "Pause" : "Play"}
-              style={[styles.playButton, !source && { opacity: 0.5 }]}
+              style={[
+                styles.playButton,
+                (!source || playbackError) && { opacity: 0.5 },
+              ]}
             >
               <MaterialCommunityIcons
                 name={status.playing ? "pause" : "play"}
@@ -151,7 +224,11 @@ export function MemoPlayerModal({ memo, articleId, onDelete, onClose }: Props) {
             </Text>
           </View>
 
-          {unavailable ? (
+          {playbackError ? (
+            <Text style={styles.unavailable}>
+              This audio is currently unavailable.
+            </Text>
+          ) : unavailable ? (
             <Text style={styles.unavailable}>
               The audio isn&apos;t on this device yet.
             </Text>

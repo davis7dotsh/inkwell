@@ -1,12 +1,39 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Effect } from "effect";
 
-import { scrapeUrl } from "../src/firecrawl";
+import { FirecrawlService } from "../src/firecrawl";
+import {
+  makeRequestLayer,
+  runRequestEffect,
+} from "../src/requestContext";
 import {
   FIRECRAWL_ENDPOINT,
+  TEST_ENV,
   fetchQueue,
   firecrawlOk,
   jsonResponse,
 } from "./helpers";
+
+const scrapeUrl = (
+  fetchImpl: typeof fetch,
+  apiKey: string,
+  url: string
+) =>
+  runRequestEffect(
+    Effect.flatMap(FirecrawlService, (service) =>
+      service.scrapeUrl(url)
+    ),
+    makeRequestLayer({
+      env: {
+        ...TEST_ENV,
+        FIRECRAWL_API_KEY: apiKey,
+        MEMOS: {} as R2Bucket,
+      },
+      userId: "user_1",
+      executionCtx: { waitUntil: () => undefined },
+      fetchImpl,
+    })
+  );
 
 const rateLimited = (retryAfter?: string) =>
   new Response("rate limited", {
@@ -47,10 +74,32 @@ describe("scrapeUrl", () => {
     });
   });
 
+  it("accepts nullable metadata fields from Firecrawl", async () => {
+    const { impl } = fetchQueue([
+      firecrawlOk({
+        markdown: "hello",
+        metadata: {
+          title: null,
+          description: null,
+          sourceURL: "https://example.com/a",
+        },
+      }),
+    ]);
+
+    const result = await scrapeUrl(impl, "fc-key", "https://example.com/a");
+
+    expect(result.metadata).toEqual({
+      title: null,
+      description: null,
+      sourceURL: "https://example.com/a",
+    });
+  });
+
   it("retries once on 429, honoring Retry-After", async () => {
     vi.useFakeTimers();
+    const first = rateLimited("7");
     const { impl, calls } = fetchQueue([
-      rateLimited("7"),
+      first,
       firecrawlOk({ markdown: "hello", metadata: {} }),
     ]);
 
@@ -61,6 +110,7 @@ describe("scrapeUrl", () => {
     const result = await promise;
 
     expect(calls).toHaveLength(2);
+    expect(first.bodyUsed).toBe(true);
     expect(result.markdown).toBe("hello");
   });
 
