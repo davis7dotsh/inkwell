@@ -8,28 +8,28 @@ import {
   VoiceMemoAnnotationSchema,
   decodeTolerantJsonArray,
 } from "@inkwell/content/schema";
-import { Effect, Option, Schema } from "effect";
+import { Effect, Option } from "effect";
+import { z } from "zod";
 
 import { PersistedContentError } from "./errors";
 
-const decodePersisted = <A, I>(
+const decodePersisted = <A>(
   source: string,
-  schema: Schema.Codec<A, I>,
+  schema: z.ZodType<A>,
   input: unknown,
 ): Effect.Effect<A, PersistedContentError> =>
-  Schema.decodeUnknownEffect(schema)(input).pipe(
-    Effect.mapError(
-      (error) =>
-        new PersistedContentError({
-          source,
-          message: String(error),
-        }),
-    ),
-  );
+  Effect.try({
+    try: () => schema.parse(input),
+    catch: (error) =>
+      new PersistedContentError({
+        source,
+        message: String(error),
+      }),
+  });
 
 const decodeTolerantArray = <A>(
   source: string,
-  schema: Schema.Decoder<A, never>,
+  schema: z.ZodType<A>,
   input: string,
 ): Effect.Effect<A[], PersistedContentError> => {
   const decoded = decodeTolerantJsonArray(input, schema);

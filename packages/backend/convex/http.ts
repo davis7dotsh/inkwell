@@ -2,7 +2,8 @@
 // the scrape pipeline, `/agent/*` reads for MCP tools. These routes live on
 // the `.convex.site` origin and are guarded by a shared secret.
 import { httpRouter } from "convex/server";
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
+import { z } from "zod";
 
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
@@ -22,17 +23,14 @@ function authorize(req: Request) {
   return authorized(req) ? Effect.void : httpError(403, "forbidden");
 }
 
-function decode<S extends Schema.Top>(schema: S, input: unknown) {
-  return Schema.decodeUnknownEffect(schema, {
-    onExcessProperty: "error",
-  })(input).pipe(
-    Effect.mapError(
-      () => new HttpResponseError({ status: 400, body: "invalid request" })
-    )
-  );
+function decode<S extends z.ZodType>(schema: S, input: unknown) {
+  return Effect.try({
+    try: () => schema.parse(input),
+    catch: () => new HttpResponseError({ status: 400, body: "invalid request" }),
+  });
 }
 
-function decodeBody<S extends Schema.Top>(req: Request, schema: S) {
+function decodeBody<S extends z.ZodType>(req: Request, schema: S) {
   return Effect.tryPromise({
     try: () => req.json(),
     catch: () => new HttpResponseError({ status: 400, body: "invalid JSON" }),
@@ -54,79 +52,79 @@ const isOneOf = <T extends string>(
 ): value is T | undefined =>
   value === undefined || (allowed as readonly string[]).includes(value);
 
-const CreatePendingBody = Schema.Struct({
-  userId: Schema.String,
-  url: Schema.String,
-  kind: Schema.Literals(["web", "pdf"]),
-  title: Schema.String,
-  savedAt: Schema.Number,
+const CreatePendingBody = z.strictObject({
+  userId: z.string(),
+  url: z.string(),
+  kind: z.enum(["web", "pdf"]),
+  title: z.string(),
+  savedAt: z.number(),
 });
 
-const CompleteBody = Schema.Struct({
-  articleId: Schema.String,
-  expectedUserId: Schema.String,
-  title: Schema.String,
-  byline: Schema.optional(Schema.String),
-  siteName: Schema.optional(Schema.String),
-  excerpt: Schema.optional(Schema.String),
-  blocksJson: Schema.String,
+const CompleteBody = z.strictObject({
+  articleId: z.string(),
+  expectedUserId: z.string(),
+  title: z.string(),
+  byline: z.string().optional(),
+  siteName: z.string().optional(),
+  excerpt: z.string().optional(),
+  blocksJson: z.string(),
 });
 
-const FailBody = Schema.Struct({
-  articleId: Schema.String,
-  expectedUserId: Schema.String,
-  error: Schema.String,
+const FailBody = z.strictObject({
+  articleId: z.string(),
+  expectedUserId: z.string(),
+  error: z.string(),
 });
 
-const ArticleListQuery = Schema.Struct({
-  userId: Schema.String,
-  readStatus: Schema.optional(Schema.Literals(READ_STATUSES)),
-  status: Schema.optional(Schema.Literals(ARTICLE_STATUSES)),
-  tagIds: Schema.optional(Schema.Array(Schema.String)),
-  limit: Schema.optional(Schema.Number),
+const ArticleListQuery = z.strictObject({
+  userId: z.string(),
+  readStatus: z.enum(READ_STATUSES).optional(),
+  status: z.enum(ARTICLE_STATUSES).optional(),
+  tagIds: z.array(z.string()).optional(),
+  limit: z.number().optional(),
 });
 
-const UserIdQuery = Schema.Struct({
-  userId: Schema.String,
+const UserIdQuery = z.strictObject({
+  userId: z.string(),
 });
 
-const ArticleQuery = Schema.Struct({
-  userId: Schema.String,
-  id: Schema.String,
+const ArticleQuery = z.strictObject({
+  userId: z.string(),
+  id: z.string(),
 });
 
-const AnnotationsQuery = Schema.Struct({
-  userId: Schema.String,
-  articleId: Schema.String,
+const AnnotationsQuery = z.strictObject({
+  userId: z.string(),
+  articleId: z.string(),
 });
 
-const CreateTagBody = Schema.Struct({
-  userId: Schema.String,
-  name: Schema.String,
-  color: Schema.optional(Schema.String),
+const CreateTagBody = z.strictObject({
+  userId: z.string(),
+  name: z.string(),
+  color: z.string().optional(),
 });
 
-const RenameTagBody = Schema.Struct({
-  userId: Schema.String,
-  tagId: Schema.String,
-  name: Schema.String,
+const RenameTagBody = z.strictObject({
+  userId: z.string(),
+  tagId: z.string(),
+  name: z.string(),
 });
 
-const RemoveTagBody = Schema.Struct({
-  userId: Schema.String,
-  tagId: Schema.String,
+const RemoveTagBody = z.strictObject({
+  userId: z.string(),
+  tagId: z.string(),
 });
 
-const ArticleTagBody = Schema.Struct({
-  userId: Schema.String,
-  articleId: Schema.String,
-  tagId: Schema.String,
+const ArticleTagBody = z.strictObject({
+  userId: z.string(),
+  articleId: z.string(),
+  tagId: z.string(),
 });
 
-const PinArticleBody = Schema.Struct({
-  userId: Schema.String,
-  id: Schema.String,
-  pinned: Schema.Boolean,
+const PinArticleBody = z.strictObject({
+  userId: z.string(),
+  id: z.string(),
+  pinned: z.boolean(),
 });
 
 const http = httpRouter();

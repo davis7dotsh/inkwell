@@ -14,8 +14,8 @@ cohort and upgrade them deliberately.
 
 ## Migration rules
 
-1. Effect owns asynchronous orchestration, resource access, runtime decoding,
-   cancellation, retries, logging, and expected operational failures.
+1. Effect owns asynchronous orchestration, resource access, cancellation,
+   retries, logging, and expected operational failures.
 2. Pure deterministic transformations remain ordinary TypeScript.
 3. React owns rendering, hooks, local UI state, DOM/native lifecycles, Convex
    subscriptions, Expo hook-owned resources, and Reanimated worklets.
@@ -25,9 +25,10 @@ cohort and upgrade them deliberately.
    for outbound HTTP; the unstable Effect server stack does not replace Hono in
    this migration.
 6. Services use Effect v4 `Context.Service`, explicit `Layer` composition, and
-   `Schema.TaggedErrorClass` for serializable errors.
-7. External and persisted data is decoded with Effect Schema. Expected failures
-   are not represented by `Error`, unchecked casts, or swallowed promises.
+   `Data.TaggedError` for typed failures.
+7. Zod is the single runtime schema system. External and persisted data is
+   decoded with Zod. Expected failures are not represented by `Error`,
+   unchecked casts, or swallowed promises.
 8. Application entry points are the only places that run Effects. Internal
    modules return Effects and do not call `Effect.run*` inside other Effects.
 9. No Node platform packages or `nodejs_compat` are introduced for Cloudflare.
@@ -55,7 +56,7 @@ cohort and upgrade them deliberately.
 
 ## Shared content package
 
-- Add structural Effect Schemas for blocks, annotations, layout snapshots, and
+- Add structural Zod schemas for blocks, annotations, layout snapshots, and
   Firecrawl content without replacing the existing plain TypeScript types.
 - Expose schemas through an explicit package subpath so mobile can avoid pulling
   schema code into pure rendering modules unnecessarily.
@@ -76,13 +77,13 @@ cohort and upgrade them deliberately.
   runtime.
 - Build Effect services for Convex HTTP actions, Firecrawl, article
   normalization, article processing, and memo storage.
-- Use `FetchHttpClient` for outbound HTTP and Schema for every external response.
+- Use `FetchHttpClient` for outbound HTTP and Zod for every external response.
 - Preserve exactly one 429 retry for Firecrawl and do not add retries to
   non-idempotent article creation.
-- Keep the existing Hono Zod validators only as transport adapters where their
+- Keep the existing Hono Zod validators as transport adapters where their
   validation order and error payloads are part of the public REST contract.
-  Decode every accepted value again with Effect Schema before it enters an
-  Effect program; Zod otherwise remains only where the MCP SDK requires it.
+  Reuse Zod for service configuration, outbound responses, persisted data, and
+  MCP tool inputs instead of maintaining a second schema system.
 - Split MCP tool logic into Effect programs while preserving protocol behavior.
 - Supervise background pipelines so their promises never reject and register
   the same single execution with `waitUntil`.
@@ -99,7 +100,7 @@ cohort and upgrade them deliberately.
 - Do not use Effect retries, timers, background fibers, Clock, Random, or a
   global runtime in queries and mutations.
 - Keep Convex validators as the first argument-validation layer.
-- Add Effect Schema decoding to HTTP actions, where Convex validators are not
+- Add strict Zod decoding to HTTP actions, where Convex validators are not
   available.
 - Return only plain Convex-serializable values and preserve transaction order,
   legacy defaults, error text, and intentionally indistinguishable not-found
@@ -129,7 +130,7 @@ cohort and upgrade them deliberately.
 - Keep Clerk, Convex, audio, and router hooks in React; adapt their imperative
   commands into Effects at component boundaries.
 - Decode configuration, API responses, fatal reports, article blocks, and
-  annotation JSON with Schema.
+  annotation JSON with Zod.
 - Remove render-time filesystem mutation and replace boolean/empty-string
   failure signaling with tagged errors.
 - Interrupt UI-launched fibers on cleanup where cancellation is meaningful.

@@ -1,33 +1,28 @@
-import { Schema } from "effect";
+import { Data } from "effect";
 
-const MessageField = {
-  message: Schema.String,
+type MessageFields = {
+  readonly message: string;
 };
 
-export class AuthenticationError extends Schema.TaggedErrorClass<AuthenticationError>()(
-  "AuthenticationError",
-  MessageField
-) {}
+export class AuthenticationError extends Data.TaggedError(
+  "AuthenticationError"
+)<MessageFields> {}
 
-export class OwnershipError extends Schema.TaggedErrorClass<OwnershipError>()(
-  "OwnershipError",
-  MessageField
-) {}
+export class OwnershipError extends Data.TaggedError(
+  "OwnershipError"
+)<MessageFields> {}
 
-export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()(
-  "NotFoundError",
-  MessageField
-) {}
+export class NotFoundError extends Data.TaggedError(
+  "NotFoundError"
+)<MessageFields> {}
 
-export class ValidationError extends Schema.TaggedErrorClass<ValidationError>()(
-  "ValidationError",
-  MessageField
-) {}
+export class ValidationError extends Data.TaggedError(
+  "ValidationError"
+)<MessageFields> {}
 
-export class ConflictError extends Schema.TaggedErrorClass<ConflictError>()(
-  "ConflictError",
-  MessageField
-) {}
+export class ConflictError extends Data.TaggedError(
+  "ConflictError"
+)<MessageFields> {}
 
 export type DomainError =
   | AuthenticationError
@@ -36,10 +31,7 @@ export type DomainError =
   | ValidationError
   | ConflictError;
 
-export class HttpResponseError extends Schema.TaggedErrorClass<HttpResponseError>()(
-  "HttpResponseError",
-  {
-    status: Schema.Number,
-    body: Schema.String,
-  }
-) {}
+export class HttpResponseError extends Data.TaggedError("HttpResponseError")<{
+  readonly status: number;
+  readonly body: string;
+}> {}

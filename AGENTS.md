@@ -14,3 +14,5 @@ every variable and where it lands per app.
 
 - whenever u are going to make a change to the data model (database schema), ask first
 - anytime you install a new package, ask first
+- use Zod for runtime, persisted, and wire-data schemas; do not introduce Effect Schema
+- use `Data.TaggedError` for typed Effect failures instead of schema-backed error classes

@@ -1,67 +1,72 @@
-// Effect Schema codecs for content values crossing persistence, network, and
-// JSON boundaries. The existing plain TypeScript types remain the canonical
-// types used by pure rendering and transformation modules.
+// Zod schemas for content values crossing persistence, network, and JSON
+// boundaries. The existing plain TypeScript types remain the canonical types
+// used by pure rendering and transformation modules.
 
-import { Option, Schema } from "effect";
+import { Option } from "effect";
+import { z } from "zod";
 
 import type { BlockLayout } from "./blockGeometry";
 
-const mutableArray = <S extends Schema.Top>(item: S) =>
-  Schema.mutable(Schema.Array(item));
+const finite = z.number().finite();
+const positiveFinite = finite.positive();
+const nonNegativeInt = z.number().int().nonnegative();
 
-const finite = Schema.Finite;
-const positiveFinite = Schema.Finite.check(Schema.isGreaterThan(0));
-const nonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
-
-export const SpanSchema = Schema.Struct({
-  text: Schema.String,
-  bold: Schema.optional(Schema.Boolean),
-  italic: Schema.optional(Schema.Boolean),
-  code: Schema.optional(Schema.Boolean),
-  href: Schema.optional(Schema.String),
+export const SpanSchema = z.object({
+  text: z.string(),
+  bold: z.boolean().optional(),
+  italic: z.boolean().optional(),
+  code: z.boolean().optional(),
+  href: z.string().optional(),
 });
 
-export const HeadingBlockSchema = Schema.Struct({
-  type: Schema.Literal("heading"),
-  level: Schema.Literals([1, 2, 3, 4, 5, 6]),
-  spans: mutableArray(SpanSchema),
+export const HeadingBlockSchema = z.object({
+  type: z.literal("heading"),
+  level: z.union([
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+    z.literal(5),
+    z.literal(6),
+  ]),
+  spans: z.array(SpanSchema),
 });
 
-export const ParagraphBlockSchema = Schema.Struct({
-  type: Schema.Literal("paragraph"),
-  spans: mutableArray(SpanSchema),
+export const ParagraphBlockSchema = z.object({
+  type: z.literal("paragraph"),
+  spans: z.array(SpanSchema),
 });
 
-export const QuoteBlockSchema = Schema.Struct({
-  type: Schema.Literal("quote"),
-  spans: mutableArray(SpanSchema),
+export const QuoteBlockSchema = z.object({
+  type: z.literal("quote"),
+  spans: z.array(SpanSchema),
 });
 
-export const ListBlockSchema = Schema.Struct({
-  type: Schema.Literal("list"),
-  ordered: Schema.Boolean,
-  items: mutableArray(mutableArray(SpanSchema)),
+export const ListBlockSchema = z.object({
+  type: z.literal("list"),
+  ordered: z.boolean(),
+  items: z.array(z.array(SpanSchema)),
 });
 
-export const ImageBlockSchema = Schema.Struct({
-  type: Schema.Literal("image"),
-  src: Schema.String,
-  alt: Schema.optional(Schema.String),
-  caption: Schema.optional(Schema.String),
-  width: Schema.optional(finite),
-  height: Schema.optional(finite),
+export const ImageBlockSchema = z.object({
+  type: z.literal("image"),
+  src: z.string(),
+  alt: z.string().optional(),
+  caption: z.string().optional(),
+  width: finite.optional(),
+  height: finite.optional(),
 });
 
-export const CodeBlockSchema = Schema.Struct({
-  type: Schema.Literal("code"),
-  text: Schema.String,
+export const CodeBlockSchema = z.object({
+  type: z.literal("code"),
+  text: z.string(),
 });
 
-export const RuleBlockSchema = Schema.Struct({
-  type: Schema.Literal("rule"),
+export const RuleBlockSchema = z.object({
+  type: z.literal("rule"),
 });
 
-export const BlockSchema = Schema.Union([
+export const BlockSchema = z.discriminatedUnion("type", [
   HeadingBlockSchema,
   ParagraphBlockSchema,
   QuoteBlockSchema,
@@ -71,64 +76,64 @@ export const BlockSchema = Schema.Union([
   RuleBlockSchema,
 ]);
 
-export const BlocksSchema = mutableArray(BlockSchema);
+export const BlocksSchema = z.array(BlockSchema);
 
-export const ArticleContentSchema = Schema.Struct({
-  title: Schema.String,
-  byline: Schema.optional(Schema.String),
-  siteName: Schema.optional(Schema.String),
-  excerpt: Schema.optional(Schema.String),
+export const ArticleContentSchema = z.object({
+  title: z.string(),
+  byline: z.string().optional(),
+  siteName: z.string().optional(),
+  excerpt: z.string().optional(),
   blocks: BlocksSchema,
 });
 
-export const PointSchema = Schema.Struct({
+export const PointSchema = z.object({
   x: finite,
   y: finite,
 });
 
-export const StrokeSchema = Schema.Struct({
-  id: Schema.String,
-  tool: Schema.Literals(["pen", "highlighter"]),
-  color: Schema.String,
+export const StrokeSchema = z.object({
+  id: z.string(),
+  tool: z.enum(["pen", "highlighter"]),
+  color: z.string(),
   width: finite,
-  points: mutableArray(PointSchema),
+  points: z.array(PointSchema),
 });
 
-export const BoxAnnotationSchema = Schema.Struct({
-  id: Schema.String,
+export const BoxAnnotationSchema = z.object({
+  id: z.string(),
   x: finite,
   y: finite,
   w: finite,
   h: finite,
 });
 
-export const NoteAnnotationSchema = Schema.Struct({
-  id: Schema.String,
+export const NoteAnnotationSchema = z.object({
+  id: z.string(),
   x: finite,
   y: finite,
-  text: Schema.String,
+  text: z.string(),
 });
 
-export const VoiceMemoAnnotationSchema = Schema.Struct({
-  id: Schema.String,
+export const VoiceMemoAnnotationSchema = z.object({
+  id: z.string(),
   x: finite,
   y: finite,
   durationMs: finite,
-  transcript: Schema.String,
-  status: Schema.Literals(["local", "uploaded"]),
+  transcript: z.string(),
+  status: z.enum(["local", "uploaded"]),
   createdAt: finite,
 });
 
-export const StrokesSchema = mutableArray(StrokeSchema);
-export const BoxAnnotationsSchema = mutableArray(BoxAnnotationSchema);
-export const NoteAnnotationsSchema = mutableArray(NoteAnnotationSchema);
-export const VoiceMemoAnnotationsSchema = mutableArray(
+export const StrokesSchema = z.array(StrokeSchema);
+export const BoxAnnotationsSchema = z.array(BoxAnnotationSchema);
+export const NoteAnnotationsSchema = z.array(NoteAnnotationSchema);
+export const VoiceMemoAnnotationsSchema = z.array(
   VoiceMemoAnnotationSchema
 );
 
 export const ContentWidthSchema = positiveFinite;
 
-export const AnnotationsSchema = Schema.Struct({
+export const AnnotationsSchema = z.object({
   contentWidth: ContentWidthSchema,
   strokes: StrokesSchema,
   boxes: BoxAnnotationsSchema,
@@ -136,43 +141,58 @@ export const AnnotationsSchema = Schema.Struct({
   memos: VoiceMemoAnnotationsSchema,
 });
 
-export const BlockLayoutSchema = Schema.Struct({
+export const BlockLayoutSchema = z.object({
   y: finite,
   height: positiveFinite,
 });
 
-export const LayoutSnapshotEntrySchema = Schema.Tuple([
+export const LayoutSnapshotEntrySchema = z.tuple([
   nonNegativeInt,
   BlockLayoutSchema,
-]).pipe(Schema.mutable);
+]);
 
-export const LayoutSnapshotSchema = Schema.Struct({
+export const LayoutSnapshotSchema = z.object({
   width: positiveFinite,
-  layouts: mutableArray(LayoutSnapshotEntrySchema),
+  layouts: z.array(LayoutSnapshotEntrySchema),
 });
 
-export const FirecrawlMetadataSchema = Schema.Struct({
-  title: Schema.optional(Schema.NullOr(Schema.String)),
-  description: Schema.optional(Schema.NullOr(Schema.String)),
-  ogTitle: Schema.optional(Schema.NullOr(Schema.String)),
-  ogDescription: Schema.optional(Schema.NullOr(Schema.String)),
-  sourceURL: Schema.optional(Schema.NullOr(Schema.String)),
+export const FirecrawlMetadataSchema = z.object({
+  title: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  ogTitle: z.string().nullable().optional(),
+  ogDescription: z.string().nullable().optional(),
+  sourceURL: z.string().nullable().optional(),
 });
 
-export const FirecrawlDocumentSchema = Schema.Struct({
-  html: Schema.optional(Schema.NullOr(Schema.String)),
-  markdown: Schema.optional(Schema.NullOr(Schema.String)),
-  metadata: Schema.optional(FirecrawlMetadataSchema),
+export const FirecrawlDocumentSchema = z.object({
+  html: z.string().nullable().optional(),
+  markdown: z.string().nullable().optional(),
+  metadata: FirecrawlMetadataSchema.optional(),
 });
 
-export const BlocksJsonSchema = Schema.fromJsonString(BlocksSchema);
-export const ArticleContentJsonSchema =
-  Schema.fromJsonString(ArticleContentSchema);
-export const AnnotationsJsonSchema = Schema.fromJsonString(AnnotationsSchema);
-export const LayoutSnapshotJsonSchema =
-  Schema.fromJsonString(LayoutSnapshotSchema);
-export const FirecrawlDocumentJsonSchema =
-  Schema.fromJsonString(FirecrawlDocumentSchema);
+const fromJsonString = <S extends z.ZodType>(schema: S) =>
+  z
+    .string()
+    .transform((json, context) => {
+      try {
+        return JSON.parse(json);
+      } catch {
+        context.addIssue({
+          code: "custom",
+          message: "Invalid JSON",
+        });
+        return z.NEVER;
+      }
+    })
+    .pipe(schema);
+
+export const BlocksJsonSchema = fromJsonString(BlocksSchema);
+export const ArticleContentJsonSchema = fromJsonString(ArticleContentSchema);
+export const AnnotationsJsonSchema = fromJsonString(AnnotationsSchema);
+export const LayoutSnapshotJsonSchema = fromJsonString(LayoutSnapshotSchema);
+export const FirecrawlDocumentJsonSchema = fromJsonString(
+  FirecrawlDocumentSchema
+);
 
 /**
  * Decode a persisted JSON array while preserving legacy annotation behavior:
@@ -181,34 +201,30 @@ export const FirecrawlDocumentJsonSchema =
  */
 export function decodeTolerantJsonArray<T>(
   json: string,
-  itemSchema: Schema.Decoder<T, never>
+  itemSchema: z.ZodType<T>
 ): Option.Option<T[]> {
-  const decoded = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)(json);
-  if (Option.isNone(decoded) || !Array.isArray(decoded.value)) {
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(json);
+  } catch {
     return Option.none();
   }
+  if (!Array.isArray(decoded)) return Option.none();
 
-  const decodeItem = Schema.decodeUnknownOption(itemSchema);
   const items: T[] = [];
-  for (const input of decoded.value) {
-    const item = decodeItem(input);
-    if (Option.isSome(item)) items.push(item.value);
+  for (const input of decoded) {
+    const item = itemSchema.safeParse(input);
+    if (item.success) items.push(item.data);
   }
   return Option.some(items);
 }
 
 // Layout snapshots are intentionally tolerant: a valid top-level snapshot can
 // contain stale or malformed individual layout entries, which are ignored.
-const LayoutSnapshotContainerSchema = Schema.Struct({
+const LayoutSnapshotContainerSchema = z.object({
   width: positiveFinite,
-  layouts: mutableArray(Schema.Unknown),
+  layouts: z.array(z.unknown()),
 });
-const decodeLayoutSnapshotContainer = Schema.decodeUnknownOption(
-  Schema.fromJsonString(LayoutSnapshotContainerSchema)
-);
-const decodeLayoutSnapshotEntry = Schema.decodeUnknownOption(
-  LayoutSnapshotEntrySchema
-);
 
 export type ParsedLayoutSnapshot = {
   width: number;
@@ -223,17 +239,24 @@ export function decodeLayoutSnapshotJson(
   json: string | undefined | null
 ): ParsedLayoutSnapshot | null {
   if (!json) return null;
-  const container = decodeLayoutSnapshotContainer(json);
-  if (Option.isNone(container)) return null;
+
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  const container = LayoutSnapshotContainerSchema.safeParse(decoded);
+  if (!container.success) return null;
 
   const layouts = new Map<number, BlockLayout>();
-  for (const input of container.value.layouts) {
-    const entry = decodeLayoutSnapshotEntry(input);
-    if (Option.isSome(entry)) {
-      layouts.set(entry.value[0], entry.value[1]);
+  for (const input of container.data.layouts) {
+    const entry = LayoutSnapshotEntrySchema.safeParse(input);
+    if (entry.success) {
+      layouts.set(entry.data[0], entry.data[1]);
     }
   }
   return layouts.size > 0
-    ? { width: container.value.width, layouts }
+    ? { width: container.data.width, layouts }
     : null;
 }

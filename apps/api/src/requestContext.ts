@@ -1,4 +1,4 @@
-import { Cause, Effect, Layer, Schema } from "effect";
+import { Cause, Effect, Layer } from "effect";
 import { FetchHttpClient } from "effect/unstable/http";
 
 import { ConvexServiceLive } from "./convexService";
@@ -24,14 +24,13 @@ export type WorkerBindings = {
 const configLayer = (env: WorkerBindings) =>
   Layer.effect(
     WorkerConfig,
-    Schema.decodeUnknownEffect(WorkerConfigSchema)(env).pipe(
-      Effect.mapError(
-        (error) =>
-          new WorkerConfigError({
-            message: `Invalid Worker configuration: ${errorMessage(error)}`,
-          })
-      )
-    )
+    Effect.try({
+      try: () => WorkerConfigSchema.parse(env),
+      catch: (error) =>
+        new WorkerConfigError({
+          message: `Invalid Worker configuration: ${errorMessage(error)}`,
+        }),
+    })
   );
 
 /**

@@ -3,7 +3,7 @@
 // @ts-ignore -- @types/node is not installed in this package; tsx provides
 // the real implementation at runtime.
 import nodeAssert from "node:assert/strict";
-import { Effect, Option, Schema } from "effect";
+import { Effect, Option } from "effect";
 
 import { blocksToMarkdown } from "../src/blocksToMarkdown";
 import {
@@ -1111,7 +1111,7 @@ console.log("inferDocumentHeadings tests passed");
 }
 
 // ════════════════════════════════════════════════════════════════════
-// Effect Schemas/codecs + throwing-boundary adapters
+// Zod schemas/codecs + throwing-boundary adapters
 // ════════════════════════════════════════════════════════════════════
 {
   const everyBlockVariant: Block[] = [
@@ -1147,31 +1147,30 @@ console.log("inferDocumentHeadings tests passed");
     { type: "rule" },
   ];
 
-  const decodeBlock = Schema.decodeUnknownOption(BlockSchema);
   for (const block of everyBlockVariant) {
     assert.ok(
-      Option.isSome(decodeBlock(block)),
+      BlockSchema.safeParse(block).success,
       `${block.type} block satisfies BlockSchema`
     );
   }
   assert.ok(
-    Option.isNone(
-      decodeBlock({ type: "heading", level: 7, spans: [{ text: "bad" }] })
-    ),
+    !BlockSchema.safeParse({
+      type: "heading",
+      level: 7,
+      spans: [{ text: "bad" }],
+    }).success,
     "invalid heading level fails BlockSchema"
   );
   assert.ok(
-    Option.isNone(decodeBlock({ type: "unknown" })),
+    !BlockSchema.safeParse({ type: "unknown" }).success,
     "unknown block variant fails BlockSchema"
   );
   assert.ok(
-    Option.isNone(
-      decodeBlock({
-        type: "image",
-        src: "https://example.com/non-finite.png",
-        width: Number.POSITIVE_INFINITY,
-      })
-    ),
+    !BlockSchema.safeParse({
+      type: "image",
+      src: "https://example.com/non-finite.png",
+      width: Number.POSITIVE_INFINITY,
+    }).success,
     "non-finite block dimensions fail BlockSchema"
   );
 
@@ -1183,15 +1182,13 @@ console.log("inferDocumentHeadings tests passed");
     blocks: everyBlockVariant,
   };
   assert.deepEqual(
-    Schema.decodeUnknownSync(ArticleContentJsonSchema)(
-      JSON.stringify(article)
-    ),
+    ArticleContentJsonSchema.parse(JSON.stringify(article)),
     article,
     "article JSON codec decodes all block variants"
   );
   assert.throws(
     () =>
-      Schema.decodeUnknownSync(ArticleContentJsonSchema)(
+      ArticleContentJsonSchema.parse(
         JSON.stringify({
           ...article,
           blocks: [{ type: "heading", level: 0, spans: [] }],
@@ -1201,7 +1198,7 @@ console.log("inferDocumentHeadings tests passed");
     "invalid block JSON fails the article codec"
   );
   assert.throws(
-    () => Schema.decodeUnknownSync(ArticleContentJsonSchema)("{not json"),
+    () => ArticleContentJsonSchema.parse("{not json"),
     /json/i,
     "malformed article JSON fails the codec"
   );
@@ -1235,15 +1232,13 @@ console.log("inferDocumentHeadings tests passed");
     ],
   };
   assert.deepEqual(
-    Schema.decodeUnknownSync(AnnotationsJsonSchema)(
-      JSON.stringify(annotations)
-    ),
+    AnnotationsJsonSchema.parse(JSON.stringify(annotations)),
     annotations,
     "annotations JSON codec covers strokes, boxes, notes, and voice memos"
   );
   assert.throws(
     () =>
-      Schema.decodeUnknownSync(AnnotationsJsonSchema)(
+      AnnotationsJsonSchema.parse(
         JSON.stringify({
           ...annotations,
           strokes: [{ ...annotations.strokes[0], tool: "pencil" }],
@@ -1253,25 +1248,23 @@ console.log("inferDocumentHeadings tests passed");
     "invalid annotation variants fail decoding"
   );
   assert.throws(
-    () => Schema.decodeUnknownSync(AnnotationsJsonSchema)("[]"),
+    () => AnnotationsJsonSchema.parse("[]"),
     /object|struct/i,
     "wrong annotations JSON shape fails decoding"
   );
   assert.ok(
-    Option.isNone(
-      Schema.decodeUnknownOption(BoxAnnotationSchema)({
-        id: "infinite",
-        x: Number.POSITIVE_INFINITY,
-        y: 1,
-        w: 2,
-        h: 3,
-      })
-    ),
+    !BoxAnnotationSchema.safeParse({
+      id: "infinite",
+      x: Number.POSITIVE_INFINITY,
+      y: 1,
+      w: 2,
+      h: 3,
+    }).success,
     "non-finite annotation coordinates fail shared schemas"
   );
   assert.throws(
     () =>
-      Schema.decodeUnknownSync(AnnotationsJsonSchema)(
+      AnnotationsJsonSchema.parse(
         JSON.stringify({ ...annotations, contentWidth: 0 })
       ),
     /contentWidth|greater than/i,
@@ -1316,7 +1309,7 @@ console.log("inferDocumentHeadings tests passed");
     ],
   });
   assert.deepEqual(
-    Schema.decodeUnknownSync(LayoutSnapshotJsonSchema)(strictLayoutJson),
+    LayoutSnapshotJsonSchema.parse(strictLayoutJson),
     {
       width: 800,
       layouts: [
@@ -1328,7 +1321,7 @@ console.log("inferDocumentHeadings tests passed");
   );
   assert.throws(
     () =>
-      Schema.decodeUnknownSync(LayoutSnapshotJsonSchema)(
+      LayoutSnapshotJsonSchema.parse(
         JSON.stringify({
           width: 800,
           layouts: [[0, { y: 0, height: 0 }]],
@@ -1377,7 +1370,7 @@ console.log("inferDocumentHeadings tests passed");
   );
 
   assert.deepEqual(
-    Schema.decodeUnknownSync(FirecrawlDocumentJsonSchema)(
+    FirecrawlDocumentJsonSchema.parse(
       JSON.stringify({
         html: null,
         markdown: "# Valid",
@@ -1405,14 +1398,12 @@ console.log("inferDocumentHeadings tests passed");
   );
   assert.throws(
     () =>
-      Schema.decodeUnknownSync(FirecrawlDocumentJsonSchema)(
-        JSON.stringify({ html: 42 })
-      ),
+      FirecrawlDocumentJsonSchema.parse(JSON.stringify({ html: 42 })),
     /html|string/i,
     "Firecrawl input codec rejects invalid content fields"
   );
   assert.throws(
-    () => Schema.decodeUnknownSync(FirecrawlDocumentJsonSchema)("not json"),
+    () => FirecrawlDocumentJsonSchema.parse("not json"),
     /json/i,
     "malformed Firecrawl JSON fails decoding"
   );
@@ -1493,7 +1484,7 @@ console.log("inferDocumentHeadings tests passed");
   );
   assert.equal(parserError.parser, "markdown");
 
-  console.log("Effect schema and adapter tests passed");
+  console.log("Zod schema and Effect adapter tests passed");
 }
 
 console.log("\nALL CONTENT TESTS PASSED");

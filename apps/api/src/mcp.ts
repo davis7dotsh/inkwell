@@ -29,7 +29,7 @@ import {
   VoiceMemoAnnotationSchema,
   decodeTolerantJsonArray,
 } from "@inkwell/content/schema";
-import { Cause, Effect, Option, Schema } from "effect";
+import { Cause, Effect, Option } from "effect";
 import { z } from "zod";
 
 import { ConvexService } from "./convexService";
@@ -49,7 +49,7 @@ const MAX_ARTICLE_CHARS = 80_000;
 
 const parseJsonArray = <T>(
   json: string,
-  itemSchema: Schema.Decoder<T, never>
+  itemSchema: z.ZodType<T>
 ): T[] =>
   Option.getOrElse(
     decodeTolerantJsonArray(json, itemSchema),

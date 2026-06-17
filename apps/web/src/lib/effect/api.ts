@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Effect, Layer } from "effect";
+import { z } from "zod";
 import {
   HttpClient,
   HttpClientRequest,
@@ -13,21 +14,19 @@ import {
   type InkwellApiError,
 } from "./errors";
 
-const AcceptedResponse = Schema.Struct({
-  articleId: Schema.String,
+const AcceptedResponse = z.object({
+  articleId: z.string(),
 });
 
-const ArticleRequest = Schema.Struct({
-  url: Schema.String,
+const ArticleRequest = z.object({
+  url: z.string(),
 });
 
-const ErrorResponseFromJson = Schema.fromJsonString(
-  Schema.Struct({
-    error: Schema.String,
-  }),
-);
+const ErrorResponse = z.object({
+  error: z.string(),
+});
 
-export type AcceptedArticle = typeof AcceptedResponse.Type;
+export type AcceptedArticle = z.infer<typeof AcceptedResponse>;
 
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -39,7 +38,7 @@ const responseFailure = (
   response.text.pipe(
     Effect.catch(() => Effect.succeed("")),
     Effect.flatMap((body) =>
-      Schema.decodeUnknownEffect(ErrorResponseFromJson)(body).pipe(
+      Effect.try(() => ErrorResponse.parse(JSON.parse(body))).pipe(
         Effect.map((decoded) => decoded.error),
         Effect.catch(() =>
           Effect.succeed(
@@ -66,13 +65,24 @@ const decodeAccepted = (
   if (response.status !== 202) {
     return responseFailure(operation, response);
   }
-  return HttpClientResponse.schemaBodyJson(AcceptedResponse)(response).pipe(
-    Effect.mapError(
-      (error) =>
-        new ApiDecodeError({
-          operation,
-          message: errorMessage(error),
-        }),
+  return response.json.pipe(
+    Effect.flatMap((value) =>
+      Effect.try({
+        try: () => AcceptedResponse.parse(value),
+        catch: (error) =>
+          new ApiDecodeError({
+            operation,
+            message: errorMessage(error),
+          }),
+      }),
+    ),
+    Effect.mapError((error) =>
+      error instanceof ApiDecodeError
+        ? error
+        : new ApiDecodeError({
+            operation,
+            message: errorMessage(error),
+          }),
     ),
   );
 };
@@ -133,19 +143,30 @@ export const InkwellApiLive = Layer.effect(
     const postJson = (
       operation: string,
       path: string,
-      body: typeof ArticleRequest.Type,
+      body: z.infer<typeof ArticleRequest>,
       token: string,
     ): Effect.Effect<AcceptedArticle, InkwellApiError> =>
-      HttpClientRequest.schemaBodyJson(ArticleRequest)(
-        HttpClientRequest.post(`${apiUrl}${path}`),
-        body,
-      ).pipe(
-        Effect.mapError(
-          (error) =>
-            new ApiDecodeError({
-              operation,
-              message: errorMessage(error),
-            }),
+      Effect.try({
+        try: () => ArticleRequest.parse(body),
+        catch: (error) =>
+          new ApiDecodeError({
+            operation,
+            message: errorMessage(error),
+          }),
+      }).pipe(
+        Effect.flatMap((validatedBody) =>
+          HttpClientRequest.bodyJson(
+            HttpClientRequest.post(`${apiUrl}${path}`),
+            validatedBody,
+          ),
+        ),
+        Effect.mapError((error) =>
+          error instanceof ApiDecodeError
+            ? error
+            : new ApiDecodeError({
+                operation,
+                message: errorMessage(error),
+              }),
         ),
         Effect.flatMap((request) => execute(operation, token, request)),
         Effect.flatMap((response) => decodeAccepted(operation, response)),

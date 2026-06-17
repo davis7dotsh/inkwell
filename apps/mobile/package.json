@@ -42,7 +42,8 @@
     "react-native-screens": "4.25.2",
     "react-native-web": "~0.21.0",
     "react-native-webview": "13.16.1",
-    "react-native-worklets": "0.8.3"
+    "react-native-worklets": "0.8.3",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@mozilla/readability": "^0.6.0",

@@ -4,7 +4,7 @@
 import { clerkMiddleware, getAuth } from "@clerk/hono";
 import { zValidator } from "@hono/zod-validator";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { Cause, Effect, Schema } from "effect";
+import { Cause, Effect } from "effect";
 import { Hono } from "hono";
 import { hc } from "hono/client";
 import { cors } from "hono/cors";
@@ -33,16 +33,7 @@ import { kindOf, normalizeUrl } from "./url";
 
 export type Bindings = WorkerBindings;
 
-const ArticleBodySchema = Schema.Struct({ url: Schema.String });
 const articleBody = z.object({ url: z.string() });
-const MemoParamsSchema = Schema.Struct({
-  articleId: Schema.String.check(
-    Schema.isPattern(/^[A-Za-z0-9_-]{1,64}$/)
-  ),
-  memoId: Schema.String.check(
-    Schema.isPattern(/^[A-Za-z0-9_-]{1,64}$/)
-  ),
-});
 const memoParams = z.object({
   articleId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
   memoId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
@@ -85,43 +76,6 @@ const scopeOf = (
 
 const requestDecode = (message: string) =>
   new RequestDecodeError({ message });
-
-const decodeValue = <S extends Schema.Top>(
-  value: unknown,
-  schema: S
-): Effect.Effect<
-  S["Type"],
-  RequestDecodeError,
-  S["DecodingServices"]
-> =>
-  Schema.decodeUnknownEffect(schema)(value).pipe(
-    Effect.mapError((error) =>
-      requestDecode(errorMessage(error))
-    )
-  );
-
-const decodeParams = <S extends Schema.Top>(
-  schema: S,
-  value: unknown
-): Effect.Effect<
-  S["Type"],
-  RequestDecodeError,
-  S["DecodingServices"]
-> =>
-  Schema.decodeUnknownEffect(schema)(value).pipe(
-    Effect.mapError((error) =>
-      requestDecode(errorMessage(error))
-    )
-  );
-
-const uploadFile = (
-  value: unknown
-): Effect.Effect<File, RequestDecodeError> =>
-  Schema.decodeUnknownEffect(Schema.File)(value).pipe(
-    Effect.mapError(() =>
-      requestDecode("file must be a file upload")
-    )
-  );
 
 const requestArrayBuffer = (
   request: Request
@@ -171,10 +125,7 @@ const app = new Hono<{ Bindings: Bindings }>()
       c,
       scope,
       Effect.gen(function* () {
-        const body = yield* decodeValue(
-          c.req.valid("json"),
-          ArticleBodySchema
-        );
+        const body = c.req.valid("json");
         const url = normalizeUrl(body.url);
         if (!url) {
           return yield* requestDecode("Invalid URL");
@@ -237,7 +188,7 @@ const app = new Hono<{ Bindings: Bindings }>()
         c,
         scope,
         Effect.gen(function* () {
-          const file = yield* uploadFile(c.req.valid("form").file);
+          const file = c.req.valid("form").file;
           if (!isPdf(file)) {
             return yield* requestDecode(
               "Only PDF files are supported"
@@ -298,10 +249,7 @@ const app = new Hono<{ Bindings: Bindings }>()
         c,
         scope,
         Effect.gen(function* () {
-          const body = yield* decodeValue(
-            c.req.valid("json"),
-            ArticleBodySchema
-          );
+          const body = c.req.valid("json");
           const url = normalizeUrl(body.url);
           if (!url) return yield* requestDecode("Invalid URL");
           return url.toString();
@@ -362,9 +310,7 @@ const app = new Hono<{ Bindings: Bindings }>()
         c,
         scope,
         Effect.gen(function* () {
-          const params = yield* decodeParams(MemoParamsSchema, {
-            ...c.req.valid("param"),
-          });
+          const params = c.req.valid("param");
           const audio = yield* requestArrayBuffer(c.req.raw);
           if (audio.byteLength === 0) {
             return yield* requestDecode("Empty body");
@@ -409,9 +355,7 @@ const app = new Hono<{ Bindings: Bindings }>()
         c,
         scope,
         Effect.gen(function* () {
-          const params = yield* decodeParams(MemoParamsSchema, {
-            ...c.req.valid("param"),
-          });
+          const params = c.req.valid("param");
           const current = yield* CurrentUser;
           const memos = yield* MemoStore;
           return yield* memos.get(
@@ -480,9 +424,7 @@ const app = new Hono<{ Bindings: Bindings }>()
         c,
         scope,
         Effect.gen(function* () {
-          const params = yield* decodeParams(MemoParamsSchema, {
-            ...c.req.valid("param"),
-          });
+          const params = c.req.valid("param");
           const current = yield* CurrentUser;
           const memos = yield* MemoStore;
           yield* memos.delete(

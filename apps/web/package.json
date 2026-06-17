@@ -20,7 +20,8 @@
     "hono": "^4.12.24",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "react-router-dom": "^7.17.0"
+    "react-router-dom": "^7.17.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.40.0",

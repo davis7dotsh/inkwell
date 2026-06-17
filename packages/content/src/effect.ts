@@ -1,7 +1,7 @@
 // Effect adapters for content boundaries that can throw. Pure parser and
 // normalization implementations stay synchronous in their original modules.
 
-import { Effect, Schema } from "effect";
+import { Data, Effect } from "effect";
 
 import { htmlToBlocks } from "./htmlToBlocks";
 import { markdownToBlocks } from "./markdownToBlocks";
@@ -16,28 +16,25 @@ import type { ArticleContent, Block } from "./types";
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-export class ContentParserError extends Schema.TaggedErrorClass<ContentParserError>()(
-  "ContentParserError",
-  {
-    parser: Schema.Literals(["html", "markdown"]),
-    message: Schema.String,
-  }
-) {}
+export class ContentParserError extends Data.TaggedError(
+  "ContentParserError"
+)<{
+  readonly parser: "html" | "markdown";
+  readonly message: string;
+}> {}
 
-export class ContentSchemaError extends Schema.TaggedErrorClass<ContentSchemaError>()(
-  "ContentSchemaError",
-  {
-    boundary: Schema.Literals(["firecrawl"]),
-    message: Schema.String,
-  }
-) {}
+export class ContentSchemaError extends Data.TaggedError(
+  "ContentSchemaError"
+)<{
+  readonly boundary: "firecrawl";
+  readonly message: string;
+}> {}
 
-export class FirecrawlNormalizationError extends Schema.TaggedErrorClass<FirecrawlNormalizationError>()(
-  "FirecrawlNormalizationError",
-  {
-    message: Schema.String,
-  }
-) {}
+export class FirecrawlNormalizationError extends Data.TaggedError(
+  "FirecrawlNormalizationError"
+)<{
+  readonly message: string;
+}> {}
 
 export function htmlToBlocksEffect(
   html: string
@@ -76,14 +73,14 @@ export function firecrawlToArticleEffect(
   ArticleContent,
   ContentSchemaError | FirecrawlNormalizationError
 > {
-  return Schema.decodeUnknownEffect(FirecrawlDocumentSchema)(input).pipe(
-    Effect.mapError(
-      (error) =>
-        new ContentSchemaError({
-          boundary: "firecrawl",
-          message: errorMessage(error),
-        })
-    ),
+  return Effect.try({
+    try: () => FirecrawlDocumentSchema.parse(input),
+    catch: (error) =>
+      new ContentSchemaError({
+        boundary: "firecrawl",
+        message: errorMessage(error),
+      }),
+  }).pipe(
     Effect.flatMap((document) =>
       Effect.try({
         try: () => firecrawlToArticle(document),

@@ -1,7 +1,8 @@
 // Effect service for the shared-secret Convex HTTP actions. Hono authenticates
 // callers; this client talks only to the Worker's internal HTTP bridge.
 
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Effect, Layer } from "effect";
+import { z } from "zod";
 import {
   Headers,
   HttpClient,
@@ -21,17 +22,17 @@ export type ConvexServiceEnv = {
   WORKER_SHARED_SECRET: string;
 };
 
-const ArticleKindSchema = Schema.Literals(["web", "pdf"]);
-const ArticleStatusSchema = Schema.Literals(["pending", "ready", "failed"]);
-const ReadStatusSchema = Schema.Literals([
+const ArticleKindSchema = z.enum(["web", "pdf"]);
+const ArticleStatusSchema = z.enum(["pending", "ready", "failed"]);
+const ReadStatusSchema = z.enum([
   "unread",
   "in_progress",
   "read",
 ]);
 
-export type ArticleKind = typeof ArticleKindSchema.Type;
-export type ArticleStatus = typeof ArticleStatusSchema.Type;
-export type ReadStatus = typeof ReadStatusSchema.Type;
+export type ArticleKind = z.infer<typeof ArticleKindSchema>;
+export type ArticleStatus = z.infer<typeof ArticleStatusSchema>;
+export type ReadStatus = z.infer<typeof ReadStatusSchema>;
 
 export type CreatePendingArgs = {
   userId: string;
@@ -57,87 +58,87 @@ export type FailArgs = {
   error: string;
 };
 
-const TagSchema = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-  color: Schema.optional(Schema.String),
-  createdAt: Schema.Number,
+const TagSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  color: z.string().optional(),
+  createdAt: z.number(),
 });
 
-const CreatedTagSchema = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-  color: Schema.optional(Schema.String),
+const CreatedTagSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  color: z.string().optional(),
 });
 
-export type Tag = typeof TagSchema.Type;
-export type CreatedTag = typeof CreatedTagSchema.Type;
+export type Tag = z.infer<typeof TagSchema>;
+export type CreatedTag = z.infer<typeof CreatedTagSchema>;
 
-const ArticleSummarySchema = Schema.Struct({
-  id: Schema.String,
-  url: Schema.String,
+const ArticleSummarySchema = z.object({
+  id: z.string(),
+  url: z.string(),
   kind: ArticleKindSchema,
   status: ArticleStatusSchema,
-  error: Schema.optional(Schema.String),
-  title: Schema.String,
-  byline: Schema.optional(Schema.String),
-  siteName: Schema.optional(Schema.String),
-  excerpt: Schema.optional(Schema.String),
-  savedAt: Schema.Number,
+  error: z.string().optional(),
+  title: z.string(),
+  byline: z.string().optional(),
+  siteName: z.string().optional(),
+  excerpt: z.string().optional(),
+  savedAt: z.number(),
   readStatus: ReadStatusSchema,
-  pinned: Schema.Boolean,
-  tags: Schema.Array(Schema.String),
+  pinned: z.boolean(),
+  tags: z.array(z.string()),
 });
 
-const ArticleSchema = Schema.Struct({
-  _id: Schema.String,
-  url: Schema.String,
+const ArticleSchema = z.object({
+  _id: z.string(),
+  url: z.string(),
   kind: ArticleKindSchema,
   status: ArticleStatusSchema,
-  error: Schema.optional(Schema.String),
-  title: Schema.String,
-  byline: Schema.optional(Schema.String),
-  siteName: Schema.optional(Schema.String),
-  excerpt: Schema.optional(Schema.String),
-  blocksJson: Schema.optional(Schema.String),
-  savedAt: Schema.Number,
+  error: z.string().optional(),
+  title: z.string(),
+  byline: z.string().optional(),
+  siteName: z.string().optional(),
+  excerpt: z.string().optional(),
+  blocksJson: z.string().optional(),
+  savedAt: z.number(),
   readStatus: ReadStatusSchema,
-  pinned: Schema.Boolean,
-  tags: Schema.Array(Schema.String),
+  pinned: z.boolean(),
+  tags: z.array(z.string()),
 });
 
-const AnnotationsSchema = Schema.Struct({
-  articleTitle: Schema.String,
-  articleUrl: Schema.String,
-  blocksJson: Schema.optional(Schema.String),
-  annotations: Schema.NullOr(
-    Schema.Struct({
-      contentWidth: Schema.Number,
-      strokesJson: Schema.String,
-      boxesJson: Schema.String,
-      notesJson: Schema.String,
-      memosJson: Schema.String,
-      layoutJson: Schema.optional(Schema.String),
-      updatedAt: Schema.Number,
+const AnnotationsSchema = z.object({
+  articleTitle: z.string(),
+  articleUrl: z.string(),
+  blocksJson: z.string().optional(),
+  annotations: z
+    .object({
+      contentWidth: z.number(),
+      strokesJson: z.string(),
+      boxesJson: z.string(),
+      notesJson: z.string(),
+      memosJson: z.string(),
+      layoutJson: z.string().optional(),
+      updatedAt: z.number(),
     })
-  ),
+    .nullable(),
 });
 
-const CreatePendingResponseSchema = Schema.Struct({
-  articleId: Schema.String,
+const CreatePendingResponseSchema = z.object({
+  articleId: z.string(),
 });
-const OkResponseSchema = Schema.Struct({ ok: Schema.Boolean });
-const ArticlesResponseSchema = Schema.Struct({
-  articles: Schema.Array(ArticleSummarySchema),
+const OkResponseSchema = z.object({ ok: z.boolean() });
+const ArticlesResponseSchema = z.object({
+  articles: z.array(ArticleSummarySchema),
 });
-const ArticleResponseSchema = Schema.Struct({ article: ArticleSchema });
-const TagsResponseSchema = Schema.Struct({ tags: Schema.Array(TagSchema) });
-const CreatedTagResponseSchema = Schema.Struct({ tag: CreatedTagSchema });
+const ArticleResponseSchema = z.object({ article: ArticleSchema });
+const TagsResponseSchema = z.object({ tags: z.array(TagSchema) });
+const CreatedTagResponseSchema = z.object({ tag: CreatedTagSchema });
 
 type ConvexError = ConvexHttpError | ConvexDecodeError;
-type ArticleSummary = typeof ArticleSummarySchema.Type;
-type Article = typeof ArticleSchema.Type;
-type AnnotationResult = typeof AnnotationsSchema.Type;
+type ArticleSummary = z.infer<typeof ArticleSummarySchema>;
+type Article = z.infer<typeof ArticleSchema>;
+type AnnotationResult = z.infer<typeof AnnotationsSchema>;
 
 export type ConvexServiceShape = {
   readonly createPending: (
@@ -220,23 +221,28 @@ const requestFailure = (
     message: errorMessage(error),
   });
 
-const decodeResponse = <S extends Schema.Top>(
+const decodeResponse = <S extends z.ZodType>(
   response: HttpClientResponse.HttpClientResponse,
   schema: S,
   operation: string
-): Effect.Effect<
-  S["Type"],
-  ConvexDecodeError,
-  S["DecodingServices"]
-> =>
+): Effect.Effect<z.output<S>, ConvexDecodeError> =>
   response.json.pipe(
-    Effect.flatMap(Schema.decodeUnknownEffect(schema)),
     Effect.mapError(
       (error) =>
         new ConvexDecodeError({
           operation,
-          message: `Convex ${operation} returned an invalid response: ${errorMessage(error)}`,
+          message: `Convex ${operation} returned invalid JSON: ${errorMessage(error)}`,
         })
+    ),
+    Effect.flatMap((value) =>
+      Effect.try({
+        try: () => schema.parse(value),
+        catch: (error) =>
+          new ConvexDecodeError({
+            operation,
+            message: `Convex ${operation} returned an invalid response: ${errorMessage(error)}`,
+          }),
+      })
     )
   );
 
@@ -299,15 +305,11 @@ export const ConvexServiceLive = Layer.effect(
           })
         );
 
-    const post = <S extends Schema.Top>(
+    const post = <S extends z.ZodType>(
       path: string,
       body: unknown,
       schema: S
-    ): Effect.Effect<
-      S["Type"],
-      ConvexError,
-      S["DecodingServices"]
-    > => {
+    ): Effect.Effect<z.output<S>, ConvexError> => {
       const operation = path;
       return HttpClientRequest.bodyJson(
         HttpClientRequest.post(new URL(path, `${baseUrl}/`)),

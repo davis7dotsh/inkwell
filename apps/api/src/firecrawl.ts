@@ -1,7 +1,8 @@
 // Firecrawl v2 client built on Effect's Web Fetch adapter. Scrape and parse
 // share one decoded envelope and exactly one explicit 429 retry.
 
-import { Context, Effect, Layer, Redacted, Schema } from "effect";
+import { Context, Effect, Layer, Redacted } from "effect";
+import { z } from "zod";
 import {
   HttpClient,
   HttpClientRequest,
@@ -16,31 +17,31 @@ import {
 } from "./errors";
 import { WorkerConfig } from "./services";
 
-const FirecrawlMetadataSchema = Schema.Struct({
-  title: Schema.optional(Schema.NullOr(Schema.String)),
-  description: Schema.optional(Schema.NullOr(Schema.String)),
-  ogTitle: Schema.optional(Schema.NullOr(Schema.String)),
-  ogDescription: Schema.optional(Schema.NullOr(Schema.String)),
-  ogImage: Schema.optional(Schema.NullOr(Schema.String)),
-  sourceURL: Schema.optional(Schema.NullOr(Schema.String)),
-  statusCode: Schema.optional(Schema.Number),
-  contentType: Schema.optional(Schema.NullOr(Schema.String)),
-  error: Schema.optional(Schema.NullOr(Schema.String)),
+const FirecrawlMetadataSchema = z.object({
+  title: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  ogTitle: z.string().nullable().optional(),
+  ogDescription: z.string().nullable().optional(),
+  ogImage: z.string().nullable().optional(),
+  sourceURL: z.string().nullable().optional(),
+  statusCode: z.number().optional(),
+  contentType: z.string().nullable().optional(),
+  error: z.string().nullable().optional(),
 });
 
-export type FirecrawlMetadata = typeof FirecrawlMetadataSchema.Type;
+export type FirecrawlMetadata = z.infer<typeof FirecrawlMetadataSchema>;
 
-const FirecrawlResponseSchema = Schema.Struct({
-  success: Schema.optional(Schema.Boolean),
-  error: Schema.optional(Schema.String),
-  data: Schema.optional(
-    Schema.Struct({
-      html: Schema.optional(Schema.NullOr(Schema.String)),
-      markdown: Schema.optional(Schema.NullOr(Schema.String)),
-      metadata: Schema.optional(FirecrawlMetadataSchema),
-      warning: Schema.optional(Schema.String),
+const FirecrawlResponseSchema = z.object({
+  success: z.boolean().optional(),
+  error: z.string().optional(),
+  data: z
+    .object({
+      html: z.string().nullable().optional(),
+      markdown: z.string().nullable().optional(),
+      metadata: FirecrawlMetadataSchema.optional(),
+      warning: z.string().optional(),
     })
-  ),
+    .optional(),
 });
 
 export type FirecrawlScrape = {
@@ -103,13 +104,22 @@ const decodePayload = (
   operation: string
 ): Effect.Effect<FirecrawlScrape, FirecrawlDecodeError | FirecrawlApiError> =>
   response.json.pipe(
-    Effect.flatMap(Schema.decodeUnknownEffect(FirecrawlResponseSchema)),
     Effect.mapError(
       (error) =>
         new FirecrawlDecodeError({
           operation,
-          message: `Firecrawl ${operation} returned an invalid response: ${errorMessage(error)}`,
+          message: `Firecrawl ${operation} returned invalid JSON: ${errorMessage(error)}`,
         })
+    ),
+    Effect.flatMap((value) =>
+      Effect.try({
+        try: () => FirecrawlResponseSchema.parse(value),
+        catch: (error) =>
+          new FirecrawlDecodeError({
+            operation,
+            message: `Firecrawl ${operation} returned an invalid response: ${errorMessage(error)}`,
+          }),
+      })
     ),
     Effect.flatMap((json) => {
       if (json.success !== true) {

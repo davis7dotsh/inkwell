@@ -17,69 +17,67 @@ import {
 } from "@inkwell/content/schema";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Result from "effect/Result";
-import * as Schema from "effect/Schema";
+import { z } from "zod";
 
 import { DecodeError } from "./errors";
 
-export const FatalReportSchema = Schema.Struct({
-  message: Schema.String,
-  stack: Schema.NullOr(Schema.String),
-  occurredAt: Schema.String,
-  uiWasMounted: Schema.Boolean,
+export const FatalReportSchema = z.object({
+  message: z.string(),
+  stack: z.string().nullable(),
+  occurredAt: z.string(),
+  uiWasMounted: z.boolean(),
 });
 
-export const ArticleIdResponseSchema = Schema.Struct({
-  articleId: Schema.String,
+export const ArticleIdResponseSchema = z.object({
+  articleId: z.string(),
 });
 
-export const ClerkEnvironmentResponseSchema = Schema.Struct({
-  errors: Schema.optional(
-    Schema.Array(
-      Schema.Struct({
-        code: Schema.optional(Schema.String),
+export const ClerkEnvironmentResponseSchema = z.object({
+  errors: z
+    .array(
+      z.object({
+        code: z.string().optional(),
       })
     )
-  ),
+    .optional(),
 });
 
-const MobileConfigSchema = Schema.Struct({
-  clerkPublishableKey: Schema.optional(Schema.String),
-  convexUrl: Schema.optional(Schema.String),
-  apiUrl: Schema.optional(Schema.String),
+const MobileConfigSchema = z.object({
+  clerkPublishableKey: z.string().optional(),
+  convexUrl: z.string().optional(),
+  apiUrl: z.string().optional(),
 });
 
-const configResult = Schema.decodeUnknownResult(MobileConfigSchema)({
+const configResult = MobileConfigSchema.safeParse({
   clerkPublishableKey: process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY,
   convexUrl: process.env.EXPO_PUBLIC_CONVEX_URL,
   apiUrl: process.env.EXPO_PUBLIC_API_URL,
 });
 
-export const mobileConfig = Result.isSuccess(configResult)
-  ? configResult.success
+export const mobileConfig = configResult.success
+  ? configResult.data
   : {
       clerkPublishableKey: undefined,
       convexUrl: undefined,
       apiUrl: undefined,
     };
 
-const decodeJson = <A, I>(
-  schema: Schema.Codec<A, I, never, never>,
+const decodeJson = <A>(
+  schema: z.ZodType<A>,
   source: string,
   json: string
 ) =>
-  Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(json).pipe(
-    Effect.mapError(
-      (error) =>
-        new DecodeError({
-          source,
-          message: String(error),
-        })
-    )
-  );
+  Effect.try({
+    try: () => schema.parse(JSON.parse(json)),
+    catch: (error) =>
+      new DecodeError({
+        source,
+        message: String(error),
+      }),
+  });
 
 const decodeTolerantArrayJson = <A>(
-  schema: Schema.Decoder<A, never>,
+  schema: z.ZodType<A>,
   source: string,
   json: string
 ): Effect.Effect<A[], DecodeError> => {
@@ -136,17 +134,14 @@ export const decodeAnnotations = (input: {
   memosJson?: string;
 }): Effect.Effect<Annotations, DecodeError> =>
   Effect.all({
-    contentWidth: Schema.decodeUnknownEffect(ContentWidthSchema)(
-      input.contentWidth
-    ).pipe(
-      Effect.mapError(
-        (error) =>
-          new DecodeError({
-            source: "annotation content width",
-            message: String(error),
-          })
-      )
-    ),
+    contentWidth: Effect.try({
+      try: () => ContentWidthSchema.parse(input.contentWidth),
+      catch: (error) =>
+        new DecodeError({
+          source: "annotation content width",
+          message: String(error),
+        }),
+    }),
     strokes: decodeTolerantArrayJson(
       StrokeSchema,
       "annotation strokes",
@@ -200,23 +195,21 @@ export const decodeFatalReport = (json: string) =>
   decodeJson(FatalReportSchema, "fatal error report", json);
 
 export const decodeArticleIdResponse = (value: unknown, source: string) =>
-  Schema.decodeUnknownEffect(ArticleIdResponseSchema)(value).pipe(
-    Effect.mapError(
-      (error) =>
-        new DecodeError({
-          source,
-          message: String(error),
-        })
-    )
-  );
+  Effect.try({
+    try: () => ArticleIdResponseSchema.parse(value),
+    catch: (error) =>
+      new DecodeError({
+        source,
+        message: String(error),
+      }),
+  });
 
 export const decodeClerkEnvironmentResponse = (value: unknown) =>
-  Schema.decodeUnknownEffect(ClerkEnvironmentResponseSchema)(value).pipe(
-    Effect.mapError(
-      (error) =>
-        new DecodeError({
-          source: "Clerk environment response",
-          message: String(error),
-        })
-    )
-  );
+  Effect.try({
+    try: () => ClerkEnvironmentResponseSchema.parse(value),
+    catch: (error) =>
+      new DecodeError({
+        source: "Clerk environment response",
+        message: String(error),
+      }),
+  });

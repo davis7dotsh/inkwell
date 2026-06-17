@@ -1,83 +1,57 @@
-import { Schema } from "effect";
+import { Data } from "effect";
 
-export class WorkerConfigError extends Schema.TaggedErrorClass<WorkerConfigError>()(
-  "WorkerConfigError",
-  {
-    message: Schema.String,
-  }
-) {}
+export class WorkerConfigError extends Data.TaggedError("WorkerConfigError")<{
+  readonly message: string;
+}> {}
 
-export class RequestDecodeError extends Schema.TaggedErrorClass<RequestDecodeError>()(
-  "RequestDecodeError",
-  {
-    message: Schema.String,
-  }
-) {}
+export class RequestDecodeError extends Data.TaggedError("RequestDecodeError")<{
+  readonly message: string;
+}> {}
 
-export class ConvexHttpError extends Schema.TaggedErrorClass<ConvexHttpError>()(
-  "ConvexHttpError",
-  {
-    operation: Schema.String,
-    status: Schema.Number,
-    message: Schema.String,
-  }
-) {}
+export class ConvexHttpError extends Data.TaggedError("ConvexHttpError")<{
+  readonly operation: string;
+  readonly status: number;
+  readonly message: string;
+}> {}
 
-export class ConvexDecodeError extends Schema.TaggedErrorClass<ConvexDecodeError>()(
-  "ConvexDecodeError",
-  {
-    operation: Schema.String,
-    message: Schema.String,
-  }
-) {}
+export class ConvexDecodeError extends Data.TaggedError("ConvexDecodeError")<{
+  readonly operation: string;
+  readonly message: string;
+}> {}
 
-export class FirecrawlHttpError extends Schema.TaggedErrorClass<FirecrawlHttpError>()(
-  "FirecrawlHttpError",
-  {
-    operation: Schema.String,
-    status: Schema.Number,
-    retried: Schema.Boolean,
-    message: Schema.String,
-  }
-) {}
+export class FirecrawlHttpError extends Data.TaggedError("FirecrawlHttpError")<{
+  readonly operation: string;
+  readonly status: number;
+  readonly retried: boolean;
+  readonly message: string;
+}> {}
 
-export class FirecrawlDecodeError extends Schema.TaggedErrorClass<FirecrawlDecodeError>()(
-  "FirecrawlDecodeError",
-  {
-    operation: Schema.String,
-    message: Schema.String,
-  }
-) {}
+export class FirecrawlDecodeError extends Data.TaggedError(
+  "FirecrawlDecodeError"
+)<{
+  readonly operation: string;
+  readonly message: string;
+}> {}
 
-export class FirecrawlApiError extends Schema.TaggedErrorClass<FirecrawlApiError>()(
-  "FirecrawlApiError",
-  {
-    operation: Schema.String,
-    message: Schema.String,
-  }
-) {}
+export class FirecrawlApiError extends Data.TaggedError("FirecrawlApiError")<{
+  readonly operation: string;
+  readonly message: string;
+}> {}
 
-export class ArticleNormalizationError extends Schema.TaggedErrorClass<ArticleNormalizationError>()(
-  "ArticleNormalizationError",
-  {
-    message: Schema.String,
-  }
-) {}
+export class ArticleNormalizationError extends Data.TaggedError(
+  "ArticleNormalizationError"
+)<{
+  readonly message: string;
+}> {}
 
-export class MemoStorageError extends Schema.TaggedErrorClass<MemoStorageError>()(
-  "MemoStorageError",
-  {
-    operation: Schema.Literals(["put", "get", "delete"]),
-    message: Schema.String,
-  }
-) {}
+export class MemoStorageError extends Data.TaggedError("MemoStorageError")<{
+  readonly operation: "put" | "get" | "delete";
+  readonly message: string;
+}> {}
 
-export class ToolOperationError extends Schema.TaggedErrorClass<ToolOperationError>()(
-  "ToolOperationError",
-  {
-    message: Schema.String,
-  }
-) {}
+export class ToolOperationError extends Data.TaggedError("ToolOperationError")<{
+  readonly message: string;
+}> {}
 
 const nestedCause = (value: unknown): unknown => {
   if (

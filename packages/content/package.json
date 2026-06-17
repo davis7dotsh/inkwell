@@ -25,7 +25,8 @@
   "dependencies": {
     "effect": "4.0.0-beta.84",
     "htmlparser2": "^12.0.0",
-    "marked": "^18.0.5"
+    "marked": "^18.0.5",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "tsx": "^4.22.4",
