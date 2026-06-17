@@ -181,14 +181,14 @@ describe("list_articles", () => {
     });
 
     expect(agentCalls).toHaveLength(1);
-    expect(agentCalls[0].functionName).toBe("articles:listForAgent");
+    expect(agentCalls[0].url).toContain("/agent/articles?");
     expect(agentCalls[0].body).toEqual({
       userId: "user_1",
       readStatus: "unread",
       limit: 10,
     });
-    expect(agentCalls[0].headers.Authorization).toBe(
-      `Convex ${TEST_ENV.CONVEX_DEPLOY_KEY}`
+    expect(agentCalls[0].headers["x-inkwell-key"]).toBe(
+      TEST_ENV.WORKER_SHARED_SECRET
     );
 
     expect(response.result?.isError).toBeFalsy();
@@ -287,7 +287,7 @@ describe("get_article", () => {
 
     const response = await callTool("get_article", { articleId: "art1" });
 
-    expect(agentCalls[0].functionName).toBe("articles:getForAgent");
+    expect(agentCalls[0].url).toContain("/agent/article?");
     expect(agentCalls[0].body).toEqual({
       userId: "user_1",
       id: "art1",

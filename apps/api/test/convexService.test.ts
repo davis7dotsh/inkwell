@@ -1,16 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { createConvexService } from "../src/convexService";
-import {
-  TEST_ENV,
-  convexResponse,
-  fetchQueue,
-  jsonResponse,
-} from "./helpers";
+import { TEST_ENV, fetchQueue, jsonResponse } from "./helpers";
 
 describe("convexService", () => {
-  it("calls an internal mutation with deployment-key auth", async () => {
-    const { impl, calls } = fetchQueue([convexResponse("art42")]);
+  it("posts createPending with shared-secret auth", async () => {
+    const { impl, calls } = fetchQueue([
+      jsonResponse({ articleId: "art42" }),
+    ]);
     const service = createConvexService(impl, TEST_ENV);
     const args = {
       userId: "user_1",
@@ -24,20 +21,20 @@ describe("convexService", () => {
 
     expect(result).toEqual({ articleId: "art42" });
     expect(calls).toHaveLength(1);
-    expect(calls[0].url).toBe(`${TEST_ENV.CONVEX_URL}/api/mutation`);
-    expect(calls[0].headers.Authorization).toBe(
-      `Convex ${TEST_ENV.CONVEX_DEPLOY_KEY}`
+    expect(calls[0].url).toBe(
+      `${TEST_ENV.CONVEX_SITE_URL}/ingest/create-pending`
     );
-    expect(calls[0].body).toMatchObject({
-      path: "articles:createPending",
-      args: [args],
-    });
+    expect(calls[0].headers["x-inkwell-key"]).toBe(
+      TEST_ENV.WORKER_SHARED_SECRET
+    );
+    expect(calls[0].headers["content-type"]).toBe("application/json");
+    expect(calls[0].body).toEqual(args);
   });
 
-  it("uses the native mutation endpoint for complete and fail", async () => {
+  it("uses the ingest routes for complete and fail", async () => {
     const { impl, calls } = fetchQueue([
-      convexResponse(null),
-      convexResponse(null),
+      jsonResponse({ ok: true }),
+      jsonResponse({ ok: true }),
     ]);
     const service = createConvexService(impl, TEST_ENV);
 
@@ -53,20 +50,18 @@ describe("convexService", () => {
       error: "boom",
     });
 
-    expect(calls[0].body).toMatchObject({ path: "articles:complete" });
-    expect(calls[1].body).toMatchObject({
-      path: "articles:fail",
-      args: [
-        {
-          articleId: "art1",
-          expectedUserId: "user_test",
-          error: "boom",
-        },
-      ],
+    expect(calls[0].url).toBe(
+      `${TEST_ENV.CONVEX_SITE_URL}/ingest/complete`
+    );
+    expect(calls[1].url).toBe(`${TEST_ENV.CONVEX_SITE_URL}/ingest/fail`);
+    expect(calls[1].body).toEqual({
+      articleId: "art1",
+      expectedUserId: "user_test",
+      error: "boom",
     });
   });
 
-  it("calls internal queries directly and preserves typed results", async () => {
+  it("uses the agent read route and preserves typed results", async () => {
     const articles = [
       {
         id: "art1",
@@ -78,20 +73,34 @@ describe("convexService", () => {
         readStatus: "unread" as const,
       },
     ];
-    const { impl, calls } = fetchQueue([convexResponse(articles)]);
+    const { impl, calls } = fetchQueue([
+      jsonResponse({ articles }),
+    ]);
     const service = createConvexService(impl, TEST_ENV);
 
     await expect(
       service.listArticles({ userId: "user_1", limit: 10 })
     ).resolves.toEqual(articles);
-    expect(calls[0].url).toBe(`${TEST_ENV.CONVEX_URL}/api/query`);
-    expect(calls[0].body).toMatchObject({
-      path: "articles:listForAgent",
-      args: [{ userId: "user_1", limit: 10 }],
-    });
+    expect(calls[0].url).toBe(
+      `${TEST_ENV.CONVEX_SITE_URL}/agent/articles?userId=user_1&limit=10`
+    );
+    expect(calls[0].headers["x-inkwell-key"]).toBe(
+      TEST_ENV.WORKER_SHARED_SECRET
+    );
   });
 
-  it("surfaces native Convex HTTP failures", async () => {
+  it("returns null for missing articles", async () => {
+    const { impl } = fetchQueue([
+      new Response("not found", { status: 404 }),
+    ]);
+    const service = createConvexService(impl, TEST_ENV);
+
+    await expect(
+      service.getArticle({ userId: "user_1", id: "missing" })
+    ).resolves.toBeNull();
+  });
+
+  it("surfaces Convex HTTP-action failures", async () => {
     const { impl } = fetchQueue([
       jsonResponse({ error: "forbidden" }, 403),
     ]);
