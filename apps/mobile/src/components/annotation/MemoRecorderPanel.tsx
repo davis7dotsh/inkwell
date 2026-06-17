@@ -183,7 +183,11 @@ export function MemoRecorderPanel({ onComplete, onCancel }: Props) {
                 operation: "restore playback audio mode",
                 message: unknownErrorMessage(error),
               }),
-          });
+          }).pipe(
+            Effect.catch((error) =>
+              Effect.logWarning("Could not restore playback audio mode", error)
+            )
+          );
           const uri = recorder.uri;
           return commit && uri && durationMs > 300
             ? { uri, durationMs }
