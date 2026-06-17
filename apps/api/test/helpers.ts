@@ -90,10 +90,20 @@ export type IngestLog = {
 /** Canned values for the MCP's Convex HTTP-action reads. */
 export type AgentReads = Partial<
   Record<
-    "articles" | "article" | "annotations",
+    "articles" | "article" | "annotations" | "tags",
     (args: Record<string, unknown>) => unknown
   >
 >;
+
+/** Recorded POST calls to the agent write routes (tags, pin), by route. */
+export type AgentWriteLog = {
+  "tags/create": RecordedCall[];
+  "tags/rename": RecordedCall[];
+  "tags/remove": RecordedCall[];
+  "article-tags/add": RecordedCall[];
+  "article-tags/remove": RecordedCall[];
+  "article/pin": RecordedCall[];
+};
 
 /**
  * URL-dispatching stub: Firecrawl scrape/parse calls get `scrape()`
@@ -106,9 +116,18 @@ export function fakeNetwork(
   impl: typeof fetch;
   ingest: IngestLog;
   agentCalls: RecordedCall[];
+  agentWrites: AgentWriteLog;
 } {
   const ingest: IngestLog = { "create-pending": [], complete: [], fail: [] };
   const agentCalls: RecordedCall[] = [];
+  const agentWrites: AgentWriteLog = {
+    "tags/create": [],
+    "tags/rename": [],
+    "tags/remove": [],
+    "article-tags/add": [],
+    "article-tags/remove": [],
+    "article/pin": [],
+  };
   const impl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url === FIRECRAWL_ENDPOINT || url === FIRECRAWL_PARSE_ENDPOINT) {
@@ -127,8 +146,27 @@ export function fakeNetwork(
         op === "create-pending" ? { articleId: "art1" } : { ok: true }
       );
     }
+    // Agent write routes (tag mutations + pin): record and answer canned. The
+    // create route echoes a tag derived from the posted body so callers can
+    // assert on the returned shape.
+    const writeMatch =
+      /\/agent\/(tags\/create|tags\/rename|tags\/remove|article-tags\/add|article-tags\/remove|article\/pin)$/.exec(
+        url
+      );
+    if (writeMatch) {
+      const route = writeMatch[1] as keyof AgentWriteLog;
+      const body = parseBody(init);
+      agentWrites[route].push({ url, headers: headersOf(init), body });
+      if (route === "tags/create") {
+        const b = (body ?? {}) as { name?: string; color?: string };
+        return jsonResponse({
+          tag: { id: "tag1", name: b.name, color: b.color },
+        });
+      }
+      return jsonResponse({ ok: true });
+    }
     const agentMatch =
-      /\/agent\/(articles|article|annotations)(?:\?|$)/.exec(url);
+      /\/agent\/(articles|article|annotations|tags)(?:\?|$)/.exec(url);
     if (agentMatch) {
       const route = agentMatch[1] as keyof AgentReads;
       const params = Object.fromEntries(new URL(url).searchParams.entries());
@@ -145,9 +183,10 @@ export function fakeNetwork(
       if (value === null) return new Response("not found", { status: 404 });
       if (route === "articles") return jsonResponse({ articles: value });
       if (route === "article") return jsonResponse({ article: value });
+      if (route === "tags") return jsonResponse({ tags: value });
       return jsonResponse(value);
     }
     throw new Error(`unexpected fetch in test: ${url}`);
   }) as typeof fetch;
-  return { impl, ingest, agentCalls };
+  return { impl, ingest, agentCalls, agentWrites };
 }

@@ -71,6 +71,8 @@ describe("convexService", () => {
         title: "Example",
         savedAt: 1,
         readStatus: "unread" as const,
+        pinned: false,
+        tags: ["tag1"],
       },
     ];
     const { impl, calls } = fetchQueue([
@@ -87,6 +89,108 @@ describe("convexService", () => {
     expect(calls[0].headers["x-inkwell-key"]).toBe(
       TEST_ENV.WORKER_SHARED_SECRET
     );
+  });
+
+  it("joins tagIds into a comma-separated filter param", async () => {
+    const { impl, calls } = fetchQueue([jsonResponse({ articles: [] })]);
+    const service = createConvexService(impl, TEST_ENV);
+
+    await service.listArticles({
+      userId: "user_1",
+      tagIds: ["tag1", "tag2"],
+    });
+
+    const url = new URL(calls[0].url);
+    expect(url.pathname).toBe("/agent/articles");
+    expect(url.searchParams.get("userId")).toBe("user_1");
+    expect(url.searchParams.get("tagIds")).toBe("tag1,tag2");
+  });
+
+  it("omits the tagIds param when no tags are given", async () => {
+    const { impl, calls } = fetchQueue([jsonResponse({ articles: [] })]);
+    const service = createConvexService(impl, TEST_ENV);
+
+    await service.listArticles({ userId: "user_1", tagIds: [] });
+
+    expect(new URL(calls[0].url).searchParams.has("tagIds")).toBe(false);
+  });
+
+  it("reads tags from the agent route", async () => {
+    const tags = [
+      { id: "tag1", name: "AI", color: "#f00", createdAt: 1 },
+      { id: "tag2", name: "Rust", createdAt: 2 },
+    ];
+    const { impl, calls } = fetchQueue([jsonResponse({ tags })]);
+    const service = createConvexService(impl, TEST_ENV);
+
+    await expect(service.listTags({ userId: "user_1" })).resolves.toEqual(tags);
+    expect(calls[0].url).toBe(
+      `${TEST_ENV.CONVEX_SITE_URL}/agent/tags?userId=user_1`
+    );
+    expect(calls[0].headers["x-inkwell-key"]).toBe(
+      TEST_ENV.WORKER_SHARED_SECRET
+    );
+  });
+
+  it("creates a tag and returns the echoed row", async () => {
+    const { impl, calls } = fetchQueue([
+      jsonResponse({ tag: { id: "tag1", name: "AI", color: "#f00" } }),
+    ]);
+    const service = createConvexService(impl, TEST_ENV);
+
+    await expect(
+      service.createTag({ userId: "user_1", name: "AI", color: "#f00" })
+    ).resolves.toEqual({ id: "tag1", name: "AI", color: "#f00" });
+    expect(calls[0].url).toBe(
+      `${TEST_ENV.CONVEX_SITE_URL}/agent/tags/create`
+    );
+    expect(calls[0].body).toEqual({
+      userId: "user_1",
+      name: "AI",
+      color: "#f00",
+    });
+  });
+
+  it("posts tag and article mutations to their write routes", async () => {
+    const { impl, calls } = fetchQueue([
+      jsonResponse({ ok: true }),
+      jsonResponse({ ok: true }),
+      jsonResponse({ ok: true }),
+      jsonResponse({ ok: true }),
+      jsonResponse({ ok: true }),
+    ]);
+    const service = createConvexService(impl, TEST_ENV);
+
+    await service.renameTag({ userId: "user_1", tagId: "tag1", name: "ML" });
+    await service.removeTag({ userId: "user_1", tagId: "tag1" });
+    await service.addTagToArticle({
+      userId: "user_1",
+      articleId: "art1",
+      tagId: "tag1",
+    });
+    await service.removeTagFromArticle({
+      userId: "user_1",
+      articleId: "art1",
+      tagId: "tag1",
+    });
+    await service.setArticlePinned({
+      userId: "user_1",
+      id: "art1",
+      pinned: true,
+    });
+
+    expect(calls.map((c) => c.url)).toEqual([
+      `${TEST_ENV.CONVEX_SITE_URL}/agent/tags/rename`,
+      `${TEST_ENV.CONVEX_SITE_URL}/agent/tags/remove`,
+      `${TEST_ENV.CONVEX_SITE_URL}/agent/article-tags/add`,
+      `${TEST_ENV.CONVEX_SITE_URL}/agent/article-tags/remove`,
+      `${TEST_ENV.CONVEX_SITE_URL}/agent/article/pin`,
+    ]);
+    expect(calls[4].body).toEqual({
+      userId: "user_1",
+      id: "art1",
+      pinned: true,
+    });
   });
 
   it("returns null for missing articles", async () => {

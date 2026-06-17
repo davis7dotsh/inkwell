@@ -257,6 +257,330 @@ button {
   color: var(--ink-faint);
 }
 
+/* ---- unread dot + pin indicator (card title prefixes) ---- */
+
+.unread-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.pin-indicator {
+  display: inline-flex;
+  margin-right: 6px;
+  vertical-align: middle;
+  color: var(--accent);
+}
+
+.pin-indicator svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.card-action-active {
+  color: var(--accent);
+}
+
+/* ---- tags ---- */
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.tag-chip-static {
+  color: var(--accent);
+  background: var(--mist);
+  border-color: var(--link-underline);
+}
+
+.tag-chip-toggle,
+.tag-chip-filter {
+  cursor: pointer;
+  color: var(--ink-secondary);
+  background: var(--surface);
+}
+
+.tag-chip-toggle:hover,
+.tag-chip-filter:hover {
+  border-color: var(--link-underline);
+}
+
+/* tag filter bar — also holds Manage tags + the sort toggle on the right */
+
+.tag-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 20px;
+}
+
+.tag-bar-clear,
+.tag-bar-manage {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-secondary);
+  background: none;
+  border: none;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+.tag-bar-clear:hover,
+.tag-bar-manage:hover {
+  color: var(--accent);
+}
+
+.tag-bar-manage {
+  margin-left: auto;
+}
+
+/* tags on a card */
+
+.card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* inline per-article tag editor */
+
+.tag-editor {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.tag-editor-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag-editor-empty {
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+
+.tag-editor-create {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.tag-editor-input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 0 12px;
+  outline: none;
+}
+
+.tag-editor-input:focus {
+  border-color: var(--link);
+  box-shadow: 0 0 0 3px var(--mist);
+}
+
+/* tag manager modal */
+
+.tag-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.tag-modal-scrim {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: rgba(9, 24, 40, 0.38);
+  cursor: default;
+}
+
+.tag-modal-panel {
+  position: relative;
+  width: min(520px, 100%);
+  max-height: 80vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  padding: 20px 22px;
+  box-shadow: 0 18px 48px var(--note-shadow);
+}
+
+.tag-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.tag-modal-head h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 22px;
+  color: var(--ink);
+}
+
+.tag-modal-close {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.tag-modal-create {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.tag-modal-create .pill-button {
+  height: 34px;
+  font-size: 14px;
+  padding: 0 16px;
+  border-radius: 10px;
+}
+
+.tag-modal-empty {
+  color: var(--ink-faint);
+  font-size: 14px;
+  margin: 4px 0;
+}
+
+.tag-modal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.tag-modal-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.tag-modal-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.tag-modal-name {
+  flex: 0 0 auto;
+}
+
+.tag-modal-row-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.tag-modal-swatches {
+  display: flex;
+  gap: 5px;
+}
+
+.tag-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  padding: 0;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px var(--hairline);
+}
+
+.tag-swatch-on {
+  border-color: var(--surface);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* reader tag row */
+
+.reader-tags {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+
+.reader-tags-toggle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+  border: 1px dashed var(--link-underline);
+  border-radius: 999px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.reader-tags-toggle:hover,
+.reader-tags-toggle-active {
+  background: var(--mist);
+  border-style: solid;
+}
+
+.reader-tags-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 12;
+  width: min(320px, 90vw);
+  background: var(--surface);
+  border: 1px solid var(--wash);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 6px 18px var(--note-shadow);
+}
+
+.reader-tags-popover .tag-editor-create {
+  margin-top: 10px;
+}
+
 /* ---- auth / config screens ---- */
 
 .auth-screen {
@@ -408,45 +732,6 @@ button {
 }
 
 /* filter + sort row */
-
-.library-controls {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 22px;
-}
-
-.filter-chips {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.filter-chip {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink-secondary);
-  background: var(--surface);
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  padding: 6px 14px;
-  cursor: pointer;
-}
-
-.filter-chip:hover {
-  border-color: var(--link-underline);
-}
-
-.filter-chip-active {
-  color: var(--on-accent);
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.filter-chip-active:hover {
-  border-color: var(--accent);
-}
 
 .sort-toggle {
   flex-shrink: 0;

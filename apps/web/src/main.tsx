@@ -34,8 +34,8 @@ function ConfigNeeded() {
       <div className="config-card">
         <h1>Inkwell needs configuring</h1>
         <p>
-          Copy <code>.env.example</code> to <code>.env.local</code> in{" "}
-          <code>apps/web</code> and fill in:
+          Copy the root <code>.env.example</code> to{" "}
+          <code>.env.local</code> and fill in:
         </p>
         <ul>
           {missing.map((name) => (
@@ -44,7 +44,7 @@ function ConfigNeeded() {
             </li>
           ))}
         </ul>
-        <p>See PLAN.md §9 for where each value comes from.</p>
+        <p>Restart the web dev server after changing environment variables.</p>
       </div>
     </div>
   );

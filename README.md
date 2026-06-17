@@ -30,14 +30,16 @@ you across devices.
 ```bash
 pnpm install
 pnpm --filter @inkwell/backend dev   # convex dev (functions + codegen)
-pnpm api                              # wrangler dev (needs apps/api/.dev.vars)
+pnpm api                              # wrangler dev, dev bindings + root env
 pnpm web                              # vite dev
 pnpm mobile                           # expo start (Metro for dev-client builds)
 pnpm test && pnpm typecheck           # all gates
 ```
 
-Secrets: copy `.env.example` → `.env.local` (root) and per-app
-`.env.example`s; never committed.
+Secrets: copy the root `.env.example` to `.env.local`; API and web development
+load it directly. Mobile public configuration is mode-specific in
+`apps/mobile/.env.development` and `.env.production`. Convex server secrets
+live in the selected deployment (`convex env set`), not in a local file.
 
 ## Deploy
 

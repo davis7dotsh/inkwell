@@ -112,6 +112,11 @@ export function buildInkwellMcp(
         "Use list_articles to find articles and their ids; get_article and",
         "get_notes take those ids. save_article accepts any http(s) URL,",
         "including direct links to PDF files.",
+        "Articles carry tags and a pinned flag. Use list_tags to see the",
+        "owner's tags; create_tag, rename_tag, and delete_tag manage them;",
+        "add_tag_to_article and remove_tag_from_article attach or detach a",
+        "tag; list_articles can filter by tagIds. set_article_pinned pins or",
+        "unpins an article to the top of the library.",
         "To save a local PDF file (no public URL), POST it as multipart",
         "form data (field name `file`) to /articles/upload on this same",
         "origin with the same Authorization header — that endpoint is plain",
@@ -186,9 +191,11 @@ export function buildInkwellMcp(
       title: "List articles",
       description:
         "List saved articles, newest first. Filter by readStatus " +
-        "(unread/in_progress/read) and/or processing status " +
-        "(pending/ready/failed). Returns metadata only — use get_article " +
-        "for content.",
+        "(unread/in_progress/read), processing status " +
+        "(pending/ready/failed), and/or tagIds (article matches if it has " +
+        "ANY of the given tag ids — get ids from list_tags). Each article " +
+        "reports its tag ids and whether it is pinned. Returns metadata " +
+        "only — use get_article for content.",
       inputSchema: {
         readStatus: z
           .enum(["unread", "in_progress", "read"])
@@ -198,6 +205,12 @@ export function buildInkwellMcp(
           .enum(["pending", "ready", "failed"])
           .optional()
           .describe("Only articles in this processing state"),
+        tagIds: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Only articles tagged with ANY of these tag ids (from list_tags)"
+          ),
         limit: z.number().int().min(1).max(200).optional(),
       },
       outputSchema: {
@@ -214,16 +227,19 @@ export function buildInkwellMcp(
             siteName: z.string().optional(),
             excerpt: z.string().optional(),
             savedAt: z.string(),
+            pinned: z.boolean(),
+            tags: z.array(z.string()),
           })
         ),
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ readStatus, status, limit }) => {
+    async ({ readStatus, status, tagIds, limit }) => {
       const rows = await convex.listArticles({
         userId,
         readStatus,
         status,
+        tagIds,
         limit,
       });
       const articles = rows.map((row) => ({
@@ -238,6 +254,8 @@ export function buildInkwellMcp(
         siteName: row.siteName,
         excerpt: row.excerpt,
         savedAt: new Date(row.savedAt).toISOString(),
+        pinned: row.pinned,
+        tags: row.tags,
       }));
       return {
         content: [{ type: "text", text: JSON.stringify({ articles }) }],
@@ -314,6 +332,10 @@ export function buildInkwellMcp(
         `Source: ${article.url}`,
         `Saved: ${new Date(article.savedAt).toISOString()}`,
         `Read status: ${article.readStatus}`,
+        `Pinned: ${article.pinned ? "yes" : "no"}`,
+        article.tags.length > 0
+          ? `Tags: ${article.tags.join(", ")}`
+          : undefined,
       ]
         .filter(Boolean)
         .join("\n");
@@ -521,6 +543,206 @@ export function buildInkwellMcp(
           },
         ],
         structuredContent,
+      };
+    }
+  );
+
+  server.registerTool(
+    "list_tags",
+    {
+      title: "List tags",
+      description:
+        "List the owner's tags. Use the returned ids with " +
+        "add_tag_to_article, remove_tag_from_article, and the tagIds filter " +
+        "on list_articles.",
+      inputSchema: {},
+      outputSchema: {
+        tags: z.array(
+          z.object({
+            id: z.string(),
+            name: z.string(),
+            color: z.string().optional(),
+            createdAt: z.string(),
+          })
+        ),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async () => {
+      const rows = await convex.listTags({ userId });
+      const tags = rows.map((tag) => ({
+        id: tag.id,
+        name: tag.name,
+        color: tag.color,
+        createdAt: new Date(tag.createdAt).toISOString(),
+      }));
+      return {
+        content: [{ type: "text", text: JSON.stringify({ tags }) }],
+        structuredContent: { tags },
+      };
+    }
+  );
+
+  server.registerTool(
+    "create_tag",
+    {
+      title: "Create tag",
+      description:
+        "Create a tag by name (optionally with a color). Idempotent: if a " +
+        "tag with that name already exists (case-insensitive), the existing " +
+        "tag is returned instead of creating a duplicate.",
+      inputSchema: {
+        name: z.string().min(1).describe("Tag name"),
+        color: z
+          .string()
+          .optional()
+          .describe("Optional color (e.g. a hex string) for the tag"),
+      },
+      outputSchema: {
+        id: z.string(),
+        name: z.string(),
+        color: z.string().optional(),
+      },
+      annotations: { destructiveHint: false },
+    },
+    async ({ name, color }) => {
+      const tag = await convex.createTag({ userId, name, color });
+      const structuredContent = { id: tag.id, name: tag.name, color: tag.color };
+      return {
+        content: [
+          { type: "text", text: `Tag "${tag.name}" (id: ${tag.id}).` },
+        ],
+        structuredContent,
+      };
+    }
+  );
+
+  server.registerTool(
+    "rename_tag",
+    {
+      title: "Rename tag",
+      description: "Rename an existing tag. Use the id from list_tags.",
+      inputSchema: {
+        tagId: z.string().describe("Tag id from list_tags"),
+        name: z.string().min(1).describe("New tag name"),
+      },
+      outputSchema: { ok: z.boolean() },
+      annotations: { destructiveHint: false },
+    },
+    async ({ tagId, name }) => {
+      await convex.renameTag({ userId, tagId, name });
+      return {
+        content: [{ type: "text", text: `Renamed tag ${tagId} to "${name}".` }],
+        structuredContent: { ok: true },
+      };
+    }
+  );
+
+  server.registerTool(
+    "delete_tag",
+    {
+      title: "Delete tag",
+      description:
+        "Delete a tag. This also detaches it from every article it is on. " +
+        "Use the id from list_tags.",
+      inputSchema: {
+        tagId: z.string().describe("Tag id from list_tags"),
+      },
+      outputSchema: { ok: z.boolean() },
+      annotations: { destructiveHint: true },
+    },
+    async ({ tagId }) => {
+      await convex.removeTag({ userId, tagId });
+      return {
+        content: [{ type: "text", text: `Deleted tag ${tagId}.` }],
+        structuredContent: { ok: true },
+      };
+    }
+  );
+
+  server.registerTool(
+    "add_tag_to_article",
+    {
+      title: "Add tag to article",
+      description:
+        "Attach a tag to an article. Idempotent: re-adding a tag the " +
+        "article already has is a no-op. Use ids from list_articles and " +
+        "list_tags.",
+      inputSchema: {
+        articleId: z.string().describe("Article id from list_articles"),
+        tagId: z.string().describe("Tag id from list_tags"),
+      },
+      outputSchema: { ok: z.boolean() },
+      annotations: { destructiveHint: false },
+    },
+    async ({ articleId, tagId }) => {
+      await convex.addTagToArticle({ userId, articleId, tagId });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Added tag ${tagId} to article ${articleId}.`,
+          },
+        ],
+        structuredContent: { ok: true },
+      };
+    }
+  );
+
+  server.registerTool(
+    "remove_tag_from_article",
+    {
+      title: "Remove tag from article",
+      description:
+        "Detach a tag from an article. Use ids from list_articles and " +
+        "list_tags.",
+      inputSchema: {
+        articleId: z.string().describe("Article id from list_articles"),
+        tagId: z.string().describe("Tag id from list_tags"),
+      },
+      outputSchema: { ok: z.boolean() },
+      annotations: { destructiveHint: true },
+    },
+    async ({ articleId, tagId }) => {
+      await convex.removeTagFromArticle({ userId, articleId, tagId });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Removed tag ${tagId} from article ${articleId}.`,
+          },
+        ],
+        structuredContent: { ok: true },
+      };
+    }
+  );
+
+  server.registerTool(
+    "set_article_pinned",
+    {
+      title: "Pin or unpin article",
+      description:
+        "Pin or unpin an article. Pinned articles sort to the top of the " +
+        "library. Use the id from list_articles.",
+      inputSchema: {
+        articleId: z.string().describe("Article id from list_articles"),
+        pinned: z
+          .boolean()
+          .describe("true to pin to the top, false to unpin"),
+      },
+      outputSchema: { ok: z.boolean() },
+      annotations: { destructiveHint: false },
+    },
+    async ({ articleId, pinned }) => {
+      await convex.setArticlePinned({ userId, id: articleId, pinned });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `${pinned ? "Pinned" : "Unpinned"} article ${articleId}.`,
+          },
+        ],
+        structuredContent: { ok: true },
       };
     }
   );

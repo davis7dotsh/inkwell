@@ -27,7 +27,30 @@ export default defineSchema({
         v.literal("read")
       )
     ),
+    // Pin to the top of the library. Optional: legacy rows are treated as
+    // not pinned.
+    pinned: v.optional(v.boolean()),
   }).index("by_user", ["userId"]),
+
+  // User-owned tags for organizing the library. One row per (user, tag name).
+  tags: defineTable({
+    userId: v.string(), // Clerk user id (identity.subject)
+    name: v.string(),
+    color: v.optional(v.string()), // hex like "#3b82f6"; absent => client default
+    createdAt: v.number(),
+  }).index("by_user", ["userId"]),
+
+  // Join table: which tags are attached to which article. Carries userId so the
+  // library list can fetch every link for a user in one indexed query.
+  articleTags: defineTable({
+    userId: v.string(),
+    articleId: v.id("articles"),
+    tagId: v.id("tags"),
+  })
+    .index("by_user", ["userId"])
+    .index("by_article", ["articleId"])
+    .index("by_tag", ["tagId"])
+    .index("by_article_tag", ["articleId", "tagId"]),
 
   annotations: defineTable({
     userId: v.string(),

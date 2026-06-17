@@ -13,6 +13,7 @@ import {
   Alert,
   FlatList,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -25,35 +26,39 @@ import ReanimatedSwipeable, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { RenameModal } from "../components/RenameModal";
+import { TagManagerModal } from "../components/TagManagerModal";
 import {
   GlassIconButton,
   GlassSurface,
   glassAvailable,
 } from "../components/glass";
 import { apiClient, uploadPdf } from "../lib/api";
-import { makeThemedStyles, serif, useTheme } from "../lib/theme";
+import {
+  makeThemedStyles,
+  serif,
+  tagChipColors,
+  useTheme,
+} from "../lib/theme";
 import { showError } from "../lib/toast";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 type ArticleListItem = FunctionReturnType<typeof api.articles.list>[number];
+type Tag = FunctionReturnType<typeof api.tags.list>[number];
 
 type ReadStatus = "unread" | "in_progress" | "read";
-type StatusFilter = "all" | ReadStatus;
 
+// Read status is no longer a filter — it's surfaced only as the "unread" dot.
 /** Rows written before readStatus existed count as unread. */
 const readStatusOf = (item: ArticleListItem): ReadStatus =>
   item.readStatus ?? "unread";
 
+/** An opened article (in progress or read) has lost its "new" blue dot. */
+const isUnopened = (item: ArticleListItem): boolean =>
+  readStatusOf(item) === "unread";
+
 /** Uploaded PDFs carry a synthetic upload:// url — nothing to retry/open. */
 const isUpload = (item: ArticleListItem) => item.url.startsWith("upload://");
-
-const FILTERS: { value: StatusFilter; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "unread", label: "Unread" },
-  { value: "in_progress", label: "In progress" },
-  { value: "read", label: "Read" },
-];
 
 function normalizeUrl(input: string): string | null {
   const trimmed = input.trim();
@@ -66,47 +71,38 @@ function normalizeUrl(input: string): string | null {
   return host.includes(".") ? withScheme : null;
 }
 
-function ReadStatusBadge({ status }: { status: ReadStatus }) {
-  const { scheme, c } = useTheme();
-  const styles = themed[scheme];
-  if (status === "read") {
-    return (
-      <View style={[styles.readBadge, styles.readBadgeDone]}>
-        <MaterialCommunityIcons name="check" size={12} color={c.inkFaint} />
-        <Text style={styles.readBadgeDoneText}>Read</Text>
-      </View>
-    );
-  }
-  return (
-    <View style={[styles.readBadge, styles.readBadgeActive]}>
-      <Text style={styles.readBadgeActiveText}>
-        {status === "unread" ? "Unread" : "In progress"}
-      </Text>
-    </View>
-  );
-}
-
 function ArticleCard({
   item,
+  tagsById,
   onDelete,
   onRename,
   onRetry,
+  onTogglePin,
+  onEditTags,
   onSwipeOpen,
 }: {
   item: ArticleListItem;
+  tagsById: Map<string, Tag>;
   onDelete: (id: Id<"articles">) => void;
   onRename: (item: ArticleListItem) => void;
   onRetry: (item: ArticleListItem) => void;
+  onTogglePin: (item: ArticleListItem) => void;
+  onEditTags: (item: ArticleListItem) => void;
   /** Called as this row starts to open, so the screen can close any other. */
   onSwipeOpen: (row: SwipeableMethods | null) => void;
 }) {
-  const { scheme, c } = useTheme();
+  const { scheme, c, isDark } = useTheme();
   const styles = themed[scheme];
   const swipeRef = useRef<SwipeableMethods>(null);
   const date = new Date(item.savedAt).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
   });
+  // Resolve the article's tag ids to live tag docs (some may have been
+  // deleted out from under the join — skip those).
+  const cardTags = item.tags
+    .map((id) => tagsById.get(String(id)))
+    .filter((t): t is Tag => t !== undefined);
   const confirmDelete = (onCancel?: () => void) =>
     Alert.alert("Delete article?", item.title, [
       { text: "Cancel", style: "cancel", onPress: onCancel },
@@ -118,6 +114,11 @@ function ArticleCard({
     ]);
   const showActions = () =>
     Alert.alert(item.title, undefined, [
+      {
+        text: item.pinned ? "Unpin" : "Pin to top",
+        onPress: () => onTogglePin(item),
+      },
+      { text: "Tags…", onPress: () => onEditTags(item) },
       { text: "Rename", onPress: () => onRename(item) },
       {
         text: "Delete",
@@ -135,6 +136,30 @@ function ArticleCard({
       onSwipeableOpenStartDrag={() => onSwipeOpen(swipeRef.current)}
       renderRightActions={(_progress, _translation, methods) => (
         <View style={styles.rowActionsWrap}>
+          <Pressable
+            onPress={() => {
+              methods.close();
+              onTogglePin(item);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={
+              item.pinned ? `Unpin ${item.title}` : `Pin ${item.title}`
+            }
+            style={({ pressed }) => [
+              styles.rowAction,
+              styles.pinAction,
+              pressed && { opacity: 0.85 },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name={item.pinned ? "pin-off-outline" : "pin-outline"}
+              size={22}
+              color={c.accent}
+            />
+            <Text style={[styles.rowActionText, { color: c.accent }]}>
+              {item.pinned ? "Unpin" : "Pin"}
+            </Text>
+          </Pressable>
           <Pressable
             onPress={() => {
               methods.close();
@@ -186,17 +211,57 @@ function ArticleCard({
       >
         <View style={styles.cardHeadingRow}>
           <View style={styles.cardHeading}>
-            <Text style={styles.cardTitle} numberOfLines={2}>
-              {item.title}
-            </Text>
+            <View style={styles.titleLine}>
+              {item.status === "ready" && isUnopened(item) ? (
+                <View
+                  style={styles.unreadDot}
+                  accessibilityLabel="Unread"
+                />
+              ) : null}
+              {item.pinned ? (
+                <MaterialCommunityIcons
+                  name="pin"
+                  size={15}
+                  color={c.accent}
+                  style={styles.pinIcon}
+                  accessibilityLabel="Pinned"
+                />
+              ) : null}
+              <Text style={styles.cardTitle} numberOfLines={2}>
+                {item.title}
+              </Text>
+            </View>
             <View style={styles.metaRow}>
               <Text style={[styles.cardMeta, { flexShrink: 1 }]} numberOfLines={1}>
                 {[item.siteName, date].filter(Boolean).join("  ·  ")}
               </Text>
-              {item.status === "ready" ? (
-                <ReadStatusBadge status={readStatusOf(item)} />
-              ) : null}
             </View>
+            {cardTags.length > 0 ? (
+              <View style={styles.cardTagRow}>
+                {cardTags.map((tag) => {
+                  const chip = tagChipColors(tag.color, isDark);
+                  return (
+                    <View
+                      key={tag._id}
+                      style={[
+                        styles.cardTagChip,
+                        {
+                          backgroundColor: chip.fill,
+                          borderColor: chip.border,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[styles.cardTagText, { color: chip.text }]}
+                        numberOfLines={1}
+                      >
+                        {tag.name}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : null}
           </View>
           <Pressable
             onPress={showActions}
@@ -257,19 +322,58 @@ export default function LibraryScreen() {
   const styles = themed[scheme];
   const { getToken, signOut } = useAuth();
   const articles = useQuery(api.articles.list);
+  const tags = useQuery(api.tags.list);
   const removeArticle = useMutation(api.articles.remove);
   const renameArticle = useMutation(api.articles.rename);
+  const setPinned = useMutation(api.articles.setPinned);
+  const createTag = useMutation(api.tags.create);
+  const renameTag = useMutation(api.tags.rename);
+  const setTagColor = useMutation(api.tags.setColor);
+  const removeTag = useMutation(api.tags.remove);
+  const addTagToArticle = useMutation(api.tags.addToArticle);
+  const removeTagFromArticle = useMutation(api.tags.removeFromArticle);
   const [url, setUrl] = useState("");
   const [query, setQuery] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [filter, setFilter] = useState<StatusFilter>("all");
+  const [selectedTagIds, setSelectedTagIds] = useState<Id<"tags">[]>([]);
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
   const [renameTarget, setRenameTarget] = useState<ArticleListItem | null>(
     null
   );
+  // The tag manager is open when this is non-null; the article (or null for
+  // global management) tells it whether to show attach toggles.
+  const [tagManagerOpen, setTagManagerOpen] = useState(false);
+  const [tagArticleTarget, setTagArticleTarget] =
+    useState<ArticleListItem | null>(null);
   const urlInputRef = useRef<TextInput>(null);
   const isCompact = width < 700;
+
+  // id → tag lookup for card chips and attach state. Memoized so cards reuse
+  // one map per query update.
+  const tagsById = useMemo(() => {
+    const map = new Map<string, Tag>();
+    for (const tag of tags ?? []) map.set(String(tag._id), tag);
+    return map;
+  }, [tags]);
+
+  // A selected tag can outlive the selection (deleted on another device, in
+  // the web app, or by an agent). Derive the live subset so a stale id never
+  // leaves an invisible filter pinning the list to empty — no reconciling
+  // effect needed.
+  const activeTagIds = useMemo(
+    () => selectedTagIds.filter((id) => tagsById.has(String(id))),
+    [selectedTagIds, tagsById]
+  );
+
+  // Live view of the article the tag manager targets — keeps its attach
+  // checkmarks in sync as addToArticle/removeFromArticle land.
+  const liveTagArticle = useMemo(() => {
+    if (!tagArticleTarget) return null;
+    return (
+      articles?.find((a) => a._id === tagArticleTarget._id) ?? tagArticleTarget
+    );
+  }, [articles, tagArticleTarget]);
 
   // Only one swipe row open at a time — opening a new one closes the last.
   const openRowRef = useRef<SwipeableMethods | null>(null);
@@ -378,6 +482,108 @@ export default function LibraryScreen() {
     [renameTarget, renameArticle]
   );
 
+  const onTogglePin = useCallback(
+    (item: ArticleListItem) => {
+      void setPinned({ id: item._id, pinned: !item.pinned }).catch((e) =>
+        showError(e instanceof Error ? e.message : "Couldn't update pin.")
+      );
+    },
+    [setPinned]
+  );
+
+  const onEditTags = useCallback((item: ArticleListItem) => {
+    setTagArticleTarget(item);
+    setTagManagerOpen(true);
+  }, []);
+
+  const onManageTags = useCallback(() => {
+    setTagArticleTarget(null);
+    setTagManagerOpen(true);
+  }, []);
+
+  const onCloseTagManager = useCallback(() => {
+    setTagManagerOpen(false);
+    setTagArticleTarget(null);
+  }, []);
+
+  const onCreateTag = useCallback(
+    (name: string, color?: string) => {
+      void createTag({ name, color }).catch((e) =>
+        showError(e instanceof Error ? e.message : "Couldn't create tag.")
+      );
+    },
+    [createTag]
+  );
+
+  const onRenameTag = useCallback(
+    (id: Id<"tags">, name: string) => {
+      void renameTag({ id, name }).catch((e) =>
+        showError(e instanceof Error ? e.message : "Couldn't rename tag.")
+      );
+    },
+    [renameTag]
+  );
+
+  const onSetTagColor = useCallback(
+    (id: Id<"tags">, color?: string) => {
+      void setTagColor({ id, color }).catch((e) =>
+        showError(e instanceof Error ? e.message : "Couldn't update color.")
+      );
+    },
+    [setTagColor]
+  );
+
+  const onRemoveTag = useCallback(
+    (id: Id<"tags">) => {
+      const tag = tagsById.get(String(id));
+      Alert.alert(
+        "Delete tag?",
+        tag
+          ? `"${tag.name}" will be removed from every article.`
+          : "This tag will be removed from every article.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: () => {
+              void removeTag({ id }).catch((e) =>
+                showError(e instanceof Error ? e.message : "Couldn't delete tag.")
+              );
+              // Drop it from the active filter if it was selected.
+              setSelectedTagIds((ids) => ids.filter((t) => t !== id));
+            },
+          },
+        ]
+      );
+    },
+    [removeTag, tagsById]
+  );
+
+  const onAttachTag = useCallback(
+    (articleId: Id<"articles">, tagId: Id<"tags">) => {
+      void addTagToArticle({ articleId, tagId }).catch((e) =>
+        showError(e instanceof Error ? e.message : "Couldn't add tag.")
+      );
+    },
+    [addTagToArticle]
+  );
+
+  const onDetachTag = useCallback(
+    (articleId: Id<"articles">, tagId: Id<"tags">) => {
+      void removeTagFromArticle({ articleId, tagId }).catch((e) =>
+        showError(e instanceof Error ? e.message : "Couldn't remove tag.")
+      );
+    },
+    [removeTagFromArticle]
+  );
+
+  const toggleTagFilter = useCallback((id: Id<"tags">) => {
+    setSelectedTagIds((ids) =>
+      ids.includes(id) ? ids.filter((t) => t !== id) : [...ids, id]
+    );
+  }, []);
+
   const onRetry = useCallback(
     (item: ArticleListItem) => {
       if (!API_URL) {
@@ -412,23 +618,33 @@ export default function LibraryScreen() {
 
   const visibleArticles = useMemo(() => {
     if (!articles) return [];
-    const statusFiltered =
-      filter === "all"
+    // Tag filter: OR semantics — keep articles carrying at least one of the
+    // selected tags.
+    const tagFiltered =
+      activeTagIds.length === 0
         ? articles
-        : articles.filter((item) => readStatusOf(item) === filter);
+        : articles.filter((item) => {
+            const ids = new Set(item.tags.map(String));
+            return activeTagIds.some((id) => ids.has(String(id)));
+          });
     const normalizedQuery = query.trim().toLocaleLowerCase();
     const filtered = normalizedQuery
-      ? statusFiltered.filter((item) =>
+      ? tagFiltered.filter((item) =>
           [item.title, item.siteName, item.excerpt]
             .filter(Boolean)
             .some((value) =>
               value?.toLocaleLowerCase().includes(normalizedQuery)
             )
         )
-      : statusFiltered;
+      : tagFiltered;
     // articles.list is newest-first; flip a copy for oldest-first.
-    return sortOrder === "newest" ? filtered : [...filtered].reverse();
-  }, [articles, filter, query, sortOrder]);
+    const sorted = sortOrder === "newest" ? filtered : [...filtered].reverse();
+    // Pinned articles float to the top regardless of sort, preserving the
+    // chosen order within each group (stable partition).
+    const pinned = sorted.filter((item) => item.pinned);
+    const rest = sorted.filter((item) => !item.pinned);
+    return pinned.length > 0 ? [...pinned, ...rest] : sorted;
+  }, [articles, activeTagIds, query, sortOrder]);
 
   const toggleAdd = useCallback(() => {
     setAddOpen((open) => {
@@ -593,28 +809,71 @@ export default function LibraryScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.filterChips}>
-          {FILTERS.map(({ value, label }) => {
-            const active = filter === value;
-            return (
+        <View style={styles.tagBarRow}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.tagBar}
+          >
+            {activeTagIds.length > 0 ? (
               <Pressable
-                key={value}
-                onPress={() => setFilter(value)}
+                onPress={() => setSelectedTagIds([])}
                 accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                style={[styles.filterChip, active && styles.filterChipActive]}
+                accessibilityLabel="Clear tag filters"
+                style={[styles.tagFilterChip, styles.tagClearChip]}
               >
-                <Text
+                <MaterialCommunityIcons
+                  name="close"
+                  size={13}
+                  color={c.inkSecondary}
+                />
+                <Text style={styles.tagClearText}>Clear</Text>
+              </Pressable>
+            ) : null}
+            {(tags ?? []).map((tag) => {
+              const active = selectedTagIds.includes(tag._id);
+              const chip = tagChipColors(tag.color, scheme === "dark");
+              return (
+                <Pressable
+                  key={tag._id}
+                  onPress={() => toggleTagFilter(tag._id)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
                   style={[
-                    styles.filterChipText,
-                    active && styles.filterChipTextActive,
+                    styles.tagFilterChip,
+                    {
+                      backgroundColor: active ? chip.text : chip.fill,
+                      borderColor: active ? chip.text : chip.border,
+                    },
                   ]}
                 >
-                  {label}
-                </Text>
-              </Pressable>
-            );
-          })}
+                  <Text
+                    style={[
+                      styles.tagFilterText,
+                      { color: active ? c.onAccent : chip.text },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {tag.name}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+          <Pressable
+            onPress={onManageTags}
+            accessibilityRole="button"
+            accessibilityLabel="Manage tags"
+            hitSlop={6}
+            style={styles.manageTagsButton}
+          >
+            <MaterialCommunityIcons
+              name="tag-multiple-outline"
+              size={16}
+              color={c.inkSecondary}
+            />
+          </Pressable>
         </View>
 
         <FlatList
@@ -624,9 +883,12 @@ export default function LibraryScreen() {
           renderItem={({ item }) => (
             <ArticleCard
               item={item}
+              tagsById={tagsById}
               onDelete={onDelete}
               onRename={onRename}
               onRetry={onRetry}
+              onTogglePin={onTogglePin}
+              onEditTags={onEditTags}
               onSwipeOpen={onSwipeOpen}
             />
           )}
@@ -666,6 +928,20 @@ export default function LibraryScreen() {
         initialTitle={renameTarget?.title ?? ""}
         onSave={onSaveRename}
         onCancel={() => setRenameTarget(null)}
+      />
+
+      <TagManagerModal
+        visible={tagManagerOpen}
+        tags={tags ?? []}
+        articleId={liveTagArticle?._id ?? null}
+        articleTagIds={liveTagArticle?.tags ?? []}
+        onClose={onCloseTagManager}
+        onCreate={onCreateTag}
+        onRename={onRenameTag}
+        onSetColor={onSetTagColor}
+        onRemove={onRemoveTag}
+        onAttach={onAttachTag}
+        onDetach={onDetachTag}
       />
     </View>
   );
@@ -841,33 +1117,53 @@ const themed = makeThemedStyles((c) =>
       fontWeight: "600",
       color: c.ink,
     },
-    filterChips: {
+    tagBarRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      marginTop: 8,
+      marginBottom: 6,
+    },
+    tagBar: {
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
-      flexWrap: "wrap",
-      marginBottom: 6,
+      paddingRight: 4,
     },
-    filterChip: {
-      borderRadius: 16,
+    tagFilterChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      borderRadius: 14,
       borderCurve: "continuous",
       borderWidth: 1,
-      borderColor: c.hairline,
-      backgroundColor: c.surface,
-      paddingHorizontal: 13,
+      paddingHorizontal: 12,
       paddingVertical: 6,
+      maxWidth: 200,
     },
-    filterChipActive: {
-      backgroundColor: c.accent,
-      borderColor: c.accent,
+    tagFilterText: {
+      fontSize: 13,
+      fontWeight: "600",
+      flexShrink: 1,
     },
-    filterChipText: {
+    tagClearChip: {
+      backgroundColor: c.surface,
+      borderColor: c.hairline,
+    },
+    tagClearText: {
       fontSize: 13,
       fontWeight: "600",
       color: c.inkSecondary,
     },
-    filterChipTextActive: {
-      color: c.onAccent,
+    manageTagsButton: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: c.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.hairline,
     },
     sortButton: {
       flexDirection: "row",
@@ -928,6 +1224,11 @@ const themed = makeThemedStyles((c) =>
       justifyContent: "center",
       gap: 4,
     },
+    pinAction: {
+      backgroundColor: c.accentSoft,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.hairline,
+    },
     renameAction: {
       backgroundColor: c.accent,
     },
@@ -942,7 +1243,27 @@ const themed = makeThemedStyles((c) =>
     cardPressed: {
       opacity: 0.62,
     },
+    titleLine: {
+      flexDirection: "row",
+      alignItems: "baseline",
+    },
+    // A small "new / not yet opened" marker, baseline-aligned with the title.
+    unreadDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: c.accent,
+      marginRight: 8,
+      alignSelf: "center",
+      marginTop: 2,
+    },
+    pinIcon: {
+      marginRight: 5,
+      alignSelf: "center",
+      marginTop: 1,
+    },
     cardTitle: {
+      flex: 1,
       fontFamily: serif,
       fontSize: 20,
       lineHeight: 27,
@@ -959,30 +1280,24 @@ const themed = makeThemedStyles((c) =>
       fontSize: 12.5,
       color: c.inkFaint,
     },
-    readBadge: {
+    cardTagRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 3,
-      borderRadius: 999,
-      paddingHorizontal: 8,
-      paddingVertical: 2,
+      flexWrap: "wrap",
+      gap: 6,
+      marginTop: 8,
     },
-    readBadgeActive: {
-      backgroundColor: c.accentSoft,
-    },
-    readBadgeActiveText: {
-      fontSize: 11,
-      fontWeight: "600",
-      color: c.accent,
-    },
-    readBadgeDone: {
+    cardTagChip: {
+      maxWidth: 160,
+      borderRadius: 11,
+      borderCurve: "continuous",
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: c.hairline,
+      paddingHorizontal: 9,
+      paddingVertical: 3,
     },
-    readBadgeDoneText: {
-      fontSize: 11,
+    cardTagText: {
+      fontSize: 11.5,
       fontWeight: "600",
-      color: c.inkFaint,
     },
     cardExcerpt: {
       fontSize: 14,

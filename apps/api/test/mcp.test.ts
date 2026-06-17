@@ -136,24 +136,37 @@ describe("MCP handshake", () => {
     expect(response.result?.instructions).toContain("/articles/upload");
   });
 
-  it("lists the four tools with read-only annotations on reads", async () => {
+  it("lists every tool with read-only annotations on reads", async () => {
     stubNetwork(noScrape);
     const response = await rpc("tools/list", {});
     const tools = response.result?.tools as Array<{
       name: string;
-      annotations?: { readOnlyHint?: boolean };
+      annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean };
     }>;
     expect(tools.map((tool) => tool.name).sort()).toEqual([
+      "add_tag_to_article",
+      "create_tag",
+      "delete_tag",
       "get_article",
       "get_notes",
       "list_articles",
+      "list_tags",
+      "remove_tag_from_article",
+      "rename_tag",
       "save_article",
+      "set_article_pinned",
     ]);
     const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
     expect(byName.list_articles.annotations?.readOnlyHint).toBe(true);
     expect(byName.get_article.annotations?.readOnlyHint).toBe(true);
     expect(byName.get_notes.annotations?.readOnlyHint).toBe(true);
+    expect(byName.list_tags.annotations?.readOnlyHint).toBe(true);
     expect(byName.save_article.annotations?.readOnlyHint).toBeFalsy();
+    // Destructive tags removals and tag deletion flag themselves as such.
+    expect(byName.delete_tag.annotations?.destructiveHint).toBe(true);
+    expect(byName.remove_tag_from_article.annotations?.destructiveHint).toBe(
+      true
+    );
   });
 });
 
@@ -167,6 +180,8 @@ describe("list_articles", () => {
       title: "Article A",
       savedAt: 1750000000000,
       readStatus: "unread",
+      pinned: true,
+      tags: ["tag1", "tag2"],
     },
   ];
 
@@ -201,8 +216,33 @@ describe("list_articles", () => {
         title: "Article A",
         savedAt: "2025-06-15T15:06:40.000Z",
         readStatus: "unread",
+        pinned: true,
+        tags: ["tag1", "tag2"],
       },
     ]);
+  });
+
+  it("passes tagIds through as a comma-joined filter and surfaces tags/pinned", async () => {
+    const { agentCalls } = stubNetwork(noScrape, {
+      articles: () => rows,
+    });
+
+    const response = await callTool("list_articles", {
+      tagIds: ["tag1", "tag2"],
+    });
+
+    expect(agentCalls).toHaveLength(1);
+    expect(agentCalls[0].url).toContain("/agent/articles?");
+    expect(agentCalls[0].body).toEqual({
+      userId: "user_1",
+      tagIds: "tag1,tag2",
+    });
+
+    expect(response.result?.isError).toBeFalsy();
+    expect(response.result?.structuredContent.articles[0]).toMatchObject({
+      pinned: true,
+      tags: ["tag1", "tag2"],
+    });
   });
 });
 
@@ -274,13 +314,15 @@ describe("get_article", () => {
     byline: "Jane Doe",
     savedAt: 1750000000000,
     readStatus: "in_progress",
+    pinned: true,
+    tags: ["tag1", "tag2"],
     blocksJson: JSON.stringify([
       { type: "heading", level: 1, spans: [{ text: "Hello" }] },
       { type: "paragraph", spans: [{ text: "Body text." }] },
     ]),
   };
 
-  it("renders the article as markdown with metadata", async () => {
+  it("renders the article as markdown with metadata, tags, and pin state", async () => {
     const { agentCalls } = stubNetwork(noScrape, {
       article: () => readyArticle,
     });
@@ -296,6 +338,8 @@ describe("get_article", () => {
     expect(text).toContain("# Article A");
     expect(text).toContain("By: Jane Doe");
     expect(text).toContain("Read status: in_progress");
+    expect(text).toContain("Pinned: yes");
+    expect(text).toContain("Tags: tag1, tag2");
     expect(text).toContain("# Hello\n\nBody text.");
   });
 
@@ -392,6 +436,155 @@ describe("get_article", () => {
     const response = await callTool("get_article", { articleId: "art1" });
     expect(response.result?.isError).toBe(true);
     expect(response.result?.content?.[0]?.text).toContain("still processing");
+  });
+});
+
+describe("list_tags", () => {
+  it("returns the owner's tags with ISO createdAt timestamps", async () => {
+    const { agentCalls } = stubNetwork(noScrape, {
+      tags: () => [
+        { id: "tag1", name: "AI", color: "#f00", createdAt: 1750000000000 },
+        { id: "tag2", name: "Rust", createdAt: 1750000001000 },
+      ],
+    });
+
+    const response = await callTool("list_tags", {});
+
+    expect(agentCalls).toHaveLength(1);
+    expect(agentCalls[0].url).toContain("/agent/tags?");
+    expect(agentCalls[0].body).toEqual({ userId: "user_1" });
+    expect(response.result?.isError).toBeFalsy();
+    expect(response.result?.structuredContent.tags).toEqual([
+      {
+        id: "tag1",
+        name: "AI",
+        color: "#f00",
+        createdAt: "2025-06-15T15:06:40.000Z",
+      },
+      {
+        id: "tag2",
+        name: "Rust",
+        createdAt: "2025-06-15T15:06:41.000Z",
+      },
+    ]);
+  });
+});
+
+describe("create_tag", () => {
+  it("posts name/color and returns the created tag", async () => {
+    const { agentWrites } = stubNetwork(noScrape);
+
+    const response = await callTool("create_tag", {
+      name: "AI",
+      color: "#f00",
+    });
+
+    expect(agentWrites["tags/create"]).toHaveLength(1);
+    expect(agentWrites["tags/create"][0].url).toBe(
+      `${TEST_ENV.CONVEX_SITE_URL}/agent/tags/create`
+    );
+    expect(agentWrites["tags/create"][0].body).toEqual({
+      userId: "user_1",
+      name: "AI",
+      color: "#f00",
+    });
+    expect(response.result?.isError).toBeFalsy();
+    expect(response.result?.structuredContent).toEqual({
+      id: "tag1",
+      name: "AI",
+      color: "#f00",
+    });
+  });
+});
+
+describe("rename_tag", () => {
+  it("posts the new name and returns ok", async () => {
+    const { agentWrites } = stubNetwork(noScrape);
+
+    const response = await callTool("rename_tag", {
+      tagId: "tag1",
+      name: "Machine Learning",
+    });
+
+    expect(agentWrites["tags/rename"]).toHaveLength(1);
+    expect(agentWrites["tags/rename"][0].body).toEqual({
+      userId: "user_1",
+      tagId: "tag1",
+      name: "Machine Learning",
+    });
+    expect(response.result?.structuredContent).toEqual({ ok: true });
+  });
+});
+
+describe("delete_tag", () => {
+  it("posts the tag id to the remove route and returns ok", async () => {
+    const { agentWrites } = stubNetwork(noScrape);
+
+    const response = await callTool("delete_tag", { tagId: "tag1" });
+
+    expect(agentWrites["tags/remove"]).toHaveLength(1);
+    expect(agentWrites["tags/remove"][0].body).toEqual({
+      userId: "user_1",
+      tagId: "tag1",
+    });
+    expect(response.result?.structuredContent).toEqual({ ok: true });
+  });
+});
+
+describe("add_tag_to_article", () => {
+  it("posts articleId/tagId to the add route and returns ok", async () => {
+    const { agentWrites } = stubNetwork(noScrape);
+
+    const response = await callTool("add_tag_to_article", {
+      articleId: "art1",
+      tagId: "tag1",
+    });
+
+    expect(agentWrites["article-tags/add"]).toHaveLength(1);
+    expect(agentWrites["article-tags/add"][0].body).toEqual({
+      userId: "user_1",
+      articleId: "art1",
+      tagId: "tag1",
+    });
+    expect(response.result?.structuredContent).toEqual({ ok: true });
+  });
+});
+
+describe("remove_tag_from_article", () => {
+  it("posts articleId/tagId to the remove route and returns ok", async () => {
+    const { agentWrites } = stubNetwork(noScrape);
+
+    const response = await callTool("remove_tag_from_article", {
+      articleId: "art1",
+      tagId: "tag1",
+    });
+
+    expect(agentWrites["article-tags/remove"]).toHaveLength(1);
+    expect(agentWrites["article-tags/remove"][0].body).toEqual({
+      userId: "user_1",
+      articleId: "art1",
+      tagId: "tag1",
+    });
+    expect(response.result?.structuredContent).toEqual({ ok: true });
+  });
+});
+
+describe("set_article_pinned", () => {
+  it("posts the pin state for the article and returns ok", async () => {
+    const { agentWrites } = stubNetwork(noScrape);
+
+    const response = await callTool("set_article_pinned", {
+      articleId: "art1",
+      pinned: true,
+    });
+
+    expect(agentWrites["article/pin"]).toHaveLength(1);
+    expect(agentWrites["article/pin"][0].body).toEqual({
+      userId: "user_1",
+      id: "art1",
+      pinned: true,
+    });
+    expect(response.result?.structuredContent).toEqual({ ok: true });
   });
 });
 
