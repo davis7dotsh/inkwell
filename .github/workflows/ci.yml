@@ -35,7 +35,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run full repository verification
-        run: pnpm check
+      - name: Run repository verification
+        run: pnpm check:ci
+
+      - name: Check Convex codegen drift
+        run: pnpm check:convex-codegen
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}

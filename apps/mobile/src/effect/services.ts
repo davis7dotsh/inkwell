@@ -176,7 +176,12 @@ const MobileFilesLive = Layer.succeed(MobileFiles, {
   writeMarkdownExport: (name, markdown) =>
     Effect.try({
       try: () => {
-        const file = new File(Paths.cache, `${name}.md`);
+        const safeName =
+          name
+            .trim()
+            .replace(/[<>:"/\\|?*]/g, "_")
+            .slice(0, 80) || "export";
+        const file = new File(Paths.cache, `${safeName}.md`);
         if (file.exists) file.delete();
         file.write(markdown);
         return file;

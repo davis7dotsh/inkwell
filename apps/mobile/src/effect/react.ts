@@ -9,6 +9,7 @@ type Handlers<A, E> = {
   readonly onSuccess?: (value: A) => void;
   readonly onFailure?: (error: E) => void;
   readonly onDefect?: (error: unknown) => void;
+  readonly onInterrupt?: () => void;
 };
 
 type Outcome<A, E> =
@@ -40,6 +41,8 @@ export const runMobileEffect = <A, E>(
         const error = Cause.squash(exit.cause);
         if (handlers.onDefect) handlers.onDefect(error);
         else console.error("[Inkwell] Effect defect", error);
+      } else {
+        handlers.onInterrupt?.();
       }
     },
   });
@@ -83,6 +86,10 @@ export const useMobileEffectRunner = () => {
         onDefect: (error) => {
           finish();
           handlers.onDefect?.(error);
+        },
+        onInterrupt: () => {
+          finish();
+          handlers.onInterrupt?.();
         },
       });
       if (!completed) cancellations.current.add(cancel);

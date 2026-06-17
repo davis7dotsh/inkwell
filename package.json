@@ -15,7 +15,8 @@
     "build:web": "pnpm --filter inkwell-web build",
     "build:api": "pnpm --filter @inkwell/api build",
     "export:mobile:ios": "pnpm --filter inkwell-mobile export:ios",
-    "check": "pnpm typecheck && pnpm check:effect && pnpm test && pnpm lint:mobile && pnpm build:web && pnpm build:api && pnpm export:mobile:ios && pnpm check:convex-codegen",
+    "check:ci": "pnpm typecheck && pnpm check:effect && pnpm test && pnpm lint:mobile && pnpm build:web && pnpm build:api && pnpm export:mobile:ios",
+    "check": "pnpm check:ci && pnpm check:convex-codegen",
     "ipad": "pnpm --filter inkwell-mobile ipad",
     "iphone": "pnpm --filter inkwell-mobile iphone"
   },

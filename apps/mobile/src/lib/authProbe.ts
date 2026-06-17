@@ -1,3 +1,4 @@
+import clerkExpoPackage from "@clerk/expo/package.json";
 import * as Effect from "effect/Effect";
 
 import { decodeClerkEnvironmentResponse } from "../effect/codecs";
@@ -14,7 +15,7 @@ export const probeClerkEnvironment = Effect.gen(function* () {
     {
       headers: {
         "x-mobile": "1",
-        "x-expo-sdk-version": "3.3.1",
+        "x-expo-sdk-version": clerkExpoPackage.version,
       },
     }
   );

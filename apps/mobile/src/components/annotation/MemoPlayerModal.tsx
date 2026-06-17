@@ -140,12 +140,24 @@ export function MemoPlayerModal({ memo, articleId, onDelete, onClose }: Props) {
               operation: "restart voice memo",
               message: unknownErrorMessage(error),
             }),
-        }),
+        }).pipe(
+          Effect.andThen(
+            Effect.try({
+              try: () => player.play(),
+              catch: (error) =>
+                new NativeCommandError({
+                  operation: "restart voice memo",
+                  message: unknownErrorMessage(error),
+                }),
+            })
+          )
+        ),
         {
           onFailure: (error) =>
             showError(`Couldn't restart audio: ${error.message}`),
         }
       );
+      return;
     }
     player.play();
   };

@@ -182,20 +182,28 @@ export const deleteMemoAudio = (input: {
 
     const config = yield* MobileConfig;
     if (!config.apiUrl || !input.token) return;
-    const http = yield* MobileHttp;
-    const response = yield* http.request(
-      "delete memo audio",
-      memoAudioUrl(config.apiUrl, input.articleId, input.memoId),
-      {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${input.token}` },
+    const apiUrl = config.apiUrl;
+    const token = input.token;
+    yield* Effect.gen(function* () {
+      const http = yield* MobileHttp;
+      const response = yield* http.request(
+        "delete memo audio",
+        memoAudioUrl(apiUrl, input.articleId, input.memoId),
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!response.ok) {
+        return yield* new HttpResponseError({
+          operation: "delete memo audio",
+          status: response.status,
+          message: `The server said ${response.status}.`,
+        });
       }
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("Could not delete remote memo audio", error)
+      )
     );
-    if (!response.ok) {
-      return yield* new HttpResponseError({
-        operation: "delete memo audio",
-        status: response.status,
-        message: `The server said ${response.status}.`,
-      });
-    }
   });
