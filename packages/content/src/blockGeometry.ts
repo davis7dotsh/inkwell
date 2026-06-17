@@ -16,7 +16,11 @@ export function blockText(block: Block): string {
       return block.spans.map((s) => s.text).join("");
     case "list":
       return block.items
-        .map((item) => "• " + item.map((s) => s.text).join(""))
+        .map(
+          (item, i) =>
+            (block.ordered ? `${i + 1}. ` : "• ") +
+            item.map((s) => s.text).join("")
+        )
         .join("\n");
     case "code":
       return block.text;

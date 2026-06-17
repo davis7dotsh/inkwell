@@ -359,6 +359,18 @@ describe("get_article", () => {
     expect(secondText).toContain("continued, characters 12");
   });
 
+  it("rejects mixing section with offset/limit", async () => {
+    stubNetwork(noScrape, { article: () => sectionedArticle });
+
+    const response = await callTool("get_article", {
+      articleId: "art1",
+      section: "section-1-alpha",
+      offset: 5,
+    });
+    expect(response.result?.isError).toBe(true);
+    expect(response.result?.content?.[0]?.text).toContain("not both");
+  });
+
   it("returns a tool error for unknown ids", async () => {
     stubNetwork(noScrape, {
       article: () => null,

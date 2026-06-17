@@ -147,12 +147,20 @@ export function resolveAnnotations(
     const bottom = Math.max(...ys);
     const left = xs.length ? Math.min(...xs) : 0;
     const right = xs.length ? Math.max(...xs) : 0;
+    // Don't coerce an unknown tool into "pen" — skip it rather than mislabel.
+    const type: "highlight" | "pen" | null =
+      stroke.tool === "highlighter"
+        ? "highlight"
+        : stroke.tool === "pen"
+          ? "pen"
+          : null;
+    if (!type) continue;
     const indices = blocksInRange(layouts, top * scale, bottom * scale);
     resolved.push({
       y: top,
       annotation: {
         id: str(stroke.id),
-        type: stroke.tool === "highlighter" ? "highlight" : "pen",
+        type,
         selectedText: joinBlocks(headed, indices),
         sectionHeading: headingAt[indices[0]],
         ...offsetsFor(indices),
@@ -234,11 +242,17 @@ export function parseLayoutSnapshot(
   for (const entry of layouts) {
     if (!Array.isArray(entry) || entry.length !== 2) continue;
     const [index, layout] = entry as [unknown, unknown];
-    if (!isFiniteNumber(index) || typeof layout !== "object" || layout === null) {
+    if (
+      !isFiniteNumber(index) ||
+      !Number.isInteger(index) ||
+      index < 0 ||
+      typeof layout !== "object" ||
+      layout === null
+    ) {
       continue;
     }
     const { y, height } = layout as { y?: unknown; height?: unknown };
-    if (isFiniteNumber(y) && isFiniteNumber(height)) {
+    if (isFiniteNumber(y) && isFiniteNumber(height) && height > 0) {
       map.set(index, { y, height });
     }
   }

@@ -284,6 +284,13 @@ export function buildInkwellMcp(
       annotations: { readOnlyHint: true },
     },
     async ({ articleId, section, offset, limit }) => {
+      // Section mode and char paging are alternative retrieval modes; mixing
+      // them silently drops the paging args, so reject it outright.
+      if (section !== undefined && (offset !== undefined || limit !== undefined)) {
+        return errorResult(
+          "Pass either `section` or `offset`/`limit`, not both."
+        );
+      }
       const article = await convex.getArticle({ userId, id: articleId });
       if (!article) return errorResult(`No article with id ${articleId}.`);
       if (article.status !== "ready" || !article.blocksJson) {
@@ -358,19 +365,18 @@ export function buildInkwellMcp(
       // First page carries the metadata header and the section map; later
       // pages stay lean so the agent isn't re-billed for navigation chrome.
       if (start === 0) {
+        const SHOWN_SECTIONS = 100;
+        const sectionLines = outline
+          .slice(0, SHOWN_SECTIONS)
+          .map((e) => `${"  ".repeat(e.depth)}- ${e.id} — ${truncate(e.title, 80)}`);
+        if (outline.length > SHOWN_SECTIONS) {
+          sectionLines.push(
+            `- … ${outline.length - SHOWN_SECTIONS} more sections not shown`
+          );
+        }
         const sections =
           outline.length > 0
-            ? "\n" +
-              ["", "## Sections"]
-                .concat(
-                  outline
-                    .slice(0, 100)
-                    .map(
-                      (e) =>
-                        `${"  ".repeat(e.depth)}- ${e.id} — ${truncate(e.title, 80)}`
-                    )
-                )
-                .join("\n")
+            ? "\n" + ["", "## Sections", ...sectionLines].join("\n")
             : "";
         return {
           content: [
