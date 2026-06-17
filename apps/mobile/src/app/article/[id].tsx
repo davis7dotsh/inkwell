@@ -503,7 +503,12 @@ export default function ArticleScreen() {
     (memoId: string) => {
       run(
         authToken("delete voice memo", getToken).pipe(
-          Effect.catch(() => Effect.succeed(null)),
+          Effect.catch((error) =>
+            Effect.logWarning(
+              "Could not authenticate remote voice memo cleanup",
+              error
+            ).pipe(Effect.as(null))
+          ),
           Effect.flatMap((token) =>
             deleteMemoAudio({ token, articleId, memoId })
           )

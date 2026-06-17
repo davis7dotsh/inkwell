@@ -25,11 +25,18 @@ function authorize(req: Request) {
 function decode<S extends Schema.Top>(schema: S, input: unknown) {
   return Schema.decodeUnknownEffect(schema, {
     onExcessProperty: "error",
-  })(input).pipe(Effect.orDie);
+  })(input).pipe(
+    Effect.mapError(
+      () => new HttpResponseError({ status: 400, body: "invalid request" })
+    )
+  );
 }
 
 function decodeBody<S extends Schema.Top>(req: Request, schema: S) {
-  return Effect.promise(() => req.json()).pipe(
+  return Effect.tryPromise({
+    try: () => req.json(),
+    catch: () => new HttpResponseError({ status: 400, body: "invalid JSON" }),
+  }).pipe(
     Effect.flatMap((body) => decode(schema, body))
   );
 }

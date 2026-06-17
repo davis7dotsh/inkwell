@@ -713,9 +713,15 @@ export default function LibraryScreen() {
     const next = !addOpen;
     setAddOpen(next);
     if (next) {
-      run(Effect.sleep(50), {
-        onSuccess: () => urlInputRef.current?.focus(),
-      });
+      run(
+        Effect.callback<void>((resume) => {
+          const frame = requestAnimationFrame(() => resume(Effect.void));
+          return Effect.sync(() => cancelAnimationFrame(frame));
+        }),
+        {
+          onSuccess: () => urlInputRef.current?.focus(),
+        }
+      );
     }
   }, [addOpen, run]);
 
