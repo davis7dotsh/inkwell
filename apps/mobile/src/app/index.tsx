@@ -785,28 +785,6 @@ export default function LibraryScreen() {
 
         <View style={styles.sectionHeadingRow}>
           <Text style={styles.sectionTitle}>Library</Text>
-          <Pressable
-            onPress={() =>
-              setSortOrder((order) => (order === "newest" ? "oldest" : "newest"))
-            }
-            accessibilityRole="button"
-            accessibilityLabel="Toggle sort order"
-            hitSlop={6}
-            style={styles.sortButton}
-          >
-            <MaterialCommunityIcons
-              name={
-                sortOrder === "newest"
-                  ? "sort-calendar-descending"
-                  : "sort-calendar-ascending"
-              }
-              size={16}
-              color={c.inkSecondary}
-            />
-            <Text style={styles.sortText}>
-              {sortOrder === "newest" ? "Newest" : "Oldest"}
-            </Text>
-          </Pressable>
         </View>
 
         <View style={styles.tagBarRow}>
@@ -814,6 +792,7 @@ export default function LibraryScreen() {
             horizontal
             showsHorizontalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            style={styles.tagBarScroll}
             contentContainerStyle={styles.tagBar}
           >
             {activeTagIds.length > 0 ? (
@@ -873,6 +852,28 @@ export default function LibraryScreen() {
               size={16}
               color={c.inkSecondary}
             />
+          </Pressable>
+          <Pressable
+            onPress={() =>
+              setSortOrder((order) => (order === "newest" ? "oldest" : "newest"))
+            }
+            accessibilityRole="button"
+            accessibilityLabel="Toggle sort order"
+            hitSlop={6}
+            style={styles.sortButton}
+          >
+            <MaterialCommunityIcons
+              name={
+                sortOrder === "newest"
+                  ? "sort-calendar-descending"
+                  : "sort-calendar-ascending"
+              }
+              size={16}
+              color={c.inkSecondary}
+            />
+            <Text style={styles.sortText}>
+              {sortOrder === "newest" ? "Newest" : "Oldest"}
+            </Text>
           </Pressable>
         </View>
 
@@ -1123,6 +1124,10 @@ const themed = makeThemedStyles((c) =>
       gap: 8,
       marginTop: 8,
       marginBottom: 6,
+    },
+    // Fills the row so Manage tags + the sort toggle align to the right.
+    tagBarScroll: {
+      flex: 1,
     },
     tagBar: {
       flexDirection: "row",
