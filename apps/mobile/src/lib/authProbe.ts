@@ -13,6 +13,11 @@ export const probeClerkEnvironment = Effect.gen(function* () {
     "probe Clerk environment",
     `${CLERK_FRONTEND_API_URL}/v1/environment?_is_native=1`,
     {
+      // Mirror @clerk/expo's own native request signature so the probe sees the
+      // same environment response the real client would. Clerk's
+      // createClerkInstance (__internal_onBeforeRequest) appends `_is_native=1`
+      // and sets `x-mobile: 1` plus `x-expo-sdk-version` to its OWN package
+      // version (not the Expo SDK version), so we match that deliberately.
       headers: {
         "x-mobile": "1",
         "x-expo-sdk-version": clerkExpoPackage.version,
