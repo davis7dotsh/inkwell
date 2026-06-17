@@ -10,6 +10,10 @@ import {
   inferDocumentHeadings,
 } from "../src/documentOutline";
 import { buildExportMarkdown } from "../src/exportMarkdown";
+import {
+  parseLayoutSnapshot,
+  resolveAnnotations,
+} from "../src/resolveAnnotations";
 import { htmlToBlocks } from "../src/htmlToBlocks";
 import { markdownToBlocks } from "../src/markdownToBlocks";
 import { firecrawlToArticle } from "../src/normalize";
@@ -978,6 +982,115 @@ console.log("inferDocumentHeadings tests passed");
     "inline code handles interior and edge backticks"
   );
   console.log("blocksToMarkdown tests passed");
+}
+
+// ════════════════════════════════════════════════════════════════════
+// resolveAnnotations + parseLayoutSnapshot
+// ════════════════════════════════════════════════════════════════════
+{
+  const anchorBlocks: Block[] = [
+    { type: "heading", level: 1, spans: [{ text: "Intro" }] },
+    { type: "paragraph", spans: [{ text: "The quick brown fox." }] },
+    { type: "heading", level: 2, spans: [{ text: "Details" }] },
+    { type: "paragraph", spans: [{ text: "Jumps over the lazy dog." }] },
+  ];
+  const snapshot = parseLayoutSnapshot(
+    JSON.stringify({
+      width: 800,
+      layouts: [
+        [0, { y: 0, height: 40 }],
+        [1, { y: 40, height: 60 }],
+        [2, { y: 100, height: 40 }],
+        [3, { y: 140, height: 60 }],
+      ],
+    })
+  );
+  assert.ok(snapshot, "layout snapshot parses");
+  const resolved = resolveAnnotations(
+    anchorBlocks,
+    {
+      ...emptyAnnotations(800),
+      boxes: [{ id: "b1", x: 0, y: 45, w: 780, h: 50 }],
+      notes: [{ id: "n1", x: 5, y: 70, text: "Important point" }],
+    },
+    snapshot!.layouts,
+    snapshot!.width / 800
+  );
+  assert.deepEqual(resolved, [
+    {
+      id: "b1",
+      type: "box",
+      selectedText: "The quick brown fox.",
+      sectionHeading: "Intro",
+      startOffset: 7,
+      endOffset: 27,
+      boundingBox: { x: 0, y: 45, w: 780, h: 50 },
+    },
+    {
+      id: "n1",
+      type: "typed_note",
+      note: "Important point",
+      nearbyText: "The quick brown fox.",
+      sectionHeading: "Intro",
+      startOffset: 7,
+      endOffset: 27,
+      boundingBox: { x: 5, y: 70, w: 0, h: 0 },
+    },
+  ]);
+
+  // A box farther down resolves to the second section's text + heading.
+  const inSection = resolveAnnotations(
+    anchorBlocks,
+    { ...emptyAnnotations(800), boxes: [{ id: "b2", x: 0, y: 145, w: 780, h: 50 }] },
+    snapshot!.layouts,
+    1
+  );
+  assert.equal(inSection[0].selectedText, "Jumps over the lazy dog.");
+  assert.equal(inSection[0].sectionHeading, "Details");
+  assert.equal(inSection[0].startOffset, 38);
+  assert.equal(inSection[0].endOffset, 62);
+
+  // Malformed / missing snapshots return null.
+  assert.equal(parseLayoutSnapshot(undefined), null, "undefined snapshot");
+  assert.equal(parseLayoutSnapshot("not json"), null, "non-JSON snapshot");
+  assert.equal(
+    parseLayoutSnapshot(JSON.stringify({ width: 0, layouts: [] })),
+    null,
+    "empty snapshot"
+  );
+
+  // With no layout map, geometry and note text still resolve; anchor fields
+  // are absent (the MCP reports anchored:false in this case).
+  const geomOnly = resolveAnnotations(
+    anchorBlocks,
+    { ...emptyAnnotations(800), notes: [{ id: "n1", x: 5, y: 70, text: "Loose" }] },
+    new Map(),
+    1
+  );
+  assert.deepEqual(geomOnly, [
+    {
+      id: "n1",
+      type: "typed_note",
+      note: "Loose",
+      nearbyText: undefined,
+      sectionHeading: undefined,
+      boundingBox: { x: 5, y: 70, w: 0, h: 0 },
+    },
+  ]);
+
+  // Malformed entries are skipped without throwing.
+  const robust = resolveAnnotations(
+    anchorBlocks,
+    {
+      ...emptyAnnotations(800),
+      notes: [null, { y: 10 }, { id: "ok", x: 0, y: 70, text: "Kept" }] as never,
+    },
+    snapshot!.layouts,
+    1
+  );
+  assert.equal(robust.length, 1, "only the well-formed note survives");
+  assert.equal(robust[0].note, "Kept");
+  console.log("resolveAnnotations tests passed");
 }
 
 console.log("\nALL CONTENT TESTS PASSED");

@@ -40,6 +40,11 @@ export default defineSchema({
     // treat undefined as "[]". Audio lives in R2 keyed by (user, article,
     // memo id) — this carries only placement + transcript + upload status.
     memosJson: v.optional(v.string()),
+    // Optional snapshot of the per-block layout the reader measured when these
+    // annotations were saved: `{ width, layouts: [[blockIndex, {y, height}]] }`.
+    // Lets the agent API map pixel-anchored annotations back onto article text.
+    // Absent on legacy rows and older clients.
+    layoutJson: v.optional(v.string()),
     updatedAt: v.number(),
   }).index("by_article", ["articleId"]),
 });

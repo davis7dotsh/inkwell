@@ -1,7 +1,9 @@
 // Turns an annotated article into Markdown suitable for pasting into an LLM:
 // boxed sections become quoted excerpts, notes keep their nearby context,
 // highlighter strokes quote the lines they cover.
-import type { Annotations, ArticleContent, Block } from "./types";
+import type { BlockLayout } from "./blockGeometry";
+import { blockText, blocksInRange, nearestBlock, truncate } from "./blockGeometry";
+import type { Annotations, ArticleContent } from "./types";
 
 /**
  * What the export needs beyond the content payload: the source URL and saved
@@ -11,66 +13,6 @@ export type ExportArticle = ArticleContent & {
   url: string;
   savedAt: string | number;
 };
-
-/** Layout of each top-level block, measured by the reader (current render px). */
-export type BlockLayout = { y: number; height: number };
-
-function blockText(block: Block): string {
-  switch (block.type) {
-    case "heading":
-    case "paragraph":
-    case "quote":
-      return block.spans.map((s) => s.text).join("");
-    case "list":
-      return block.items
-        .map((item) => "• " + item.map((s) => s.text).join(""))
-        .join("\n");
-    case "code":
-      return block.text;
-    case "image":
-      return `![${block.caption || block.alt || "image"}](${block.src})`;
-    case "rule":
-      return "";
-  }
-}
-
-function truncate(text: string, max = 160): string {
-  const clean = text.replace(/\s+/g, " ").trim();
-  return clean.length <= max ? clean : clean.slice(0, max - 1).trimEnd() + "…";
-}
-
-function blocksInRange(
-  layouts: Map<number, BlockLayout>,
-  top: number,
-  bottom: number
-): number[] {
-  const hits: number[] = [];
-  for (const [index, layout] of layouts) {
-    if (layout.y + layout.height >= top && layout.y <= bottom) hits.push(index);
-  }
-  return hits.sort((a, b) => a - b);
-}
-
-function nearestBlock(
-  layouts: Map<number, BlockLayout>,
-  y: number
-): number | null {
-  let best: number | null = null;
-  let bestDistance = Infinity;
-  for (const [index, layout] of layouts) {
-    const distance =
-      y < layout.y
-        ? layout.y - y
-        : y > layout.y + layout.height
-          ? y - (layout.y + layout.height)
-          : 0;
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = index;
-    }
-  }
-  return best;
-}
 
 /**
  * @param scale converts annotation coordinates into the measured layout space
