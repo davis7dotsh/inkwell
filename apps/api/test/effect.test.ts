@@ -118,6 +118,38 @@ describe("Effect API services", () => {
       ).toBe("<redacted>");
     }));
 
+  it("redacts the Firecrawl API key from HTTP client spans", () =>
+    Effect.gen(function* () {
+      const spans: Tracer.NativeSpan[] = [];
+      const tracer = Tracer.make({
+        span: (options) => {
+          const span = new Tracer.NativeSpan(options);
+          spans.push(span);
+          return span;
+        },
+      });
+      const { impl } = fetchQueue([
+        firecrawlOk({ markdown: "hello", metadata: {} }),
+      ]);
+
+      yield* Effect.flatMap(FirecrawlService, (firecrawl) =>
+        firecrawl.scrapeUrl("https://example.com")
+      ).pipe(
+        Effect.provide(requestLayer(impl), { local: true }),
+        Effect.withTracer(tracer)
+      );
+
+      const requestSpan = spans.find((span) =>
+        span.attributes.has("http.request.header.authorization")
+      );
+      expect(requestSpan).toBeDefined();
+      expect(
+        requestSpan?.attributes.get(
+          "http.request.header.authorization"
+        )
+      ).toBe("<redacted>");
+    }));
+
   it("retries Firecrawl exactly once on 429 with the Effect clock", () =>
     Effect.gen(function* () {
       const { impl, calls } = fetchQueue([

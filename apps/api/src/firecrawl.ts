@@ -1,7 +1,7 @@
 // Firecrawl v2 client built on Effect's Web Fetch adapter. Scrape and parse
 // share one decoded envelope and exactly one explicit 429 retry.
 
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Effect, Layer, Redacted, Schema } from "effect";
 import {
   HttpClient,
   HttpClientRequest,
@@ -208,17 +208,14 @@ export const FirecrawlServiceLive = Layer.effect(
         return yield* decodePayload(response, operation);
       });
 
-    const authorization = `Bearer ${config.FIRECRAWL_API_KEY}`;
+    const token = Redacted.make(config.FIRECRAWL_API_KEY);
     return FirecrawlService.of({
       scrapeUrl: (url) =>
         requestPayload(
           () =>
             HttpClientRequest.bodyJson(
               HttpClientRequest.post(SCRAPE_ENDPOINT).pipe(
-                HttpClientRequest.setHeader(
-                  "Authorization",
-                  authorization
-                )
+                HttpClientRequest.bearerToken(token)
               ),
               {
                 url,
@@ -248,10 +245,7 @@ export const FirecrawlServiceLive = Layer.effect(
             );
             return Effect.succeed(
               HttpClientRequest.post(PARSE_ENDPOINT).pipe(
-                HttpClientRequest.setHeader(
-                  "Authorization",
-                  authorization
-                ),
+                HttpClientRequest.bearerToken(token),
                 HttpClientRequest.bodyFormData(form)
               )
             );
