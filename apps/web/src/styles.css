@@ -323,14 +323,14 @@ button {
   border-color: var(--link-underline);
 }
 
-/* tag filter bar (mirrors .library-controls spacing) */
+/* tag filter bar — also holds Manage tags + the sort toggle on the right */
 
 .tag-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-top: 12px;
+  margin-top: 20px;
 }
 
 .tag-bar-clear,
@@ -732,14 +732,6 @@ button {
 }
 
 /* filter + sort row */
-
-.library-controls {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 22px;
-}
 
 .sort-toggle {
   flex-shrink: 0;

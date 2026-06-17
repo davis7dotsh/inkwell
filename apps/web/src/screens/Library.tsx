@@ -836,18 +836,6 @@ export function Library() {
       </form>
       {saveError ? <p className="save-error">{saveError}</p> : null}
 
-      <div className="library-controls">
-        <button
-          className="sort-toggle"
-          onClick={() =>
-            setSortOrder((order) => (order === "newest" ? "oldest" : "newest"))
-          }
-          title="Toggle sort order"
-        >
-          {sortOrder === "newest" ? "Newest first ↓" : "Oldest first ↑"}
-        </button>
-      </div>
-
       <div className="tag-bar" role="group" aria-label="Filter by tag">
         {tagsList.map((tag) => {
           const active = selectedTags.has(tag._id as string);
@@ -889,6 +877,15 @@ export function Library() {
           onClick={() => setTagManagerOpen(true)}
         >
           {tagsList.length > 0 ? "Manage tags" : "+ Add tags"}
+        </button>
+        <button
+          className="sort-toggle"
+          onClick={() =>
+            setSortOrder((order) => (order === "newest" ? "oldest" : "newest"))
+          }
+          title="Toggle sort order"
+        >
+          {sortOrder === "newest" ? "Newest first ↓" : "Oldest first ↑"}
         </button>
       </div>
 
