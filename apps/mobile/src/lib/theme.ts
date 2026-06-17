@@ -94,6 +94,69 @@ export const mono = Platform.select({ ios: "Menlo", default: "monospace" });
 // These are the CANONICAL stored stroke colors — annotations keep them in
 // both themes; displayInkColor maps them for night rendering.
 export const penColors = ["#0E2E52", "#1B4F8A", "#3D7BC0", "#B0413E"] as const;
+
+// Tag swatch palette — muted, paper-friendly hues that read in both themes.
+// Stored verbatim on the tag; the first entry is the default when a tag has
+// no color. Chips tint with these at low opacity (see tagChipColors).
+export const tagColors = [
+  "#1F5B8B", // brush blue (default)
+  "#3D7BC0", // stroke blue
+  "#2E7D6B", // pine
+  "#9A6A2E", // ochre
+  "#8A4B7A", // plum
+  "#B0413E", // seal red
+  "#5A6472", // slate
+] as const;
+
+export const DEFAULT_TAG_COLOR = tagColors[0];
+
+/** Add an alpha channel to a #RRGGBB hex (0–1). */
+function withAlpha(hex: string, alpha: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/**
+ * Display colors for a tag chip given its stored hue (or the default). The
+ * fill is a translucent wash of the hue; the label/border use the hue lifted
+ * for dark mode so it reads as an accent at night.
+ */
+export function tagChipColors(
+  color: string | undefined,
+  isDark: boolean
+): { fill: string; text: string; border: string } {
+  const base = color?.trim() || DEFAULT_TAG_COLOR;
+  if (isDark) {
+    const lifted = NIGHT_TAG[base] ?? base;
+    return {
+      fill: withAlpha(lifted, 0.16),
+      text: lifted,
+      border: withAlpha(lifted, 0.4),
+    };
+  }
+  return {
+    fill: withAlpha(base, 0.12),
+    text: base,
+    border: withAlpha(base, 0.35),
+  };
+}
+
+// Night-legible counterparts for tag hues, so chips stay readable on the dark
+// paper. Unknown colors pass through untouched.
+const NIGHT_TAG: Record<string, string> = {
+  "#1F5B8B": "#6FA3DC",
+  "#3D7BC0": "#8FBCE9",
+  "#2E7D6B": "#5FB3A0",
+  "#9A6A2E": "#D2A45E",
+  "#8A4B7A": "#C383B4",
+  "#B0413E": "#E08A85",
+  "#5A6472": "#9AA4B2",
+};
 export const HIGHLIGHTER_COLOR = "rgba(143, 184, 222, 0.5)"; // wash
 export const PEN_WIDTH = 2.5;
 export const HIGHLIGHTER_WIDTH = 18;

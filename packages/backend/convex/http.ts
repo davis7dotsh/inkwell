@@ -96,10 +96,20 @@ http.route({
       );
     }
 
+    // Comma-separated tag ids; an article matches if it has ANY of them.
+    const tagIdsRaw = param(req, "tagIds");
+    const tagIds = tagIdsRaw
+      ? tagIdsRaw
+          .split(",")
+          .map((id) => id.trim())
+          .filter(Boolean)
+      : undefined;
+
     const articles = await ctx.runQuery(internal.articles.listForAgent, {
       userId,
       readStatus,
       status,
+      tagIds,
       limit,
     });
     return Response.json({ articles });
@@ -122,6 +132,84 @@ http.route({
     });
     if (!article) return new Response("not found", { status: 404 });
     return Response.json({ article });
+  }),
+});
+
+http.route({
+  path: "/agent/tags",
+  method: "GET",
+  handler: httpAction(async (ctx, req) => {
+    if (!authorized(req)) return new Response("forbidden", { status: 403 });
+    const userId = param(req, "userId");
+    if (!userId) return new Response("userId required", { status: 400 });
+    const tags = await ctx.runQuery(internal.tags.listForAgent, { userId });
+    return Response.json({ tags });
+  }),
+});
+
+http.route({
+  path: "/agent/tags/create",
+  method: "POST",
+  handler: httpAction(async (ctx, req) => {
+    if (!authorized(req)) return new Response("forbidden", { status: 403 });
+    const body = await req.json();
+    const tag = await ctx.runMutation(internal.tags.createForAgent, body);
+    return Response.json({ tag });
+  }),
+});
+
+http.route({
+  path: "/agent/tags/rename",
+  method: "POST",
+  handler: httpAction(async (ctx, req) => {
+    if (!authorized(req)) return new Response("forbidden", { status: 403 });
+    const body = await req.json();
+    await ctx.runMutation(internal.tags.renameForAgent, body);
+    return Response.json({ ok: true });
+  }),
+});
+
+http.route({
+  path: "/agent/tags/remove",
+  method: "POST",
+  handler: httpAction(async (ctx, req) => {
+    if (!authorized(req)) return new Response("forbidden", { status: 403 });
+    const body = await req.json();
+    await ctx.runMutation(internal.tags.removeForAgent, body);
+    return Response.json({ ok: true });
+  }),
+});
+
+http.route({
+  path: "/agent/article-tags/add",
+  method: "POST",
+  handler: httpAction(async (ctx, req) => {
+    if (!authorized(req)) return new Response("forbidden", { status: 403 });
+    const body = await req.json();
+    await ctx.runMutation(internal.tags.addToArticleForAgent, body);
+    return Response.json({ ok: true });
+  }),
+});
+
+http.route({
+  path: "/agent/article-tags/remove",
+  method: "POST",
+  handler: httpAction(async (ctx, req) => {
+    if (!authorized(req)) return new Response("forbidden", { status: 403 });
+    const body = await req.json();
+    await ctx.runMutation(internal.tags.removeFromArticleForAgent, body);
+    return Response.json({ ok: true });
+  }),
+});
+
+http.route({
+  path: "/agent/article/pin",
+  method: "POST",
+  handler: httpAction(async (ctx, req) => {
+    if (!authorized(req)) return new Response("forbidden", { status: 403 });
+    const body = await req.json();
+    await ctx.runMutation(internal.articles.setPinnedForAgent, body);
+    return Response.json({ ok: true });
   }),
 });
 

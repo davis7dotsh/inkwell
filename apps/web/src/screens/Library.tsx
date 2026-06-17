@@ -8,6 +8,7 @@ import type { Id } from "@inkwell/backend/convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import React, {
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -20,9 +21,11 @@ import { Link } from "react-router-dom";
 import { BackdropWash } from "../components/BackdropWash";
 import { BrushStroke } from "../components/BrushStroke";
 import { hcWithType } from "../lib/api";
+import { tagDisplayColor, TAG_COLOR_SWATCHES } from "../lib/tagColors";
 import { useTheme } from "../lib/theme";
 
 type ArticleListItem = FunctionReturnType<typeof api.articles.list>[number];
+type TagItem = FunctionReturnType<typeof api.tags.list>[number];
 
 type ReadStatus = "unread" | "in_progress" | "read";
 type StatusFilter = "all" | ReadStatus;
@@ -31,6 +34,10 @@ type SortOrder = "newest" | "oldest";
 /** Rows written before readStatus existed count as unread. */
 const readStatusOf = (article: ArticleListItem): ReadStatus =>
   article.readStatus ?? "unread";
+
+/** Unopened articles (unread, never bumped to in_progress) wear a blue dot. */
+const isUnopened = (article: ArticleListItem): boolean =>
+  readStatusOf(article) === "unread";
 
 /** Uploaded PDFs have a synthetic upload:// url — nothing to retry/open. */
 const isUpload = (article: ArticleListItem) =>
@@ -51,6 +58,15 @@ function formatSavedDate(savedAt: number) {
   });
 }
 
+function PinIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M9 4h6m-5 0v6l-3 4h10l-3-4V4M12 18v3" />
+    </svg>
+  );
+}
+
+/** Processing-state chip only — read/unread is now a dot (see ReadDot). */
 function StatusChip({ article }: { article: ArticleListItem }) {
   if (article.status === "pending") {
     return (
@@ -63,40 +79,87 @@ function StatusChip({ article }: { article: ArticleListItem }) {
   if (article.status === "failed") {
     return <span className="chip chip-failed">Failed</span>;
   }
-  const status = readStatusOf(article);
-  if (status === "unread") {
-    return <span className="chip chip-unread">Unread</span>;
-  }
-  if (status === "in_progress") {
-    return (
-      <span className="chip chip-in-progress">
-        <span className="chip-dot" />
-        In progress
-      </span>
-    );
-  }
-  return <span className="chip chip-read">✓ Read</span>;
+  return null;
+}
+
+function ReadDot({ article }: { article: ArticleListItem }) {
+  // Only ready, never-opened articles get the unread indicator.
+  if (article.status !== "ready" || !isUnopened(article)) return null;
+  return (
+    <span
+      className="unread-dot"
+      role="img"
+      aria-label="Unread"
+      title="Unread"
+    />
+  );
+}
+
+function TagChipList({
+  tags,
+  tagsById,
+}: {
+  tags: Id<"tags">[];
+  tagsById: Map<string, TagItem>;
+}) {
+  const resolved = tags
+    .map((id) => tagsById.get(id))
+    .filter((tag): tag is TagItem => Boolean(tag));
+  if (resolved.length === 0) return null;
+  return (
+    <div className="card-tags">
+      {resolved.map((tag) => {
+        const color = tagDisplayColor(tag.color);
+        return (
+          <span
+            key={tag._id}
+            className="tag-chip tag-chip-static"
+            style={{
+              color: color.fg,
+              background: color.bg,
+              borderColor: color.border,
+            }}
+          >
+            {tag.name}
+          </span>
+        );
+      })}
+    </div>
+  );
 }
 
 function ArticleCard({
   article,
+  tagsById,
+  allTags,
   isRenaming,
   onStartRename,
   onCommitRename,
   onCancelRename,
   onRetry,
   onDelete,
+  onSetPinned,
+  onAttachTag,
+  onDetachTag,
+  onCreateTag,
 }: {
   article: ArticleListItem;
+  tagsById: Map<string, TagItem>;
+  allTags: TagItem[];
   isRenaming: boolean;
   onStartRename: (id: Id<"articles">) => void;
   onCommitRename: (id: Id<"articles">, title: string) => void;
   onCancelRename: () => void;
   onRetry: (article: ArticleListItem) => Promise<void>;
   onDelete: (id: Id<"articles">) => void;
+  onSetPinned: (id: Id<"articles">, pinned: boolean) => void;
+  onAttachTag: (articleId: Id<"articles">, tagId: Id<"tags">) => void;
+  onDetachTag: (articleId: Id<"articles">, tagId: Id<"tags">) => void;
+  onCreateTag: (name: string) => Promise<Id<"tags"> | null>;
 }) {
   const [retrying, setRetrying] = useState(false);
   const [titleDraft, setTitleDraft] = useState(article.title);
+  const [tagEditorOpen, setTagEditorOpen] = useState(false);
 
   const meta = [article.siteName, formatSavedDate(article.savedAt)]
     .filter(Boolean)
@@ -133,8 +196,38 @@ function ArticleCard({
     </form>
   ) : (
     <>
-      <h2 className="card-title">{article.title}</h2>
+      <h2 className="card-title">
+        <ReadDot article={article} />
+        {article.pinned ? (
+          <span className="pin-indicator" title="Pinned" aria-label="Pinned">
+            <PinIcon />
+          </span>
+        ) : null}
+        {article.title}
+      </h2>
       <div className="card-actions">
+        <button
+          className={`card-action${article.pinned ? " card-action-active" : ""}`}
+          title={article.pinned ? "Unpin" : "Pin to top"}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onSetPinned(article._id, !article.pinned);
+          }}
+        >
+          {article.pinned ? "Unpin" : "Pin"}
+        </button>
+        <button
+          className={`card-action${tagEditorOpen ? " card-action-active" : ""}`}
+          title="Tags"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setTagEditorOpen((open) => !open);
+          }}
+        >
+          Tags
+        </button>
         <button
           className="card-action"
           title="Rename"
@@ -167,8 +260,19 @@ function ArticleCard({
       <div className="card-top">{top}</div>
       <p className="card-meta">
         {meta}
-        <StatusChip article={article} />
+        {article.status !== "ready" ? <StatusChip article={article} /> : null}
       </p>
+      <TagChipList tags={article.tags} tagsById={tagsById} />
+      {tagEditorOpen ? (
+        <ArticleTagEditor
+          article={article}
+          allTags={allTags}
+          onAttachTag={onAttachTag}
+          onDetachTag={onDetachTag}
+          onCreateTag={onCreateTag}
+          onClose={() => setTagEditorOpen(false)}
+        />
+      ) : null}
       {article.excerpt ? (
         <p className="card-excerpt">{article.excerpt}</p>
       ) : null}
@@ -197,8 +301,9 @@ function ArticleCard({
     </>
   );
 
-  // While renaming, swap the link wrapper out so typing never navigates.
-  if (article.status === "ready" && !isRenaming) {
+  // While renaming or editing tags, swap the link wrapper out so interacting
+  // with the card never navigates to the reader.
+  if (article.status === "ready" && !isRenaming && !tagEditorOpen) {
     return (
       <li>
         <Link to={`/read/${article._id}`} className="card card-ready">
@@ -214,6 +319,298 @@ function ArticleCard({
   );
 }
 
+/** Inline per-article tag picker: toggle existing tags, or create a new one. */
+function ArticleTagEditor({
+  article,
+  allTags,
+  onAttachTag,
+  onDetachTag,
+  onCreateTag,
+  onClose,
+}: {
+  article: ArticleListItem;
+  allTags: TagItem[];
+  onAttachTag: (articleId: Id<"articles">, tagId: Id<"tags">) => void;
+  onDetachTag: (articleId: Id<"articles">, tagId: Id<"tags">) => void;
+  onCreateTag: (name: string) => Promise<Id<"tags"> | null>;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const attached = useMemo(
+    () => new Set(article.tags.map((id) => id as string)),
+    [article.tags]
+  );
+
+  const onCreateAndAttach = async () => {
+    const name = draft.trim();
+    if (!name) return;
+    const id = await onCreateTag(name);
+    if (id) onAttachTag(article._id, id);
+    setDraft("");
+  };
+
+  return (
+    <div className="tag-editor">
+      <div className="tag-editor-chips">
+        {allTags.length === 0 ? (
+          <span className="tag-editor-empty">
+            No tags yet — create one below.
+          </span>
+        ) : (
+          allTags.map((tag) => {
+            const isOn = attached.has(tag._id as string);
+            const color = tagDisplayColor(tag.color);
+            return (
+              <button
+                key={tag._id}
+                type="button"
+                aria-pressed={isOn}
+                className={`tag-chip tag-chip-toggle${isOn ? " tag-chip-on" : ""}`}
+                style={
+                  isOn
+                    ? {
+                        color: color.fg,
+                        background: color.bg,
+                        borderColor: color.border,
+                      }
+                    : { borderColor: color.border }
+                }
+                onClick={() =>
+                  isOn
+                    ? onDetachTag(article._id, tag._id)
+                    : onAttachTag(article._id, tag._id)
+                }
+              >
+                {isOn ? "✓ " : ""}
+                {tag.name}
+              </button>
+            );
+          })
+        )}
+      </div>
+      <form
+        className="tag-editor-create"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void onCreateAndAttach();
+        }}
+      >
+        <input
+          className="tag-editor-input"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="New tag…"
+          aria-label="New tag name"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") onClose();
+          }}
+        />
+        <button
+          type="submit"
+          className="rename-action"
+          disabled={!draft.trim()}
+        >
+          Add
+        </button>
+        <button
+          type="button"
+          className="rename-action rename-action-cancel"
+          onClick={onClose}
+        >
+          Done
+        </button>
+      </form>
+    </div>
+  );
+}
+
+/** Library-wide tag manager: rename, recolor, and delete tags. */
+function TagManager({
+  allTags,
+  onCreateTag,
+  onRenameTag,
+  onSetColor,
+  onRemoveTag,
+  onClose,
+}: {
+  allTags: TagItem[];
+  onCreateTag: (name: string) => Promise<Id<"tags"> | null>;
+  onRenameTag: (id: Id<"tags">, name: string) => void;
+  onSetColor: (id: Id<"tags">, color: string | undefined) => void;
+  onRemoveTag: (id: Id<"tags">) => void;
+  onClose: () => void;
+}) {
+  const [newName, setNewName] = useState("");
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="tag-modal" role="dialog" aria-modal="true" aria-label="Manage tags">
+      <button
+        type="button"
+        className="tag-modal-scrim"
+        aria-label="Close tag manager"
+        onClick={onClose}
+      />
+      <div className="tag-modal-panel">
+        <div className="tag-modal-head">
+          <h2>Manage tags</h2>
+          <button type="button" className="tag-modal-close" onClick={onClose}>
+            Close
+          </button>
+        </div>
+        <form
+          className="tag-modal-create"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const name = newName.trim();
+            if (!name) return;
+            void onCreateTag(name);
+            setNewName("");
+          }}
+        >
+          <input
+            className="tag-editor-input"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="Add a tag…"
+            aria-label="New tag name"
+            autoFocus
+          />
+          <button type="submit" className="pill-button" disabled={!newName.trim()}>
+            Add tag
+          </button>
+        </form>
+        {allTags.length === 0 ? (
+          <p className="tag-modal-empty">No tags yet.</p>
+        ) : (
+          <ul className="tag-modal-list">
+            {allTags.map((tag) => (
+              <TagManagerRow
+                key={tag._id}
+                tag={tag}
+                onRenameTag={onRenameTag}
+                onSetColor={onSetColor}
+                onRemoveTag={onRemoveTag}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TagManagerRow({
+  tag,
+  onRenameTag,
+  onSetColor,
+  onRemoveTag,
+}: {
+  tag: TagItem;
+  onRenameTag: (id: Id<"tags">, name: string) => void;
+  onSetColor: (id: Id<"tags">, color: string | undefined) => void;
+  onRemoveTag: (id: Id<"tags">) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState(tag.name);
+  const color = tagDisplayColor(tag.color);
+
+  return (
+    <li className="tag-modal-row">
+      <div className="tag-modal-swatches" role="group" aria-label="Tag color">
+        {TAG_COLOR_SWATCHES.map((swatch) => (
+          <button
+            key={swatch}
+            type="button"
+            className={`tag-swatch${tag.color === swatch ? " tag-swatch-on" : ""}`}
+            style={{ background: swatch }}
+            aria-label={`Set color ${swatch}`}
+            aria-pressed={tag.color === swatch}
+            onClick={() =>
+              onSetColor(tag._id, tag.color === swatch ? undefined : swatch)
+            }
+          />
+        ))}
+      </div>
+      {editing ? (
+        <form
+          className="rename-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const name = nameDraft.trim();
+            if (name) onRenameTag(tag._id, name);
+            setEditing(false);
+          }}
+        >
+          <input
+            className="tag-editor-input"
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            aria-label="Tag name"
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setEditing(false);
+            }}
+          />
+          <button type="submit" className="rename-action" disabled={!nameDraft.trim()}>
+            Save
+          </button>
+          <button
+            type="button"
+            className="rename-action rename-action-cancel"
+            onClick={() => setEditing(false)}
+          >
+            Cancel
+          </button>
+        </form>
+      ) : (
+        <>
+          <span
+            className="tag-chip tag-chip-static tag-modal-name"
+            style={{ color: color.fg, background: color.bg, borderColor: color.border }}
+          >
+            {tag.name}
+          </span>
+          <div className="tag-modal-row-actions">
+            <button
+              type="button"
+              className="card-action"
+              onClick={() => {
+                setNameDraft(tag.name);
+                setEditing(true);
+              }}
+            >
+              Rename
+            </button>
+            <button
+              type="button"
+              className="card-action card-action-danger"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Delete the “${tag.name}” tag? It will be removed from all articles.`
+                  )
+                ) {
+                  onRemoveTag(tag._id);
+                }
+              }}
+            >
+              Delete
+            </button>
+          </div>
+        </>
+      )}
+    </li>
+  );
+}
+
 function EmptyState({ children }: { children: ReactNode }) {
   return <div className="center-state">{children}</div>;
 }
@@ -221,8 +618,16 @@ function EmptyState({ children }: { children: ReactNode }) {
 export function Library() {
   const { getToken } = useAuth();
   const articles = useQuery(api.articles.list);
+  const tags = useQuery(api.tags.list);
   const removeArticle = useMutation(api.articles.remove);
   const renameArticle = useMutation(api.articles.rename);
+  const setPinned = useMutation(api.articles.setPinned);
+  const createTag = useMutation(api.tags.create);
+  const renameTag = useMutation(api.tags.rename);
+  const setTagColor = useMutation(api.tags.setColor);
+  const removeTag = useMutation(api.tags.remove);
+  const addTagToArticle = useMutation(api.tags.addToArticle);
+  const removeTagFromArticle = useMutation(api.tags.removeFromArticle);
 
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -230,8 +635,26 @@ export function Library() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
+  const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
+  const [tagManagerOpen, setTagManagerOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<Id<"articles"> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const tagsList = useMemo(() => tags ?? [], [tags]);
+  const tagsById = useMemo(
+    () => new Map(tagsList.map((tag) => [tag._id as string, tag])),
+    [tagsList]
+  );
+
+  // Drop filter selections for tags that no longer exist (e.g. just deleted).
+  useEffect(() => {
+    if (!tags) return;
+    setSelectedTags((prev) => {
+      const valid = new Set<string>();
+      for (const id of prev) if (tagsById.has(id)) valid.add(id);
+      return valid.size === prev.size ? prev : valid;
+    });
+  }, [tags, tagsById]);
 
   // Per-request Authorization header: the Clerk token is short-lived, so it
   // is fetched fresh on every call rather than baked into the client.
@@ -307,15 +730,51 @@ export function Library() {
     setRenamingId(null);
   };
 
+  const onSetPinned = (id: Id<"articles">, pinned: boolean) =>
+    void setPinned({ id, pinned });
+
+  const onCreateTag = async (name: string): Promise<Id<"tags"> | null> => {
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    try {
+      return await createTag({ name: trimmed });
+    } catch {
+      return null;
+    }
+  };
+
+  const onAttachTag = (articleId: Id<"articles">, tagId: Id<"tags">) =>
+    void addTagToArticle({ articleId, tagId });
+  const onDetachTag = (articleId: Id<"articles">, tagId: Id<"tags">) =>
+    void removeTagFromArticle({ articleId, tagId });
+
+  const toggleTagFilter = (id: string) =>
+    setSelectedTags((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   const visibleArticles = useMemo(() => {
     if (!articles) return undefined;
-    const filtered =
+    let filtered =
       filter === "all"
         ? articles
         : articles.filter((article) => readStatusOf(article) === filter);
+    // Tag filter: OR semantics — keep articles carrying at least one selection.
+    if (selectedTags.size > 0) {
+      filtered = filtered.filter((article) =>
+        article.tags.some((tagId) => selectedTags.has(tagId as string))
+      );
+    }
     // articles.list is newest-first; flip a copy for oldest-first.
-    return sortOrder === "newest" ? filtered : [...filtered].reverse();
-  }, [articles, filter, sortOrder]);
+    const ordered = sortOrder === "newest" ? filtered : [...filtered].reverse();
+    // Pinned articles float to the top, preserving order within each group.
+    const pinned = ordered.filter((article) => article.pinned);
+    const rest = ordered.filter((article) => !article.pinned);
+    return [...pinned, ...rest];
+  }, [articles, filter, sortOrder, selectedTags]);
 
   const { c } = useTheme();
 
@@ -403,6 +862,50 @@ export function Library() {
         </button>
       </div>
 
+      <div className="tag-bar" role="group" aria-label="Filter by tag">
+        {tagsList.map((tag) => {
+          const active = selectedTags.has(tag._id as string);
+          const color = tagDisplayColor(tag.color);
+          return (
+            <button
+              key={tag._id}
+              type="button"
+              aria-pressed={active}
+              className={`tag-chip tag-chip-filter${active ? " tag-chip-on" : ""}`}
+              style={
+                active
+                  ? {
+                      color: color.fg,
+                      background: color.bg,
+                      borderColor: color.border,
+                    }
+                  : { borderColor: color.border }
+              }
+              onClick={() => toggleTagFilter(tag._id as string)}
+            >
+              {active ? "✓ " : ""}
+              {tag.name}
+            </button>
+          );
+        })}
+        {selectedTags.size > 0 ? (
+          <button
+            type="button"
+            className="tag-bar-clear"
+            onClick={() => setSelectedTags(new Set())}
+          >
+            Clear tags
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="tag-bar-manage"
+          onClick={() => setTagManagerOpen(true)}
+        >
+          {tagsList.length > 0 ? "Manage tags" : "+ Add tags"}
+        </button>
+      </div>
+
       {visibleArticles === undefined ? (
         <EmptyState>
           <span className="pulse-dot" />
@@ -410,7 +913,17 @@ export function Library() {
       ) : visibleArticles.length === 0 ? (
         <EmptyState>
           {articles && articles.length > 0 ? (
-            <p>Nothing {filter === "in_progress" ? "in progress" : filter}.</p>
+            <p>
+              Nothing{" "}
+              {selectedTags.size > 0
+                ? "with those tags"
+                : filter === "in_progress"
+                  ? "in progress"
+                  : filter === "all"
+                    ? "to show"
+                    : filter}
+              .
+            </p>
           ) : (
             <>
               <p>Nothing saved yet.</p>
@@ -426,16 +939,33 @@ export function Library() {
             <ArticleCard
               key={article._id}
               article={article}
+              tagsById={tagsById}
+              allTags={tagsList}
               isRenaming={renamingId === article._id}
               onStartRename={setRenamingId}
               onCommitRename={onCommitRename}
               onCancelRename={() => setRenamingId(null)}
               onRetry={onRetry}
               onDelete={onDelete}
+              onSetPinned={onSetPinned}
+              onAttachTag={onAttachTag}
+              onDetachTag={onDetachTag}
+              onCreateTag={onCreateTag}
             />
           ))}
         </ul>
       )}
+
+      {tagManagerOpen ? (
+        <TagManager
+          allTags={tagsList}
+          onCreateTag={onCreateTag}
+          onRenameTag={(id, name) => void renameTag({ id, name })}
+          onSetColor={(id, color) => void setTagColor({ id, color })}
+          onRemoveTag={(id) => void removeTag({ id })}
+          onClose={() => setTagManagerOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

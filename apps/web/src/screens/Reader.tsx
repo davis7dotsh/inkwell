@@ -28,6 +28,7 @@ import { BlockRenderer } from "../components/BlockRenderer";
 import { BrushStroke } from "../components/BrushStroke";
 import { DocumentOutline } from "../components/DocumentOutline";
 import { MemosOverlay } from "../components/MemosOverlay";
+import { ReaderTags } from "../components/ReaderTags";
 import { MAX_CONTENT_WIDTH, useTheme } from "../lib/theme";
 
 const DOCUMENT_START_ID = "document-start";
@@ -540,6 +541,7 @@ function ReaderInner({ id }: { id: Id<"articles"> }) {
               {article.title}
             </h1>
             <p className="article-meta">{meta}</p>
+            <ReaderTags articleId={article._id} tagIds={article.tags} />
             <BrushStroke
               width={Math.min(220, (columnWidth ?? MAX_CONTENT_WIDTH) * 0.4)}
               height={8}

@@ -40,6 +40,24 @@ export type FailArgs = {
   error: string;
 };
 
+// Full tag row, as returned by GET /agent/tags.
+const tagSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  color: z.string().optional(),
+  createdAt: z.number(),
+});
+
+// Lighter shape returned by create-tag (no createdAt on the echoed row).
+const createdTagSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  color: z.string().optional(),
+});
+
+export type Tag = z.infer<typeof tagSchema>;
+export type CreatedTag = z.infer<typeof createdTagSchema>;
+
 const articleSummarySchema = z.object({
   id: z.string(),
   url: z.string(),
@@ -52,6 +70,8 @@ const articleSummarySchema = z.object({
   excerpt: z.string().optional(),
   savedAt: z.number(),
   readStatus: readStatusSchema,
+  pinned: z.boolean(),
+  tags: z.array(z.string()),
 });
 
 const articleSchema = z.object({
@@ -67,6 +87,8 @@ const articleSchema = z.object({
   blocksJson: z.string().optional(),
   savedAt: z.number(),
   readStatus: readStatusSchema,
+  pinned: z.boolean(),
+  tags: z.array(z.string()),
 });
 
 const annotationsSchema = z.object({
@@ -170,9 +192,16 @@ export function createConvexService(
       userId: string;
       readStatus?: ReadStatus;
       status?: ArticleStatus;
+      tagIds?: string[];
       limit?: number;
     }) {
-      const res = await get("/agent/articles", args);
+      const { tagIds, ...rest } = args;
+      const res = await get("/agent/articles", {
+        ...rest,
+        // The bridge expects a comma-separated list; omit it when empty so we
+        // don't send a stray empty filter.
+        tagIds: tagIds && tagIds.length > 0 ? tagIds.join(",") : undefined,
+      });
       const result = await responseJson(res);
       return z.object({ articles: z.array(articleSummarySchema) }).parse(result)
         .articles;
@@ -189,6 +218,49 @@ export function createConvexService(
       const res = await get("/agent/annotations", args, [404]);
       if (res.status === 404) return null;
       return annotationsSchema.parse(await responseJson(res));
+    },
+
+    async listTags(args: { userId: string }) {
+      const res = await get("/agent/tags", args);
+      const result = await responseJson(res);
+      return z.object({ tags: z.array(tagSchema) }).parse(result).tags;
+    },
+
+    async createTag(args: { userId: string; name: string; color?: string }) {
+      const result = await post("/agent/tags/create", args);
+      return z.object({ tag: createdTagSchema }).parse(result).tag;
+    },
+
+    async renameTag(args: { userId: string; tagId: string; name: string }) {
+      await post("/agent/tags/rename", args);
+    },
+
+    async removeTag(args: { userId: string; tagId: string }) {
+      await post("/agent/tags/remove", args);
+    },
+
+    async addTagToArticle(args: {
+      userId: string;
+      articleId: string;
+      tagId: string;
+    }) {
+      await post("/agent/article-tags/add", args);
+    },
+
+    async removeTagFromArticle(args: {
+      userId: string;
+      articleId: string;
+      tagId: string;
+    }) {
+      await post("/agent/article-tags/remove", args);
+    },
+
+    async setArticlePinned(args: {
+      userId: string;
+      id: string;
+      pinned: boolean;
+    }) {
+      await post("/agent/article/pin", args);
     },
   };
 }
