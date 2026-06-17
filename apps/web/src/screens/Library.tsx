@@ -518,23 +518,27 @@ function TagManagerRow({
   const [editing, setEditing] = useState(false);
   const [nameDraft, setNameDraft] = useState(tag.name);
   const color = tagDisplayColor(tag.color);
+  // Swatches are uppercase hex; a color set via MCP may be any case. Compare
+  // case-insensitively so the active swatch still highlights (and toggles off).
+  const tagColor = tag.color?.toLowerCase();
 
   return (
     <li className="tag-modal-row">
       <div className="tag-modal-swatches" role="group" aria-label="Tag color">
-        {TAG_COLOR_SWATCHES.map((swatch) => (
-          <button
-            key={swatch}
-            type="button"
-            className={`tag-swatch${tag.color === swatch ? " tag-swatch-on" : ""}`}
-            style={{ background: swatch }}
-            aria-label={`Set color ${swatch}`}
-            aria-pressed={tag.color === swatch}
-            onClick={() =>
-              onSetColor(tag._id, tag.color === swatch ? undefined : swatch)
-            }
-          />
-        ))}
+        {TAG_COLOR_SWATCHES.map((swatch) => {
+          const selected = tagColor === swatch.toLowerCase();
+          return (
+            <button
+              key={swatch}
+              type="button"
+              className={`tag-swatch${selected ? " tag-swatch-on" : ""}`}
+              style={{ background: swatch }}
+              aria-label={`Set color ${swatch}`}
+              aria-pressed={selected}
+              onClick={() => onSetColor(tag._id, selected ? undefined : swatch)}
+            />
+          );
+        })}
       </div>
       {editing ? (
         <form
