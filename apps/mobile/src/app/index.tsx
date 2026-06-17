@@ -785,16 +785,56 @@ export default function LibraryScreen() {
 
         <View style={styles.sectionHeadingRow}>
           <Text style={styles.sectionTitle}>Library</Text>
+          <View style={styles.headingControls}>
+            <Pressable
+              onPress={onManageTags}
+              accessibilityRole="button"
+              accessibilityLabel="Manage tags"
+              hitSlop={6}
+              style={styles.manageTagsButton}
+            >
+              <MaterialCommunityIcons
+                name="tag-multiple-outline"
+                size={16}
+                color={c.inkSecondary}
+              />
+            </Pressable>
+            <Pressable
+              onPress={() =>
+                setSortOrder((order) =>
+                  order === "newest" ? "oldest" : "newest"
+                )
+              }
+              accessibilityRole="button"
+              accessibilityLabel="Toggle sort order"
+              hitSlop={6}
+              style={styles.sortButton}
+            >
+              <MaterialCommunityIcons
+                name={
+                  sortOrder === "newest"
+                    ? "sort-calendar-descending"
+                    : "sort-calendar-ascending"
+                }
+                size={16}
+                color={c.inkSecondary}
+              />
+              <Text style={styles.sortText}>
+                {sortOrder === "newest" ? "Newest" : "Oldest"}
+              </Text>
+            </Pressable>
+          </View>
         </View>
 
-        <View style={styles.tagBarRow}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            style={styles.tagBarScroll}
-            contentContainerStyle={styles.tagBar}
-          >
+        {(tags?.length ?? 0) > 0 ? (
+          <View style={styles.tagBarRow}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              style={styles.tagBarScroll}
+              contentContainerStyle={styles.tagBar}
+            >
             {activeTagIds.length > 0 ? (
               <Pressable
                 onPress={() => setSelectedTagIds([])}
@@ -839,43 +879,9 @@ export default function LibraryScreen() {
                 </Pressable>
               );
             })}
-          </ScrollView>
-          <Pressable
-            onPress={onManageTags}
-            accessibilityRole="button"
-            accessibilityLabel="Manage tags"
-            hitSlop={6}
-            style={styles.manageTagsButton}
-          >
-            <MaterialCommunityIcons
-              name="tag-multiple-outline"
-              size={16}
-              color={c.inkSecondary}
-            />
-          </Pressable>
-          <Pressable
-            onPress={() =>
-              setSortOrder((order) => (order === "newest" ? "oldest" : "newest"))
-            }
-            accessibilityRole="button"
-            accessibilityLabel="Toggle sort order"
-            hitSlop={6}
-            style={styles.sortButton}
-          >
-            <MaterialCommunityIcons
-              name={
-                sortOrder === "newest"
-                  ? "sort-calendar-descending"
-                  : "sort-calendar-ascending"
-              }
-              size={16}
-              color={c.inkSecondary}
-            />
-            <Text style={styles.sortText}>
-              {sortOrder === "newest" ? "Newest" : "Oldest"}
-            </Text>
-          </Pressable>
-        </View>
+            </ScrollView>
+          </View>
+        ) : null}
 
         <FlatList
           style={styles.articleList}
@@ -1117,6 +1123,12 @@ const themed = makeThemedStyles((c) =>
       lineHeight: 34,
       fontWeight: "600",
       color: c.ink,
+    },
+    // Manage tags + sort toggle, right-aligned on the Library heading line.
+    headingControls: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
     },
     tagBarRow: {
       flexDirection: "row",
