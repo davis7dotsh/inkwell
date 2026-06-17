@@ -125,8 +125,8 @@ describe("POST /articles", () => {
     expect(res.status).toBe(202);
     expect(await res.json()).toEqual({ articleId: "art1" });
     expect(ingest["create-pending"]).toHaveLength(1);
-    expect(ingest["create-pending"][0].headers.Authorization).toBe(
-      `Convex ${TEST_ENV.CONVEX_DEPLOY_KEY}`
+    expect(ingest["create-pending"][0].headers["x-inkwell-key"]).toBe(
+      TEST_ENV.WORKER_SHARED_SECRET
     );
     expect(ingest["create-pending"][0].body).toMatchObject({
       userId: "user_1",

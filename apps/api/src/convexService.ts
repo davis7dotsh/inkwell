@@ -1,27 +1,20 @@
-// Direct Convex service client for the API worker. The deployment key grants
-// access to internal functions, so no public query or HTTP-action bridge is
-// needed. Create this client per request/work item: ConvexHttpClient stores
-// authentication state and must not be shared across Worker requests.
-
-import { ConvexHttpClient } from "convex/browser";
-import {
-  getFunctionName,
-  makeFunctionReference,
-  type DefaultFunctionArgs,
-  type FunctionReference,
-  type FunctionType,
-} from "convex/server";
-
-import { internal } from "../../../packages/backend/convex/_generated/api";
+// Service client for the shared-secret Convex HTTP actions. The worker
+// authenticates the caller, then these routes call internal Convex functions
+// without exposing them through the public query or mutation API.
+import { z } from "zod";
 
 export type ConvexServiceEnv = {
-  CONVEX_URL: string;
-  CONVEX_DEPLOY_KEY: string;
+  CONVEX_SITE_URL: string;
+  WORKER_SHARED_SECRET: string;
 };
 
-export type ArticleKind = "web" | "pdf";
-export type ArticleStatus = "pending" | "ready" | "failed";
-export type ReadStatus = "unread" | "in_progress" | "read";
+const articleKindSchema = z.enum(["web", "pdf"]);
+const articleStatusSchema = z.enum(["pending", "ready", "failed"]);
+const readStatusSchema = z.enum(["unread", "in_progress", "read"]);
+
+export type ArticleKind = z.infer<typeof articleKindSchema>;
+export type ArticleStatus = z.infer<typeof articleStatusSchema>;
+export type ReadStatus = z.infer<typeof readStatusSchema>;
 
 export type CreatePendingArgs = {
   userId: string;
@@ -47,87 +40,151 @@ export type FailArgs = {
   error: string;
 };
 
-type AdminAuthenticatedClient = ConvexHttpClient & {
-  setAdminAuth(token: string): void;
-};
+const articleSummarySchema = z.object({
+  id: z.string(),
+  url: z.string(),
+  kind: articleKindSchema,
+  status: articleStatusSchema,
+  error: z.string().optional(),
+  title: z.string(),
+  byline: z.string().optional(),
+  siteName: z.string().optional(),
+  excerpt: z.string().optional(),
+  savedAt: z.number(),
+  readStatus: readStatusSchema,
+});
 
-function supportsAdminAuth(
-  client: ConvexHttpClient
-): client is AdminAuthenticatedClient {
-  return (
-    "setAdminAuth" in client &&
-    typeof client.setAdminAuth === "function"
-  );
+const articleSchema = z.object({
+  _id: z.string(),
+  url: z.string(),
+  kind: articleKindSchema,
+  status: articleStatusSchema,
+  error: z.string().optional(),
+  title: z.string(),
+  byline: z.string().optional(),
+  siteName: z.string().optional(),
+  excerpt: z.string().optional(),
+  blocksJson: z.string().optional(),
+  savedAt: z.number(),
+  readStatus: readStatusSchema,
+});
+
+const annotationsSchema = z.object({
+  articleTitle: z.string(),
+  articleUrl: z.string(),
+  annotations: z
+    .object({
+      contentWidth: z.number(),
+      strokesJson: z.string(),
+      boxesJson: z.string(),
+      notesJson: z.string(),
+      memosJson: z.string(),
+      updatedAt: z.number(),
+    })
+    .nullable(),
+});
+
+async function responseJson(res: Response) {
+  const value: unknown = await res.json();
+  return value;
 }
 
-// ConvexHttpClient's public methods intentionally accept public references.
-// Admin auth can execute internal functions, so preserve the generated
-// argument/return types while recreating the same runtime function name.
-function adminReference<
-  Type extends FunctionType,
-  Args extends DefaultFunctionArgs,
-  Return,
->(reference: FunctionReference<Type, "internal", Args, Return>) {
-  return makeFunctionReference<Type, Args, Return>(getFunctionName(reference));
+async function request(
+  fetchImpl: typeof fetch,
+  url: URL,
+  secret: string,
+  init?: RequestInit,
+  allowedStatuses: readonly number[] = []
+) {
+  const headers = new Headers(init?.headers);
+  headers.set("x-inkwell-key", secret);
+  const res = await fetchImpl(url, { ...init, headers });
+  if (!res.ok && !allowedStatuses.includes(res.status)) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `Convex ${url.pathname} failed: HTTP ${res.status}${
+        text ? ` — ${text.slice(0, 200)}` : ""
+      }`
+    );
+  }
+  return res;
 }
 
 export function createConvexService(
   fetchImpl: typeof fetch,
   env: ConvexServiceEnv
 ) {
-  const client = new ConvexHttpClient(env.CONVEX_URL, {
-    fetch: fetchImpl,
-    logger: false,
-  });
-  if (!supportsAdminAuth(client)) {
-    throw new Error("Installed Convex client does not support admin auth");
+  const baseUrl = env.CONVEX_SITE_URL.replace(/\/+$/, "");
+
+  async function post(path: string, body: unknown) {
+    const res = await request(
+      fetchImpl,
+      new URL(path, `${baseUrl}/`),
+      env.WORKER_SHARED_SECRET,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    );
+    return responseJson(res);
   }
-  client.setAdminAuth(env.CONVEX_DEPLOY_KEY);
+
+  async function get(
+    path: string,
+    params: Record<string, string | number | undefined>,
+    allowedStatuses?: readonly number[]
+  ) {
+    const url = new URL(path, `${baseUrl}/`);
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined) url.searchParams.set(key, String(value));
+    }
+    return request(
+      fetchImpl,
+      url,
+      env.WORKER_SHARED_SECRET,
+      undefined,
+      allowedStatuses
+    );
+  }
 
   return {
     async createPending(args: CreatePendingArgs) {
-      const articleId = await client.mutation(
-        adminReference(internal.articles.createPending),
-        args
-      );
-      return { articleId };
+      const result = await post("/ingest/create-pending", args);
+      return z.object({ articleId: z.string() }).parse(result);
     },
 
     async complete(args: CompleteArgs) {
-      await client.mutation(
-        adminReference(internal.articles.complete),
-        args
-      );
+      await post("/ingest/complete", args);
     },
 
     async fail(args: FailArgs) {
-      await client.mutation(adminReference(internal.articles.fail), args);
+      await post("/ingest/fail", args);
     },
 
-    listArticles(args: {
+    async listArticles(args: {
       userId: string;
       readStatus?: ReadStatus;
       status?: ArticleStatus;
       limit?: number;
     }) {
-      return client.query(
-        adminReference(internal.articles.listForAgent),
-        args
-      );
+      const res = await get("/agent/articles", args);
+      const result = await responseJson(res);
+      return z.object({ articles: z.array(articleSummarySchema) }).parse(result)
+        .articles;
     },
 
-    getArticle(args: { userId: string; id: string }) {
-      return client.query(
-        adminReference(internal.articles.getForAgent),
-        args
-      );
+    async getArticle(args: { userId: string; id: string }) {
+      const res = await get("/agent/article", args, [404]);
+      if (res.status === 404) return null;
+      const result = await responseJson(res);
+      return z.object({ article: articleSchema }).parse(result).article;
     },
 
-    getAnnotations(args: { userId: string; articleId: string }) {
-      return client.query(
-        adminReference(internal.annotations.getForAgent),
-        args
-      );
+    async getAnnotations(args: { userId: string; articleId: string }) {
+      const res = await get("/agent/annotations", args, [404]);
+      if (res.status === 404) return null;
+      return annotationsSchema.parse(await responseJson(res));
     },
   };
 }

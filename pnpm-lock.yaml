@@ -24,9 +24,6 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
-      convex:
-        specifier: ^1.40.0
-        version: 1.40.0(@clerk/react@6.9.0(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@6.0.6)
       hono:
         specifier: ^4.12.24
         version: 4.12.24

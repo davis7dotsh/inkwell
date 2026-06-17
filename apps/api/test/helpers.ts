@@ -1,8 +1,5 @@
 // Shared fetch stubs for the worker tests. No network anywhere: Firecrawl
-// and native Convex API calls are dispatched on URL.
-
-import { convexToJson, jsonToConvex } from "convex/values";
-import type { JSONValue, Value } from "convex/values";
+// and the Convex HTTP actions are dispatched on URL.
 
 import type { ConvexServiceEnv } from "../src/convexService";
 import type { PipelineEnv } from "../src/pipeline";
@@ -11,7 +8,6 @@ export type RecordedCall = {
   url: string;
   headers: Record<string, string>;
   body: unknown;
-  functionName?: string;
 };
 
 export const TEST_ENV: PipelineEnv &
@@ -22,8 +18,8 @@ export const TEST_ENV: PipelineEnv &
   FIRECRAWL_API_KEY: "fc-test-key",
   CLERK_SECRET_KEY: "sk_test",
   CLERK_PUBLISHABLE_KEY: "pk_test",
-  CONVEX_DEPLOY_KEY: "prod:deployment|test-key",
-  CONVEX_URL: "https://deployment.convex.cloud",
+  WORKER_SHARED_SECRET: "shh-shared",
+  CONVEX_SITE_URL: "https://deployment.convex.site",
 };
 
 export const FIRECRAWL_ENDPOINT = "https://api.firecrawl.dev/v2/scrape";
@@ -42,23 +38,19 @@ export const jsonResponse = (body: unknown, status = 200): Response =>
     headers: { "Content-Type": "application/json" },
   });
 
-export const convexResponse = (value: Value): Response =>
-  jsonResponse({
-    status: "success",
-    value: convexToJson(value),
-    logLines: [],
-  });
-
 export const firecrawlOk = (data: unknown): Response =>
   jsonResponse({ success: true, data });
 
 function headersOf(init?: RequestInit): Record<string, string> {
-  const out: Record<string, string> = {};
   const headers = init?.headers;
-  if (headers && !Array.isArray(headers) && !(headers instanceof Headers)) {
-    for (const [key, value] of Object.entries(headers)) out[key] = value;
+  if (!headers) return {};
+  if (headers instanceof Headers) {
+    return Object.fromEntries(headers.entries());
   }
-  return out;
+  if (Array.isArray(headers)) {
+    return Object.fromEntries(headers);
+  }
+  return { ...headers };
 }
 
 function parseBody(init?: RequestInit): unknown {
@@ -95,18 +87,17 @@ export type IngestLog = {
   fail: RecordedCall[];
 };
 
-/** Canned responses for the MCP's internal Convex reads. */
+/** Canned values for the MCP's Convex HTTP-action reads. */
 export type AgentReads = Partial<
   Record<
     "articles" | "article" | "annotations",
-    (args: Record<string, unknown>) => Value
+    (args: Record<string, unknown>) => unknown
   >
 >;
 
 /**
  * URL-dispatching stub: Firecrawl scrape/parse calls get `scrape()`
- * responses; native Convex query/mutation calls are recorded and answered
- * according to their internal function name.
+ * responses; Convex HTTP-action calls are recorded and answered by route.
  */
 export function fakeNetwork(
   scrape: () => Response,
@@ -123,45 +114,38 @@ export function fakeNetwork(
     if (url === FIRECRAWL_ENDPOINT || url === FIRECRAWL_PARSE_ENDPOINT) {
       return scrape();
     }
-    if (
-      url === `${TEST_ENV.CONVEX_URL}/api/mutation` ||
-      url === `${TEST_ENV.CONVEX_URL}/api/query`
-    ) {
-      const request = parseBody(init) as {
-        path: string;
-        args: JSONValue[];
-      };
-      const args = jsonToConvex(request.args[0]) as Record<string, unknown>;
-      const call = {
+    const ingestMatch =
+      /\/ingest\/(create-pending|complete|fail)$/.exec(url);
+    if (ingestMatch) {
+      const op = ingestMatch[1] as keyof IngestLog;
+      ingest[op].push({
+        url,
+        headers: headersOf(init),
+        body: parseBody(init),
+      });
+      return jsonResponse(
+        op === "create-pending" ? { articleId: "art1" } : { ok: true }
+      );
+    }
+    const agentMatch =
+      /\/agent\/(articles|article|annotations)(?:\?|$)/.exec(url);
+    if (agentMatch) {
+      const route = agentMatch[1] as keyof AgentReads;
+      const params = Object.fromEntries(new URL(url).searchParams.entries());
+      const args: Record<string, unknown> = { ...params };
+      if (typeof args.limit === "string") args.limit = Number(args.limit);
+      agentCalls.push({
         url,
         headers: headersOf(init),
         body: args,
-        functionName: request.path,
-      };
-      const opByPath = {
-        "articles:createPending": "create-pending",
-        "articles:complete": "complete",
-        "articles:fail": "fail",
-      } as const;
-      const op = opByPath[request.path as keyof typeof opByPath];
-      if (op) {
-        ingest[op].push(call);
-        return convexResponse(op === "create-pending" ? "art1" : null);
-      }
-
-      const readByPath = {
-        "articles:listForAgent": "articles",
-        "articles:getForAgent": "article",
-        "annotations:getForAgent": "annotations",
-      } as const;
-      const read = readByPath[request.path as keyof typeof readByPath];
-      if (!read) throw new Error(`unexpected Convex function: ${request.path}`);
-      agentCalls.push(call);
-      const handler = reads[read];
-      if (!handler) {
-        throw new Error(`no agent read stub for: ${request.path}`);
-      }
-      return convexResponse(handler(args));
+      });
+      const handler = reads[route];
+      if (!handler) throw new Error(`no agent read stub for: ${url}`);
+      const value = handler(args);
+      if (value === null) return new Response("not found", { status: 404 });
+      if (route === "articles") return jsonResponse({ articles: value });
+      if (route === "article") return jsonResponse({ article: value });
+      return jsonResponse(value);
     }
     throw new Error(`unexpected fetch in test: ${url}`);
   }) as typeof fetch;

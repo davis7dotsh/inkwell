@@ -28,8 +28,8 @@ export type Bindings = {
   FIRECRAWL_API_KEY: string;
   CLERK_SECRET_KEY: string;
   CLERK_PUBLISHABLE_KEY: string;
-  CONVEX_DEPLOY_KEY: string;
-  CONVEX_URL: string;
+  WORKER_SHARED_SECRET: string;
+  CONVEX_SITE_URL: string;
   MEMOS: R2Bucket;
 };
 
