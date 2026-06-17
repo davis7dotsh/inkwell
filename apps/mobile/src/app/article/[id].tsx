@@ -370,6 +370,12 @@ export default function ArticleScreen() {
 
   const persistAnnotations = useCallback(
     (a: Annotations) => {
+      // Snapshot the measured per-block layout so the agent API can map
+      // annotation pixels back onto article text. It is measured at the
+      // current render width, which may differ from the width these
+      // annotations were authored at — so the width travels with it and the
+      // reader scales by (layout width / a.contentWidth).
+      const layouts = layoutsRef.current;
       void saveAnnotations({
         articleId,
         contentWidth: a.contentWidth,
@@ -377,9 +383,16 @@ export default function ArticleScreen() {
         boxesJson: JSON.stringify(a.boxes),
         notesJson: JSON.stringify(a.notes),
         memosJson: JSON.stringify(a.memos),
+        layoutJson:
+          layouts.size > 0
+            ? JSON.stringify({
+                width: contentWidth,
+                layouts: Array.from(layouts.entries()),
+              })
+            : undefined,
       });
     },
-    [articleId, saveAnnotations]
+    [articleId, saveAnnotations, contentWidth]
   );
 
   useEffect(() => {

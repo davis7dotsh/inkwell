@@ -72,6 +72,8 @@ const articleSchema = z.object({
 const annotationsSchema = z.object({
   articleTitle: z.string(),
   articleUrl: z.string(),
+  // Article blocks ride along so the notes tool can resolve anchor text.
+  blocksJson: z.string().optional(),
   annotations: z
     .object({
       contentWidth: z.number(),
@@ -79,6 +81,8 @@ const annotationsSchema = z.object({
       boxesJson: z.string(),
       notesJson: z.string(),
       memosJson: z.string(),
+      // Layout snapshot for anchor resolution; absent on legacy/older clients.
+      layoutJson: z.string().optional(),
       updatedAt: z.number(),
     })
     .nullable(),

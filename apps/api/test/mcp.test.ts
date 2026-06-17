@@ -299,6 +299,78 @@ describe("get_article", () => {
     expect(text).toContain("# Hello\n\nBody text.");
   });
 
+  const sectionedArticle = {
+    ...readyArticle,
+    title: "Sectioned",
+    blocksJson: JSON.stringify([
+      { type: "heading", level: 1, spans: [{ text: "Alpha" }] },
+      { type: "paragraph", spans: [{ text: "Alpha body." }] },
+      { type: "heading", level: 1, spans: [{ text: "Beta" }] },
+      { type: "paragraph", spans: [{ text: "Beta body." }] },
+    ]),
+  };
+
+  it("lists section ids on the first page", async () => {
+    stubNetwork(noScrape, { article: () => sectionedArticle });
+
+    const response = await callTool("get_article", { articleId: "art1" });
+    const text = response.result?.content?.[0]?.text as string;
+    expect(text).toContain("## Sections");
+    expect(text).toContain("section-1-alpha");
+    expect(text).toContain("section-3-beta");
+  });
+
+  it("returns a single section by id", async () => {
+    stubNetwork(noScrape, { article: () => sectionedArticle });
+
+    const response = await callTool("get_article", {
+      articleId: "art1",
+      section: "section-3-beta",
+    });
+    const text = response.result?.content?.[0]?.text as string;
+    expect(text).toContain("Section: Beta");
+    expect(text).toContain("# Beta\n\nBeta body.");
+    expect(text).not.toContain("Alpha body.");
+  });
+
+  it("lists available sections when the requested id is unknown", async () => {
+    stubNetwork(noScrape, { article: () => sectionedArticle });
+
+    const response = await callTool("get_article", {
+      articleId: "art1",
+      section: "nope",
+    });
+    expect(response.result?.isError).toBe(true);
+    expect(response.result?.content?.[0]?.text).toContain("section-1-alpha");
+  });
+
+  it("paginates the body with offset and a continue hint", async () => {
+    stubNetwork(noScrape, { article: () => sectionedArticle });
+
+    const first = await callTool("get_article", { articleId: "art1", limit: 5 });
+    const firstText = first.result?.content?.[0]?.text as string;
+    expect(firstText).toContain("Continue with offset=");
+
+    const second = await callTool("get_article", {
+      articleId: "art1",
+      offset: 12,
+    });
+    const secondText = second.result?.content?.[0]?.text as string;
+    expect(secondText).toContain("continued, characters 12");
+  });
+
+  it("rejects mixing section with offset/limit", async () => {
+    stubNetwork(noScrape, { article: () => sectionedArticle });
+
+    const response = await callTool("get_article", {
+      articleId: "art1",
+      section: "section-1-alpha",
+      offset: 5,
+    });
+    expect(response.result?.isError).toBe(true);
+    expect(response.result?.content?.[0]?.text).toContain("not both");
+  });
+
   it("returns a tool error for unknown ids", async () => {
     stubNetwork(noScrape, {
       article: () => null,
@@ -324,43 +396,60 @@ describe("get_article", () => {
 });
 
 describe("get_notes", () => {
-  it("returns notes and transcripts in reading order plus ink counts", async () => {
+  // Four blocks: two headings and two paragraphs, with a layout snapshot that
+  // places each block so annotation coordinates resolve to specific text.
+  const ANCHORED_BLOCKS = [
+    { type: "heading", level: 1, spans: [{ text: "Intro" }] },
+    { type: "paragraph", spans: [{ text: "The quick brown fox." }] },
+    { type: "heading", level: 2, spans: [{ text: "Details" }] },
+    { type: "paragraph", spans: [{ text: "Jumps over the lazy dog." }] },
+  ];
+  const ANCHORED_LAYOUT = {
+    width: 800,
+    layouts: [
+      [0, { y: 0, height: 40 }],
+      [1, { y: 40, height: 60 }],
+      [2, { y: 100, height: 40 }],
+      [3, { y: 140, height: 60 }],
+    ],
+  };
+
+  it("anchors each annotation to its text, in reading order", async () => {
     stubNetwork(noScrape, {
       annotations: () => ({
         articleTitle: "Article A",
         articleUrl: "https://example.com/a",
+        blocksJson: JSON.stringify(ANCHORED_BLOCKS),
         annotations: {
           contentWidth: 800,
           notesJson: JSON.stringify([
-            { id: "n2", x: 0, y: 500, text: "Second note" },
-            { id: "n1", x: 0, y: 10, text: "First note" },
+            { id: "n1", x: 5, y: 70, text: "Important point" },
           ]),
           memosJson: JSON.stringify([
             {
               id: "m1",
-              x: 0,
-              y: 50,
+              x: 5,
+              y: 160,
               durationMs: 1000,
-              transcript: "Spoken thought",
+              transcript: "My thoughts",
               status: "uploaded",
               createdAt: 1,
             },
-            {
-              id: "m2",
-              x: 0,
-              y: 60,
-              durationMs: 1000,
-              transcript: "   ",
-              status: "local",
-              createdAt: 2,
-            },
           ]),
           strokesJson: JSON.stringify([
-            { id: "s1", tool: "highlighter", color: "x", width: 1, points: [] },
-            { id: "s2", tool: "pen", color: "x", width: 1, points: [] },
-            { id: "s3", tool: "pen", color: "x", width: 1, points: [] },
+            {
+              id: "s1",
+              tool: "highlighter",
+              color: "x",
+              width: 1,
+              points: [
+                { x: 10, y: 150 },
+                { x: 200, y: 155 },
+              ],
+            },
           ]),
-          boxesJson: JSON.stringify([{ id: "b1", x: 0, y: 0, w: 1, h: 1 }]),
+          boxesJson: JSON.stringify([{ id: "b1", x: 0, y: 45, w: 780, h: 50 }]),
+          layoutJson: JSON.stringify(ANCHORED_LAYOUT),
           updatedAt: 1750000000000,
         },
       }),
@@ -372,17 +461,101 @@ describe("get_notes", () => {
     expect(response.result?.structuredContent).toEqual({
       articleTitle: "Article A",
       articleUrl: "https://example.com/a",
-      notes: ["First note", "Second note"],
-      voiceMemoTranscripts: ["Spoken thought"],
-      boxCount: 1,
-      highlightStrokeCount: 1,
-      penStrokeCount: 2,
+      anchored: true,
+      annotations: [
+        {
+          id: "b1",
+          type: "box",
+          selectedText: "The quick brown fox.",
+          sectionHeading: "Intro",
+          startOffset: 7,
+          endOffset: 27,
+          boundingBox: { x: 0, y: 45, w: 780, h: 50 },
+        },
+        {
+          id: "n1",
+          type: "typed_note",
+          note: "Important point",
+          nearbyText: "The quick brown fox.",
+          sectionHeading: "Intro",
+          startOffset: 7,
+          endOffset: 27,
+          boundingBox: { x: 5, y: 70, w: 0, h: 0 },
+        },
+        {
+          id: "s1",
+          type: "highlight",
+          selectedText: "Jumps over the lazy dog.",
+          sectionHeading: "Details",
+          startOffset: 38,
+          endOffset: 62,
+          boundingBox: { x: 10, y: 150, w: 190, h: 5 },
+        },
+        {
+          id: "m1",
+          type: "voice",
+          note: "My thoughts",
+          nearbyText: "Jumps over the lazy dog.",
+          sectionHeading: "Details",
+          startOffset: 38,
+          endOffset: 62,
+          boundingBox: { x: 5, y: 160, w: 0, h: 0 },
+        },
+      ],
+      summary: {
+        typedNotes: 1,
+        voiceMemos: 1,
+        boxes: 1,
+        highlightStrokes: 1,
+        penStrokes: 0,
+      },
       updatedAt: "2025-06-15T15:06:40.000Z",
     });
-    const text = response.result?.content?.[0]?.text as string;
-    expect(text.indexOf("First note")).toBeLessThan(
-      text.indexOf("Second note")
-    );
+  });
+
+  it("returns geometry only (anchored false) without a layout snapshot", async () => {
+    stubNetwork(noScrape, {
+      annotations: () => ({
+        articleTitle: "Article A",
+        articleUrl: "https://example.com/a",
+        annotations: {
+          contentWidth: 800,
+          notesJson: JSON.stringify([
+            { id: "n1", x: 5, y: 70, text: "Loose note" },
+          ]),
+          memosJson: "[]",
+          strokesJson: "[]",
+          boxesJson: JSON.stringify([{ id: "b1", x: 0, y: 10, w: 100, h: 50 }]),
+          updatedAt: 1750000000000,
+        },
+      }),
+    });
+
+    const response = await callTool("get_notes", { articleId: "art1" });
+
+    expect(response.result?.isError).toBeFalsy();
+    expect(response.result?.structuredContent).toEqual({
+      articleTitle: "Article A",
+      articleUrl: "https://example.com/a",
+      anchored: false,
+      annotations: [
+        { id: "b1", type: "box", boundingBox: { x: 0, y: 10, w: 100, h: 50 } },
+        {
+          id: "n1",
+          type: "typed_note",
+          note: "Loose note",
+          boundingBox: { x: 5, y: 70, w: 0, h: 0 },
+        },
+      ],
+      summary: {
+        typedNotes: 1,
+        voiceMemos: 0,
+        boxes: 1,
+        highlightStrokes: 0,
+        penStrokes: 0,
+      },
+      updatedAt: "2025-06-15T15:06:40.000Z",
+    });
   });
 
   it("handles articles with no annotations yet", async () => {
@@ -397,9 +570,15 @@ describe("get_notes", () => {
     const response = await callTool("get_notes", { articleId: "art1" });
     expect(response.result?.isError).toBeFalsy();
     expect(response.result?.structuredContent).toMatchObject({
-      notes: [],
-      voiceMemoTranscripts: [],
-      boxCount: 0,
+      anchored: false,
+      annotations: [],
+      summary: {
+        typedNotes: 0,
+        voiceMemos: 0,
+        boxes: 0,
+        highlightStrokes: 0,
+        penStrokes: 0,
+      },
     });
     expect(response.result?.content?.[0]?.text).toContain("No annotations yet");
   });
@@ -415,12 +594,20 @@ describe("get_notes", () => {
             null,
             { y: 10 },
             { y: 20, text: 42 },
-            { y: 30, text: "Valid note" },
+            { id: "n1", x: 0, y: 30, text: "Valid note" },
           ]),
           memosJson: JSON.stringify([
             false,
             { y: 10, transcript: null },
-            { y: 20, transcript: "Valid transcript" },
+            {
+              id: "m1",
+              x: 0,
+              y: 20,
+              durationMs: 1,
+              transcript: "Valid transcript",
+              status: "local",
+              createdAt: 1,
+            },
           ]),
           strokesJson: "[]",
           boxesJson: "[]",
@@ -433,8 +620,21 @@ describe("get_notes", () => {
 
     expect(response.result?.isError).toBeFalsy();
     expect(response.result?.structuredContent).toMatchObject({
-      notes: ["Valid note"],
-      voiceMemoTranscripts: ["Valid transcript"],
+      annotations: [
+        {
+          id: "m1",
+          type: "voice",
+          note: "Valid transcript",
+          boundingBox: { x: 0, y: 20, w: 0, h: 0 },
+        },
+        {
+          id: "n1",
+          type: "typed_note",
+          note: "Valid note",
+          boundingBox: { x: 0, y: 30, w: 0, h: 0 },
+        },
+      ],
+      summary: { typedNotes: 1, voiceMemos: 1 },
     });
   });
 

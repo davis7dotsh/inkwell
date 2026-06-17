@@ -36,6 +36,9 @@ export const getForAgent = internalQuery({
     return {
       articleTitle: article.title,
       articleUrl: article.url,
+      // Article blocks travel with the annotations so the MCP can resolve
+      // anchor text (selected/nearby passages) in one round trip.
+      blocksJson: article.blocksJson,
       annotations: annotations
         ? {
             contentWidth: annotations.contentWidth,
@@ -43,6 +46,7 @@ export const getForAgent = internalQuery({
             boxesJson: annotations.boxesJson,
             notesJson: annotations.notesJson,
             memosJson: annotations.memosJson ?? "[]",
+            layoutJson: annotations.layoutJson,
             updatedAt: annotations.updatedAt,
           }
         : null,
@@ -58,6 +62,7 @@ export const save = mutation({
     boxesJson: v.string(),
     notesJson: v.string(),
     memosJson: v.optional(v.string()),
+    layoutJson: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const article = await requireOwnedArticle(ctx, args.articleId);
@@ -75,6 +80,8 @@ export const save = mutation({
         // A save without memosJson (e.g. an older client) must not wipe
         // memos that are already stored.
         memosJson: args.memosJson ?? existing.memosJson ?? "[]",
+        // Likewise keep the last layout snapshot if this client didn't send one.
+        layoutJson: args.layoutJson ?? existing.layoutJson,
         updatedAt,
       });
     } else {
@@ -86,6 +93,7 @@ export const save = mutation({
         boxesJson: args.boxesJson,
         notesJson: args.notesJson,
         memosJson: args.memosJson ?? "[]",
+        layoutJson: args.layoutJson,
         updatedAt,
       });
     }

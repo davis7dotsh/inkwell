@@ -9,8 +9,23 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { blocksToMarkdown } from "@inkwell/content";
-import type { Block, BoxAnnotation, Stroke } from "@inkwell/content";
+import {
+  blocksToMarkdown,
+  buildDocumentOutline,
+  inferDocumentHeadings,
+  parseLayoutSnapshot,
+  resolveAnnotations,
+  truncate,
+} from "@inkwell/content";
+import type {
+  Annotations,
+  Block,
+  BoxAnnotation,
+  NoteAnnotation,
+  ResolvedAnnotation,
+  Stroke,
+  VoiceMemoAnnotation,
+} from "@inkwell/content";
 import { z } from "zod";
 
 import type { ConvexService } from "./convexService";
@@ -38,16 +53,45 @@ function parseJsonArray<T>(json: string): T[] {
   }
 }
 
-function hasTextAtY<Key extends "text" | "transcript">(
-  value: unknown,
-  key: Key
-): value is { y: number } & Record<Key, string> {
-  if (typeof value !== "object" || value === null) return false;
-  const fields = value as Record<string, unknown>;
-  return typeof fields.y === "number" && typeof fields[key] === "string";
-}
+const KIND_LABEL: Record<ResolvedAnnotation["type"], string> = {
+  typed_note: "📝 note",
+  voice: "🎤 voice memo",
+  highlight: "🖍️ highlight",
+  box: "▢ boxed section",
+  pen: "✒️ pen mark",
+};
 
-const byReadingOrder = (a: { y: number }, b: { y: number }) => a.y - b.y;
+/** Human-readable rendering of the resolved annotations, in reading order. */
+function renderNotesText(
+  title: string,
+  url: string,
+  annotations: ResolvedAnnotation[],
+  anchored: boolean
+): string {
+  const lines = [`Annotations on "${title}" (${url}):`];
+  if (annotations.length === 0) {
+    lines.push("", "No annotations yet.");
+    return lines.join("\n");
+  }
+  lines.push("");
+  for (const a of annotations) {
+    const parts = [`- ${KIND_LABEL[a.type]}`];
+    if (a.sectionHeading) parts.push(` [§ ${truncate(a.sectionHeading, 80)}]`);
+    if (a.note) parts.push(`: "${truncate(a.note, 200)}"`);
+    else if (a.type === "voice") parts.push(": (no transcript)");
+    if (a.selectedText) parts.push(` → "${truncate(a.selectedText, 200)}"`);
+    else if (a.nearbyText) parts.push(` — near: "${truncate(a.nearbyText, 160)}"`);
+    lines.push(parts.join(""));
+  }
+  if (!anchored) {
+    lines.push(
+      "",
+      "(Anchor text unavailable — these annotations predate layout capture. " +
+        "Open the article in the reader and re-save to anchor them to text.)"
+    );
+  }
+  return lines.join("\n");
+}
 
 /** The slice of ExecutionContext the tools need (structural, fake-able). */
 export type WaitUntil = { waitUntil(promise: Promise<unknown>): void };
@@ -208,13 +252,45 @@ export function buildInkwellMcp(
       title: "Get article content",
       description:
         "Fetch one article's content as Markdown, with title/byline/source " +
-        "metadata. Use the id from list_articles or save_article.",
+        "metadata. Long articles paginate: the first page lists section ids " +
+        "and the character offset to continue from. Pass `section` to fetch " +
+        "just one section (with its subsections), or `offset`/`limit` to page " +
+        "through the body. Use the id from list_articles or save_article.",
       inputSchema: {
         articleId: z.string().describe("Article id from list_articles"),
+        section: z
+          .string()
+          .optional()
+          .describe(
+            "Section id from a previous get_article response; returns just " +
+              "that section and its subsections."
+          ),
+        offset: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe("Character offset into the body to start from (default 0)."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_ARTICLE_CHARS)
+          .optional()
+          .describe(
+            `Max characters to return (default and ceiling ${MAX_ARTICLE_CHARS}).`
+          ),
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ articleId }) => {
+    async ({ articleId, section, offset, limit }) => {
+      // Section mode and char paging are alternative retrieval modes; mixing
+      // them silently drops the paging args, so reject it outright.
+      if (section !== undefined && (offset !== undefined || limit !== undefined)) {
+        return errorResult(
+          "Pass either `section` or `offset`/`limit`, not both."
+        );
+      }
       const article = await convex.getArticle({ userId, id: articleId });
       if (!article) return errorResult(`No article with id ${articleId}.`);
       if (article.status !== "ready" || !article.blocksJson) {
@@ -225,14 +301,12 @@ export function buildInkwellMcp(
         );
       }
 
-      let markdown = blocksToMarkdown(
+      // Recover heading semantics (numbered PDFs) so section ids and slicing
+      // line up with what the reader renders.
+      const blocks = inferDocumentHeadings(
         parseJsonArray<Block>(article.blocksJson)
       );
-      if (markdown.length > MAX_ARTICLE_CHARS) {
-        markdown =
-          markdown.slice(0, MAX_ARTICLE_CHARS) +
-          `\n\n[Truncated — ${markdown.length} characters total.]`;
-      }
+      const outline = buildDocumentOutline(blocks);
       const header = [
         `# ${article.title}`,
         article.byline ? `By: ${article.byline}` : undefined,
@@ -243,8 +317,82 @@ export function buildInkwellMcp(
       ]
         .filter(Boolean)
         .join("\n");
+
+      // Section mode: just the requested heading down to the next heading of
+      // the same or shallower depth (i.e. the section plus its subsections).
+      if (section !== undefined) {
+        const index = outline.findIndex((entry) => entry.id === section);
+        if (index === -1) {
+          const ids = outline.slice(0, 50).map((e) => `- ${e.id}`);
+          return errorResult(
+            ids.length
+              ? `No section "${section}" in "${article.title}". Sections:\n${ids.join("\n")}`
+              : `Article "${article.title}" has no addressable sections.`
+          );
+        }
+        const entry = outline[index];
+        const next = outline
+          .slice(index + 1)
+          .find((e) => e.depth <= entry.depth);
+        const end = next ? next.blockIndex : blocks.length;
+        let body = blocksToMarkdown(blocks.slice(entry.blockIndex, end));
+        let note = "";
+        if (body.length > MAX_ARTICLE_CHARS) {
+          body = body.slice(0, MAX_ARTICLE_CHARS);
+          note = `\n\n[Section truncated at ${MAX_ARTICLE_CHARS} characters.]`;
+        }
+        return {
+          content: [
+            {
+              type: "text",
+              text: `${header}\nSection: ${entry.title}\n\n---\n\n${body}${note}`,
+            },
+          ],
+        };
+      }
+
+      const markdown = blocksToMarkdown(blocks);
+      const cap = limit ?? MAX_ARTICLE_CHARS;
+      const start = offset ?? 0;
+      const slice = markdown.slice(start, start + cap);
+      const end = start + slice.length;
+      const footer =
+        end < markdown.length
+          ? `\n\n[${markdown.length} characters total; returned ${start}–${end}. ` +
+            `Continue with offset=${end}, or pass section="<id>" to jump.]`
+          : "";
+
+      // First page carries the metadata header and the section map; later
+      // pages stay lean so the agent isn't re-billed for navigation chrome.
+      if (start === 0) {
+        const SHOWN_SECTIONS = 100;
+        const sectionLines = outline
+          .slice(0, SHOWN_SECTIONS)
+          .map((e) => `${"  ".repeat(e.depth)}- ${e.id} — ${truncate(e.title, 80)}`);
+        if (outline.length > SHOWN_SECTIONS) {
+          sectionLines.push(
+            `- … ${outline.length - SHOWN_SECTIONS} more sections not shown`
+          );
+        }
+        const sections =
+          outline.length > 0
+            ? "\n" + ["", "## Sections", ...sectionLines].join("\n")
+            : "";
+        return {
+          content: [
+            { type: "text", text: `${header}${sections}\n\n---\n\n${slice}${footer}` },
+          ],
+        };
+      }
       return {
-        content: [{ type: "text", text: `${header}\n\n---\n\n${markdown}` }],
+        content: [
+          {
+            type: "text",
+            text:
+              `# ${article.title} (continued, characters ${start}–${end})` +
+              `\n\n---\n\n${slice}${footer}`,
+          },
+        ],
       };
     }
   );
@@ -254,20 +402,48 @@ export function buildInkwellMcp(
     {
       title: "Get notes",
       description:
-        "Fetch the owner's annotations on an article: typed notes and voice " +
-        "memo transcripts in reading order, plus counts of ink markup " +
-        "(boxes, highlights, pen strokes) that only render visually.",
+        "Fetch the owner's annotations on an article, each anchored to the " +
+        "text it targets, in reading order: typed notes and voice memos with " +
+        "their nearby passage; highlights, boxes, and pen marks with the text " +
+        "they cover; plus the section heading and block-derived character " +
+        "offsets. `anchored` is false when the annotations predate layout " +
+        "capture (geometry only — no anchor text).",
       inputSchema: {
         articleId: z.string().describe("Article id from list_articles"),
       },
       outputSchema: {
         articleTitle: z.string(),
         articleUrl: z.string(),
-        notes: z.array(z.string()),
-        voiceMemoTranscripts: z.array(z.string()),
-        boxCount: z.number(),
-        highlightStrokeCount: z.number(),
-        penStrokeCount: z.number(),
+        anchored: z
+          .boolean()
+          .describe("Whether anchor text could be resolved for this article."),
+        annotations: z.array(
+          z.object({
+            id: z.string(),
+            type: z.enum(["typed_note", "highlight", "box", "pen", "voice"]),
+            note: z.string().optional(),
+            selectedText: z.string().optional(),
+            nearbyText: z.string().optional(),
+            sectionHeading: z.string().optional(),
+            startOffset: z.number().optional(),
+            endOffset: z.number().optional(),
+            boundingBox: z
+              .object({
+                x: z.number(),
+                y: z.number(),
+                w: z.number(),
+                h: z.number(),
+              })
+              .optional(),
+          })
+        ),
+        summary: z.object({
+          typedNotes: z.number(),
+          voiceMemos: z.number(),
+          boxes: z.number(),
+          highlightStrokes: z.number(),
+          penStrokes: z.number(),
+        }),
         updatedAt: z.string().optional(),
       },
       annotations: { readOnlyHint: true },
@@ -277,61 +453,73 @@ export function buildInkwellMcp(
       if (!result) return errorResult(`No article with id ${articleId}.`);
 
       const row = result.annotations;
-      const notes = row
-        ? parseJsonArray<unknown>(row.notesJson)
-            .filter((note) => hasTextAtY(note, "text"))
-            .sort(byReadingOrder)
-            .map((note) => note.text.trim())
-            .filter(Boolean)
-        : [];
-      const voiceMemoTranscripts = row
-        ? parseJsonArray<unknown>(row.memosJson)
-            .filter((memo) => hasTextAtY(memo, "transcript"))
-            .sort(byReadingOrder)
-            .map((memo) => memo.transcript.trim())
-            .filter(Boolean)
-        : [];
       const strokes = row ? parseJsonArray<Stroke>(row.strokesJson) : [];
-      const boxCount = row
-        ? parseJsonArray<BoxAnnotation>(row.boxesJson).length
-        : 0;
-      const highlightStrokeCount = strokes.filter(
-        (stroke) => stroke.tool === "highlighter"
-      ).length;
-      const penStrokeCount = strokes.length - highlightStrokeCount;
+      const boxes = row ? parseJsonArray<BoxAnnotation>(row.boxesJson) : [];
+      const notes = row ? parseJsonArray<NoteAnnotation>(row.notesJson) : [];
+      const memos = row
+        ? parseJsonArray<VoiceMemoAnnotation>(row.memosJson)
+        : [];
 
+      // Resolve pixel anchors to text using the persisted layout snapshot. With
+      // no snapshot the resolver still returns geometry + note text (anchored
+      // is then false), so the output shape is stable either way.
+      const snapshot = row ? parseLayoutSnapshot(row.layoutJson) : null;
+      const blocks = result.blocksJson
+        ? parseJsonArray<Block>(result.blocksJson)
+        : [];
+      const anchored = Boolean(snapshot && blocks.length > 0);
+
+      let annotations: ResolvedAnnotation[] = [];
+      if (row) {
+        const set: Annotations = {
+          contentWidth: row.contentWidth,
+          strokes,
+          boxes,
+          notes,
+          memos,
+        };
+        const scale =
+          snapshot && row.contentWidth > 0
+            ? snapshot.width / row.contentWidth
+            : 1;
+        annotations = resolveAnnotations(
+          blocks,
+          set,
+          snapshot?.layouts ?? new Map(),
+          scale
+        );
+      }
+
+      // Summary mirrors what's returned, so counts and the array never diverge.
+      const countOf = (type: ResolvedAnnotation["type"]) =>
+        annotations.filter((a) => a.type === type).length;
       const structuredContent = {
         articleTitle: result.articleTitle,
         articleUrl: result.articleUrl,
-        notes,
-        voiceMemoTranscripts,
-        boxCount,
-        highlightStrokeCount,
-        penStrokeCount,
+        anchored,
+        annotations,
+        summary: {
+          typedNotes: countOf("typed_note"),
+          voiceMemos: countOf("voice"),
+          boxes: countOf("box"),
+          highlightStrokes: countOf("highlight"),
+          penStrokes: countOf("pen"),
+        },
         updatedAt: row ? new Date(row.updatedAt).toISOString() : undefined,
       };
 
-      const lines = [`Annotations on "${result.articleTitle}" (${result.articleUrl}):`];
-      if (notes.length > 0) {
-        lines.push("", "Typed notes (reading order):");
-        lines.push(...notes.map((text) => `- "${text}"`));
-      }
-      if (voiceMemoTranscripts.length > 0) {
-        lines.push("", "Voice memo transcripts (reading order):");
-        lines.push(...voiceMemoTranscripts.map((text) => `- 🎤 "${text}"`));
-      }
-      if (boxCount + strokes.length > 0) {
-        lines.push(
-          "",
-          `Visual markup: ${boxCount} boxed section(s), ` +
-            `${highlightStrokeCount} highlighter stroke(s), ` +
-            `${penStrokeCount} pen stroke(s) — geometry only, view in the reader.`
-        );
-      }
-      if (lines.length === 1) lines.push("", "No annotations yet.");
-
       return {
-        content: [{ type: "text", text: lines.join("\n") }],
+        content: [
+          {
+            type: "text",
+            text: renderNotesText(
+              result.articleTitle,
+              result.articleUrl,
+              annotations,
+              anchored
+            ),
+          },
+        ],
         structuredContent,
       };
     }
