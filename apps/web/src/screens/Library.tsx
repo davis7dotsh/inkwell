@@ -28,9 +28,9 @@ type ArticleListItem = FunctionReturnType<typeof api.articles.list>[number];
 type TagItem = FunctionReturnType<typeof api.tags.list>[number];
 
 type ReadStatus = "unread" | "in_progress" | "read";
-type StatusFilter = "all" | ReadStatus;
 type SortOrder = "newest" | "oldest";
 
+// Read status is no longer a filter — it's surfaced only as the "unread" dot.
 /** Rows written before readStatus existed count as unread. */
 const readStatusOf = (article: ArticleListItem): ReadStatus =>
   article.readStatus ?? "unread";
@@ -42,13 +42,6 @@ const isUnopened = (article: ArticleListItem): boolean =>
 /** Uploaded PDFs have a synthetic upload:// url — nothing to retry/open. */
 const isUpload = (article: ArticleListItem) =>
   article.url.startsWith("upload://");
-
-const FILTERS: { value: StatusFilter; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "unread", label: "Unread" },
-  { value: "in_progress", label: "In progress" },
-  { value: "read", label: "Read" },
-];
 
 function formatSavedDate(savedAt: number) {
   return new Date(savedAt).toLocaleDateString(undefined, {
@@ -642,7 +635,6 @@ export function Library() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<StatusFilter>("all");
   const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
@@ -767,11 +759,8 @@ export function Library() {
 
   const visibleArticles = useMemo(() => {
     if (!articles) return undefined;
-    let filtered =
-      filter === "all"
-        ? articles
-        : articles.filter((article) => readStatusOf(article) === filter);
     // Tag filter: OR semantics — keep articles carrying at least one selection.
+    let filtered = articles;
     if (selectedTags.size > 0) {
       filtered = filtered.filter((article) =>
         article.tags.some((tagId) => selectedTags.has(tagId as string))
@@ -783,7 +772,7 @@ export function Library() {
     const pinned = ordered.filter((article) => article.pinned);
     const rest = ordered.filter((article) => !article.pinned);
     return [...pinned, ...rest];
-  }, [articles, filter, sortOrder, selectedTags]);
+  }, [articles, sortOrder, selectedTags]);
 
   const { c } = useTheme();
 
@@ -848,18 +837,6 @@ export function Library() {
       {saveError ? <p className="save-error">{saveError}</p> : null}
 
       <div className="library-controls">
-        <div className="filter-chips" role="group" aria-label="Filter by status">
-          {FILTERS.map(({ value, label }) => (
-            <button
-              key={value}
-              aria-pressed={filter === value}
-              className={`filter-chip${filter === value ? " filter-chip-active" : ""}`}
-              onClick={() => setFilter(value)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
         <button
           className="sort-toggle"
           onClick={() =>
@@ -922,17 +899,7 @@ export function Library() {
       ) : visibleArticles.length === 0 ? (
         <EmptyState>
           {articles && articles.length > 0 ? (
-            <p>
-              Nothing{" "}
-              {selectedTags.size > 0
-                ? "with those tags"
-                : filter === "in_progress"
-                  ? "in progress"
-                  : filter === "all"
-                    ? "to show"
-                    : filter}
-              .
-            </p>
+            <p>Nothing {selectedTags.size > 0 ? "with those tags" : "to show"}.</p>
           ) : (
             <>
               <p>Nothing saved yet.</p>

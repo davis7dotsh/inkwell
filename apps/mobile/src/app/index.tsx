@@ -47,8 +47,8 @@ type ArticleListItem = FunctionReturnType<typeof api.articles.list>[number];
 type Tag = FunctionReturnType<typeof api.tags.list>[number];
 
 type ReadStatus = "unread" | "in_progress" | "read";
-type StatusFilter = "all" | ReadStatus;
 
+// Read status is no longer a filter — it's surfaced only as the "unread" dot.
 /** Rows written before readStatus existed count as unread. */
 const readStatusOf = (item: ArticleListItem): ReadStatus =>
   item.readStatus ?? "unread";
@@ -59,13 +59,6 @@ const isUnopened = (item: ArticleListItem): boolean =>
 
 /** Uploaded PDFs carry a synthetic upload:// url — nothing to retry/open. */
 const isUpload = (item: ArticleListItem) => item.url.startsWith("upload://");
-
-const FILTERS: { value: StatusFilter; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "unread", label: "Unread" },
-  { value: "in_progress", label: "In progress" },
-  { value: "read", label: "Read" },
-];
 
 function normalizeUrl(input: string): string | null {
   const trimmed = input.trim();
@@ -343,7 +336,6 @@ export default function LibraryScreen() {
   const [query, setQuery] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [filter, setFilter] = useState<StatusFilter>("all");
   const [selectedTagIds, setSelectedTagIds] = useState<Id<"tags">[]>([]);
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
   const [renameTarget, setRenameTarget] = useState<ArticleListItem | null>(
@@ -626,16 +618,12 @@ export default function LibraryScreen() {
 
   const visibleArticles = useMemo(() => {
     if (!articles) return [];
-    const statusFiltered =
-      filter === "all"
-        ? articles
-        : articles.filter((item) => readStatusOf(item) === filter);
     // Tag filter: OR semantics — keep articles carrying at least one of the
     // selected tags.
     const tagFiltered =
       activeTagIds.length === 0
-        ? statusFiltered
-        : statusFiltered.filter((item) => {
+        ? articles
+        : articles.filter((item) => {
             const ids = new Set(item.tags.map(String));
             return activeTagIds.some((id) => ids.has(String(id)));
           });
@@ -656,7 +644,7 @@ export default function LibraryScreen() {
     const pinned = sorted.filter((item) => item.pinned);
     const rest = sorted.filter((item) => !item.pinned);
     return pinned.length > 0 ? [...pinned, ...rest] : sorted;
-  }, [articles, filter, activeTagIds, query, sortOrder]);
+  }, [articles, activeTagIds, query, sortOrder]);
 
   const toggleAdd = useCallback(() => {
     setAddOpen((open) => {
@@ -819,30 +807,6 @@ export default function LibraryScreen() {
               {sortOrder === "newest" ? "Newest" : "Oldest"}
             </Text>
           </Pressable>
-        </View>
-
-        <View style={styles.filterChips}>
-          {FILTERS.map(({ value, label }) => {
-            const active = filter === value;
-            return (
-              <Pressable
-                key={value}
-                onPress={() => setFilter(value)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                style={[styles.filterChip, active && styles.filterChipActive]}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    active && styles.filterChipTextActive,
-                  ]}
-                >
-                  {label}
-                </Text>
-              </Pressable>
-            );
-          })}
         </View>
 
         <View style={styles.tagBarRow}>
@@ -1152,34 +1116,6 @@ const themed = makeThemedStyles((c) =>
       lineHeight: 34,
       fontWeight: "600",
       color: c.ink,
-    },
-    filterChips: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      flexWrap: "wrap",
-      marginBottom: 6,
-    },
-    filterChip: {
-      borderRadius: 16,
-      borderCurve: "continuous",
-      borderWidth: 1,
-      borderColor: c.hairline,
-      backgroundColor: c.surface,
-      paddingHorizontal: 13,
-      paddingVertical: 6,
-    },
-    filterChipActive: {
-      backgroundColor: c.accent,
-      borderColor: c.accent,
-    },
-    filterChipText: {
-      fontSize: 13,
-      fontWeight: "600",
-      color: c.inkSecondary,
-    },
-    filterChipTextActive: {
-      color: c.onAccent,
     },
     tagBarRow: {
       flexDirection: "row",
