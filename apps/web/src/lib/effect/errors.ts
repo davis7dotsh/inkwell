@@ -1,7 +1,7 @@
 import { Data } from "effect";
 
 export class AuthenticationError extends Data.TaggedError(
-  "AuthenticationError"
+  "AuthenticationError",
 )<{
   readonly message: string;
 }> {}
@@ -23,7 +23,7 @@ export class ApiDecodeError extends Data.TaggedError("ApiDecodeError")<{
 }> {}
 
 export class PersistedContentError extends Data.TaggedError(
-  "PersistedContentError"
+  "PersistedContentError",
 )<{
   readonly source: string;
   readonly message: string;

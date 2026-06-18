@@ -22,7 +22,7 @@ export const readLastFatalReport = Effect.suspend(() => {
   const json = readLastFatalReportText();
   return json
     ? decodeFatalReport(json).pipe(
-        Effect.map((report): FatalReport => ({ ...report }))
+        Effect.map((report): FatalReport => ({ ...report })),
       )
     : Effect.succeed(null);
 });

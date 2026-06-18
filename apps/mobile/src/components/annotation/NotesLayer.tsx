@@ -67,5 +67,5 @@ const themed = makeThemedStyles((c) =>
       lineHeight: 19,
       color: c.noteText,
     },
-  })
+  }),
 );

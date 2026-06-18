@@ -1,0 +1,3 @@
+# Package-manager and generated output
+pnpm-lock.yaml
+packages/backend/convex/_generated/

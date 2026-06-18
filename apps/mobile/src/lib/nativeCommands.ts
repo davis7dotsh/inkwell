@@ -54,9 +54,9 @@ export const shareMarkdown = (input: {
         Effect.map((file) => file.uri),
         Effect.catch((error) =>
           Effect.logWarning("Could not write Markdown export", error).pipe(
-            Effect.as(undefined)
-          )
-        )
+            Effect.as(undefined),
+          ),
+        ),
       );
     yield* native.shareMarkdown({
       title: input.title,

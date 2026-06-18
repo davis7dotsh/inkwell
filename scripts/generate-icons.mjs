@@ -4,8 +4,12 @@ import { createRequire } from "module";
 import fs from "node:fs";
 
 const require = createRequire(import.meta.url);
-const sharpDir = fs.readdirSync("node_modules/.pnpm").find((d) => d.startsWith("sharp@"));
-const sharp = require(`${process.cwd()}/node_modules/.pnpm/${sharpDir}/node_modules/sharp`);
+const sharpDir = fs
+  .readdirSync("node_modules/.pnpm")
+  .find((d) => d.startsWith("sharp@"));
+const sharp = require(
+  `${process.cwd()}/node_modules/.pnpm/${sharpDir}/node_modules/sharp`,
+);
 
 const RIBBON =
   "M 2 7.6 C 12 3.6 30 2.8 50 4.2 C 68 5.4 84 3.6 98 5.4 " +
@@ -33,15 +37,30 @@ const centered = (body, k = 0.62) =>
   `<g transform="translate(${(1024 * (1 - k)) / 2},${(1024 * (1 - k)) / 2}) scale(${k})">${body}</g>`;
 
 const out = {
-  "apps/mobile/assets/images/icon.png": [svg(trio(DEEP, STROKE, WASH), PAPER), 1024],
+  "apps/mobile/assets/images/icon.png": [
+    svg(trio(DEEP, STROKE, WASH), PAPER),
+    1024,
+  ],
   "apps/mobile/assets/images/android-icon-foreground.png": [
-    svg(centered(trio(DEEP, STROKE, WASH))), 1024],
-  "apps/mobile/assets/images/android-icon-background.png": [svg("", PAPER), 1024],
+    svg(centered(trio(DEEP, STROKE, WASH))),
+    1024,
+  ],
+  "apps/mobile/assets/images/android-icon-background.png": [
+    svg("", PAPER),
+    1024,
+  ],
   "apps/mobile/assets/images/android-icon-monochrome.png": [
-    svg(centered(trio("#FFFFFF", "#FFFFFF", "#FFFFFF"))), 1024],
+    svg(centered(trio("#FFFFFF", "#FFFFFF", "#FFFFFF"))),
+    1024,
+  ],
   "apps/mobile/assets/images/splash-icon.png": [
-    svg(centered(trio(PAPER, PAPER, PAPER), 0.9)), 512],
-  "apps/mobile/assets/images/favicon.png": [svg(trio(DEEP, STROKE, WASH), PAPER), 64],
+    svg(centered(trio(PAPER, PAPER, PAPER), 0.9)),
+    512,
+  ],
+  "apps/mobile/assets/images/favicon.png": [
+    svg(trio(DEEP, STROKE, WASH), PAPER),
+    64,
+  ],
   "apps/web/public/favicon.png": [svg(trio(DEEP, STROKE, WASH), PAPER), 64],
 };
 

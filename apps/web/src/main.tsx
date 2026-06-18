@@ -34,8 +34,8 @@ function ConfigNeeded() {
       <div className="config-card">
         <h1>Inkwell needs configuring</h1>
         <p>
-          Copy the root <code>.env.example</code> to{" "}
-          <code>.env.local</code> and fill in:
+          Copy the root <code>.env.example</code> to <code>.env.local</code> and
+          fill in:
         </p>
         <ul>
           {missing.map((name) => (
@@ -75,7 +75,7 @@ const root = createRoot(document.getElementById("root")!);
 root.render(
   <StrictMode>
     <Root />
-  </StrictMode>
+  </StrictMode>,
 );
 
 let disposed = false;
@@ -88,12 +88,9 @@ const dispose = () => {
   );
 };
 
-window.addEventListener(
-  "pagehide",
-  (event) => {
-    if (!event.persisted) dispose();
-  },
-);
+window.addEventListener("pagehide", (event) => {
+  if (!event.persisted) dispose();
+});
 
 if (import.meta.hot) {
   import.meta.hot.dispose(dispose);

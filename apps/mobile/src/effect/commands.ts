@@ -11,7 +11,7 @@ type GetToken = () => Promise<string | null>;
 
 export const authToken = (
   operation: string,
-  getToken: GetToken
+  getToken: GetToken,
 ): Effect.Effect<string, AuthCommandError | MissingAuthTokenError> =>
   Effect.tryPromise({
     try: () => getToken(),
@@ -28,14 +28,14 @@ export const authToken = (
             new MissingAuthTokenError({
               operation,
               message: "You're not signed in.",
-            })
-          )
-    )
+            }),
+          ),
+    ),
   );
 
 export const authCommand = <A>(
   operation: string,
-  command: () => Promise<A>
+  command: () => Promise<A>,
 ): Effect.Effect<A, AuthCommandError> =>
   Effect.tryPromise({
     try: command,
@@ -48,7 +48,7 @@ export const authCommand = <A>(
 
 export const convexCommand = <A>(
   operation: string,
-  command: () => Promise<A>
+  command: () => Promise<A>,
 ): Effect.Effect<A, ConvexCommandError> =>
   Effect.tryPromise({
     try: command,

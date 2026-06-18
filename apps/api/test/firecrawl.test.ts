@@ -2,10 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Effect } from "effect";
 
 import { FirecrawlService } from "../src/firecrawl";
-import {
-  makeRequestLayer,
-  runRequestEffect,
-} from "../src/requestContext";
+import { makeRequestLayer, runRequestEffect } from "../src/requestContext";
 import {
   FIRECRAWL_ENDPOINT,
   TEST_ENV,
@@ -14,15 +11,9 @@ import {
   jsonResponse,
 } from "./helpers";
 
-const scrapeUrl = (
-  fetchImpl: typeof fetch,
-  apiKey: string,
-  url: string
-) =>
+const scrapeUrl = (fetchImpl: typeof fetch, apiKey: string, url: string) =>
   runRequestEffect(
-    Effect.flatMap(FirecrawlService, (service) =>
-      service.scrapeUrl(url)
-    ),
+    Effect.flatMap(FirecrawlService, (service) => service.scrapeUrl(url)),
     makeRequestLayer({
       env: {
         ...TEST_ENV,
@@ -32,7 +23,7 @@ const scrapeUrl = (
       userId: "user_1",
       executionCtx: { waitUntil: () => undefined },
       fetchImpl,
-    })
+    }),
   );
 
 const rateLimited = (retryAfter?: string) =>
@@ -118,7 +109,7 @@ describe("scrapeUrl", () => {
     const { impl, calls } = fetchQueue([rateLimited("0"), rateLimited("0")]);
 
     await expect(
-      scrapeUrl(impl, "fc-key", "https://example.com")
+      scrapeUrl(impl, "fc-key", "https://example.com"),
     ).rejects.toThrow(/HTTP 429.*retried once/);
     expect(calls).toHaveLength(2);
   });
@@ -129,7 +120,7 @@ describe("scrapeUrl", () => {
     ]);
 
     await expect(
-      scrapeUrl(impl, "fc-key", "https://example.com")
+      scrapeUrl(impl, "fc-key", "https://example.com"),
     ).rejects.toThrow(/HTTP 500.*kaboom/);
     expect(calls).toHaveLength(1);
   });
@@ -140,7 +131,7 @@ describe("scrapeUrl", () => {
     ]);
 
     await expect(
-      scrapeUrl(impl, "fc-key", "https://example.com")
+      scrapeUrl(impl, "fc-key", "https://example.com"),
     ).rejects.toThrow(/URL is not reachable/);
   });
 
@@ -148,7 +139,7 @@ describe("scrapeUrl", () => {
     const { impl } = fetchQueue([jsonResponse({ success: true })]);
 
     await expect(
-      scrapeUrl(impl, "fc-key", "https://example.com")
+      scrapeUrl(impl, "fc-key", "https://example.com"),
     ).rejects.toThrow(/no data/);
   });
 
@@ -158,7 +149,7 @@ describe("scrapeUrl", () => {
     ]);
 
     await expect(
-      scrapeUrl(impl, "fc-key", "https://example.com")
+      scrapeUrl(impl, "fc-key", "https://example.com"),
     ).rejects.toThrow(/page requires JavaScript/);
   });
 });

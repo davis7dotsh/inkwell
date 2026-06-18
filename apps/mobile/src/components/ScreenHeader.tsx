@@ -43,7 +43,9 @@ export function ScreenHeader({
             hitSlop={10}
             accessibilityRole="button"
             accessibilityLabel="Back to library"
-            style={({ pressed }) => pressed && !glassAvailable && styles.pressed}
+            style={({ pressed }) =>
+              pressed && !glassAvailable && styles.pressed
+            }
           >
             <GlassSurface
               isInteractive
@@ -56,9 +58,7 @@ export function ScreenHeader({
                 size={26}
                 color={c.accent}
               />
-              {compact ? null : (
-                <Text style={styles.backLabel}>Library</Text>
-              )}
+              {compact ? null : <Text style={styles.backLabel}>Library</Text>}
             </GlassSurface>
           </Pressable>
         </View>
@@ -73,11 +73,7 @@ export function ScreenHeader({
           ) : null}
         </View>
         <View
-          style={[
-            styles.side,
-            styles.right,
-            compact && styles.compactRight,
-          ]}
+          style={[styles.side, styles.right, compact && styles.compactRight]}
         >
           {right}
         </View>
@@ -170,5 +166,5 @@ const themed = makeThemedStyles((c) =>
     pressed: {
       opacity: 0.6,
     },
-  })
+  }),
 );

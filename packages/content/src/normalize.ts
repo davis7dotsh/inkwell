@@ -59,7 +59,7 @@ export function firecrawlToArticle(input: FirecrawlDocument): ArticleContent {
 
   if (!html && !markdown) {
     throw new Error(
-      `Firecrawl returned no content${subject}: both html and markdown are empty`
+      `Firecrawl returned no content${subject}: both html and markdown are empty`,
     );
   }
 
@@ -70,7 +70,7 @@ export function firecrawlToArticle(input: FirecrawlDocument): ArticleContent {
       value ? `${value.length} chars` : "absent";
     throw new Error(
       `Firecrawl content produced zero readable blocks${subject} ` +
-        `(html: ${sizeOf(html)}, markdown: ${sizeOf(markdown)})`
+        `(html: ${sizeOf(html)}, markdown: ${sizeOf(markdown)})`,
     );
   }
 

@@ -9,7 +9,7 @@ export default defineSchema({
     status: v.union(
       v.literal("pending"),
       v.literal("ready"),
-      v.literal("failed")
+      v.literal("failed"),
     ),
     error: v.optional(v.string()),
     title: v.string(), // url until scrape completes
@@ -21,11 +21,7 @@ export default defineSchema({
     // Reading progress. Optional: rows written before this field existed are
     // treated as "unread" by clients.
     readStatus: v.optional(
-      v.union(
-        v.literal("unread"),
-        v.literal("in_progress"),
-        v.literal("read")
-      )
+      v.union(v.literal("unread"), v.literal("in_progress"), v.literal("read")),
     ),
     // Pin to the top of the library. Optional: legacy rows are treated as
     // not pinned.

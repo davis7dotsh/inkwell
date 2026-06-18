@@ -12,7 +12,9 @@ export const BrowserConfigLive = Layer.effect(
   Effect.sync(() => {
     const apiUrl = import.meta.env.VITE_API_URL?.trim().replace(/\/+$/, "");
     if (!apiUrl) {
-      throw new Error("VITE_API_URL must be set before the API runtime is used");
+      throw new Error(
+        "VITE_API_URL must be set before the API runtime is used",
+      );
     }
     return { apiUrl };
   }),

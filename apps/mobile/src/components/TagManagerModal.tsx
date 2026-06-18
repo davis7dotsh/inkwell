@@ -139,204 +139,200 @@ function TagManagerBody({
   return (
     <Pressable style={styles.backdrop} onPress={onClose}>
       <Pressable style={styles.card} onPress={() => {}}>
-          <View style={styles.headerRow}>
-            <Text style={styles.title}>
-              {articleId ? "Tags for this article" : "Manage tags"}
-            </Text>
-            <Pressable
-              onPress={onClose}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-            >
-              <MaterialCommunityIcons
-                name="close"
-                size={20}
-                color={c.inkFaint}
-              />
-            </Pressable>
-          </View>
-
-          {/* Create a new tag */}
-          <View style={styles.createRow}>
-            <TextInput
-              style={styles.input}
-              value={newName}
-              onChangeText={setNewName}
-              placeholder="New tag name"
-              placeholderTextColor={c.inkFaint}
-              autoCapitalize="none"
-              returnKeyType="done"
-              onSubmitEditing={commitCreate}
-            />
-            <Pressable
-              onPress={commitCreate}
-              accessibilityRole="button"
-              accessibilityLabel="Create tag"
-              disabled={!newName.trim()}
-              style={[
-                styles.createButton,
-                !newName.trim() && styles.createButtonDisabled,
-              ]}
-            >
-              <MaterialCommunityIcons name="plus" size={20} color={c.onAccent} />
-            </Pressable>
-          </View>
-          <ColorSwatches selected={newColor} onSelect={setNewColor} />
-
-          {/* Existing tags */}
-          <ScrollView
-            style={styles.list}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
+        <View style={styles.headerRow}>
+          <Text style={styles.title}>
+            {articleId ? "Tags for this article" : "Manage tags"}
+          </Text>
+          <Pressable
+            onPress={onClose}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
           >
-            {tags.length === 0 ? (
-              <Text style={styles.empty}>
-                No tags yet. Create one above to start organizing.
-              </Text>
-            ) : (
-              tags.map((tag) => {
-                const chip = tagChipColors(tag.color, isDark);
-                const isAttached = attached.has(String(tag._id));
-                const isEditing = editingId === tag._id;
-                return (
-                  <View key={tag._id} style={styles.tagRow}>
-                    {articleId ? (
+            <MaterialCommunityIcons name="close" size={20} color={c.inkFaint} />
+          </Pressable>
+        </View>
+
+        {/* Create a new tag */}
+        <View style={styles.createRow}>
+          <TextInput
+            style={styles.input}
+            value={newName}
+            onChangeText={setNewName}
+            placeholder="New tag name"
+            placeholderTextColor={c.inkFaint}
+            autoCapitalize="none"
+            returnKeyType="done"
+            onSubmitEditing={commitCreate}
+          />
+          <Pressable
+            onPress={commitCreate}
+            accessibilityRole="button"
+            accessibilityLabel="Create tag"
+            disabled={!newName.trim()}
+            style={[
+              styles.createButton,
+              !newName.trim() && styles.createButtonDisabled,
+            ]}
+          >
+            <MaterialCommunityIcons name="plus" size={20} color={c.onAccent} />
+          </Pressable>
+        </View>
+        <ColorSwatches selected={newColor} onSelect={setNewColor} />
+
+        {/* Existing tags */}
+        <ScrollView
+          style={styles.list}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {tags.length === 0 ? (
+            <Text style={styles.empty}>
+              No tags yet. Create one above to start organizing.
+            </Text>
+          ) : (
+            tags.map((tag) => {
+              const chip = tagChipColors(tag.color, isDark);
+              const isAttached = attached.has(String(tag._id));
+              const isEditing = editingId === tag._id;
+              return (
+                <View key={tag._id} style={styles.tagRow}>
+                  {articleId ? (
+                    <Pressable
+                      onPress={() =>
+                        isAttached
+                          ? onDetach(articleId, tag._id)
+                          : onAttach(articleId, tag._id)
+                      }
+                      hitSlop={8}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: isAttached }}
+                      accessibilityLabel={`${
+                        isAttached ? "Remove" : "Add"
+                      } tag ${tag.name}`}
+                      style={[
+                        styles.checkbox,
+                        isAttached && {
+                          backgroundColor: c.accent,
+                          borderColor: c.accent,
+                        },
+                      ]}
+                    >
+                      {isAttached ? (
+                        <MaterialCommunityIcons
+                          name="check"
+                          size={14}
+                          color={c.onAccent}
+                        />
+                      ) : null}
+                    </Pressable>
+                  ) : null}
+
+                  <View style={styles.tagMain}>
+                    {isEditing ? (
+                      <TextInput
+                        style={[styles.input, styles.editInput]}
+                        value={editName}
+                        onChangeText={setEditName}
+                        autoFocus
+                        selectTextOnFocus
+                        returnKeyType="done"
+                        onSubmitEditing={() => commitEdit(tag)}
+                        onBlur={() => commitEdit(tag)}
+                        placeholder="Tag name"
+                        placeholderTextColor={c.inkFaint}
+                      />
+                    ) : (
                       <Pressable
                         onPress={() =>
-                          isAttached
-                            ? onDetach(articleId, tag._id)
-                            : onAttach(articleId, tag._id)
+                          articleId
+                            ? isAttached
+                              ? onDetach(articleId, tag._id)
+                              : onAttach(articleId, tag._id)
+                            : beginEdit(tag)
                         }
-                        hitSlop={8}
-                        accessibilityRole="checkbox"
-                        accessibilityState={{ checked: isAttached }}
-                        accessibilityLabel={`${
-                          isAttached ? "Remove" : "Add"
-                        } tag ${tag.name}`}
                         style={[
-                          styles.checkbox,
-                          isAttached && {
-                            backgroundColor: c.accent,
-                            borderColor: c.accent,
+                          styles.tagChip,
+                          {
+                            backgroundColor: chip.fill,
+                            borderColor: chip.border,
                           },
                         ]}
                       >
-                        {isAttached ? (
-                          <MaterialCommunityIcons
-                            name="check"
-                            size={14}
-                            color={c.onAccent}
-                          />
-                        ) : null}
-                      </Pressable>
-                    ) : null}
-
-                    <View style={styles.tagMain}>
-                      {isEditing ? (
-                        <TextInput
-                          style={[styles.input, styles.editInput]}
-                          value={editName}
-                          onChangeText={setEditName}
-                          autoFocus
-                          selectTextOnFocus
-                          returnKeyType="done"
-                          onSubmitEditing={() => commitEdit(tag)}
-                          onBlur={() => commitEdit(tag)}
-                          placeholder="Tag name"
-                          placeholderTextColor={c.inkFaint}
-                        />
-                      ) : (
-                        <Pressable
-                          onPress={() =>
-                            articleId
-                              ? isAttached
-                                ? onDetach(articleId, tag._id)
-                                : onAttach(articleId, tag._id)
-                              : beginEdit(tag)
-                          }
+                        <View
                           style={[
-                            styles.tagChip,
-                            {
-                              backgroundColor: chip.fill,
-                              borderColor: chip.border,
-                            },
+                            styles.tagDot,
+                            { backgroundColor: chip.text },
                           ]}
-                        >
-                          <View
-                            style={[
-                              styles.tagDot,
-                              { backgroundColor: chip.text },
-                            ]}
-                          />
-                          <Text
-                            style={[styles.tagChipText, { color: chip.text }]}
-                            numberOfLines={1}
-                          >
-                            {tag.name}
-                          </Text>
-                        </Pressable>
-                      )}
-
-                      {isEditing ? (
-                        <ColorSwatches
-                          selected={tag.color ?? DEFAULT_TAG_COLOR}
-                          onSelect={(color) => onSetColor(tag._id, color)}
                         />
-                      ) : null}
-                    </View>
+                        <Text
+                          style={[styles.tagChipText, { color: chip.text }]}
+                          numberOfLines={1}
+                        >
+                          {tag.name}
+                        </Text>
+                      </Pressable>
+                    )}
 
-                    <View style={styles.tagActions}>
-                      {isEditing ? (
-                        <Pressable
-                          onPress={() => commitEdit(tag)}
-                          hitSlop={8}
-                          accessibilityRole="button"
-                          accessibilityLabel="Done editing tag"
-                          style={styles.iconButton}
-                        >
-                          <MaterialCommunityIcons
-                            name="check"
-                            size={20}
-                            color={c.accent}
-                          />
-                        </Pressable>
-                      ) : (
-                        <Pressable
-                          onPress={() => beginEdit(tag)}
-                          hitSlop={8}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Edit tag ${tag.name}`}
-                          style={styles.iconButton}
-                        >
-                          <MaterialCommunityIcons
-                            name="pencil-outline"
-                            size={18}
-                            color={c.inkSecondary}
-                          />
-                        </Pressable>
-                      )}
+                    {isEditing ? (
+                      <ColorSwatches
+                        selected={tag.color ?? DEFAULT_TAG_COLOR}
+                        onSelect={(color) => onSetColor(tag._id, color)}
+                      />
+                    ) : null}
+                  </View>
+
+                  <View style={styles.tagActions}>
+                    {isEditing ? (
                       <Pressable
-                        onPress={() => onRemove(tag._id)}
+                        onPress={() => commitEdit(tag)}
                         hitSlop={8}
                         accessibilityRole="button"
-                        accessibilityLabel={`Delete tag ${tag.name}`}
+                        accessibilityLabel="Done editing tag"
                         style={styles.iconButton}
                       >
                         <MaterialCommunityIcons
-                          name="trash-can-outline"
-                          size={18}
-                          color={c.danger}
+                          name="check"
+                          size={20}
+                          color={c.accent}
                         />
                       </Pressable>
-                    </View>
+                    ) : (
+                      <Pressable
+                        onPress={() => beginEdit(tag)}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Edit tag ${tag.name}`}
+                        style={styles.iconButton}
+                      >
+                        <MaterialCommunityIcons
+                          name="pencil-outline"
+                          size={18}
+                          color={c.inkSecondary}
+                        />
+                      </Pressable>
+                    )}
+                    <Pressable
+                      onPress={() => onRemove(tag._id)}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete tag ${tag.name}`}
+                      style={styles.iconButton}
+                    >
+                      <MaterialCommunityIcons
+                        name="trash-can-outline"
+                        size={18}
+                        color={c.danger}
+                      />
+                    </Pressable>
                   </View>
-                );
-              })
-            )}
-          </ScrollView>
-        </Pressable>
+                </View>
+              );
+            })
+          )}
+        </ScrollView>
       </Pressable>
+    </Pressable>
   );
 }
 
@@ -489,5 +485,5 @@ const themed = makeThemedStyles((c) =>
       alignItems: "center",
       justifyContent: "center",
     },
-  })
+  }),
 );

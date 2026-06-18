@@ -16,28 +16,24 @@ import type { ArticleContent, Block } from "./types";
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-export class ContentParserError extends Data.TaggedError(
-  "ContentParserError"
-)<{
+export class ContentParserError extends Data.TaggedError("ContentParserError")<{
   readonly parser: "html" | "markdown";
   readonly message: string;
 }> {}
 
-export class ContentSchemaError extends Data.TaggedError(
-  "ContentSchemaError"
-)<{
+export class ContentSchemaError extends Data.TaggedError("ContentSchemaError")<{
   readonly boundary: "firecrawl";
   readonly message: string;
 }> {}
 
 export class FirecrawlNormalizationError extends Data.TaggedError(
-  "FirecrawlNormalizationError"
+  "FirecrawlNormalizationError",
 )<{
   readonly message: string;
 }> {}
 
 export function htmlToBlocksEffect(
-  html: string
+  html: string,
 ): Effect.Effect<Block[], ContentParserError> {
   return Effect.try({
     try: () => htmlToBlocks(html),
@@ -50,7 +46,7 @@ export function htmlToBlocksEffect(
 }
 
 export function markdownToBlocksEffect(
-  markdown: string
+  markdown: string,
 ): Effect.Effect<Block[], ContentParserError> {
   return Effect.try({
     try: () => markdownToBlocks(markdown),
@@ -68,7 +64,7 @@ export function markdownToBlocksEffect(
  * channel.
  */
 export function firecrawlToArticleEffect(
-  input: unknown
+  input: unknown,
 ): Effect.Effect<
   ArticleContent,
   ContentSchemaError | FirecrawlNormalizationError
@@ -88,14 +84,14 @@ export function firecrawlToArticleEffect(
           new FirecrawlNormalizationError({
             message: errorMessage(error),
           }),
-      })
-    )
+      }),
+    ),
   );
 }
 
 /** Effect-shaped equivalent of the intentionally total/tolerant sync parser. */
 export function parseLayoutSnapshotEffect(
-  json: string | undefined | null
+  json: string | undefined | null,
 ): Effect.Effect<ParsedLayoutSnapshot | null> {
   return Effect.succeed(decodeLayoutSnapshotJson(json));
 }

@@ -33,7 +33,7 @@ function SpanText({ spans }: { spans: Span[] }) {
                     run(openBrowser(href), {
                       onFailure: (error) =>
                         showError(
-                          `Couldn't open link: ${operationalErrorMessage(error)}`
+                          `Couldn't open link: ${operationalErrorMessage(error)}`,
                         ),
                     })
                 : undefined
@@ -67,7 +67,7 @@ function ArticleImage({
   const { scheme } = useTheme();
   const styles = themed[scheme];
   const [aspect, setAspect] = useState(
-    width && height ? width / height : 16 / 9
+    width && height ? width / height : 16 / 9,
   );
   const [naturalWidth, setNaturalWidth] = useState<number | undefined>(width);
   const renderWidth = Math.min(naturalWidth ?? columnWidth, columnWidth);
@@ -97,7 +97,13 @@ function ArticleImage({
   );
 }
 
-function BlockView({ block, contentWidth }: { block: Block; contentWidth: number }) {
+function BlockView({
+  block,
+  contentWidth,
+}: {
+  block: Block;
+  contentWidth: number;
+}) {
   const { scheme } = useTheme();
   const styles = themed[scheme];
   switch (block.type) {
@@ -166,7 +172,10 @@ type Props = {
   /** Rendered width of the content column (px) — images size against it. */
   contentWidth: number;
   /** Reports each top-level block's layout relative to the content container. */
-  onBlockLayout?: (index: number, layout: { y: number; height: number }) => void;
+  onBlockLayout?: (
+    index: number,
+    layout: { y: number; height: number },
+  ) => void;
 };
 
 /**
@@ -280,7 +289,7 @@ const themed = makeThemedStyles((c) =>
       height: StyleSheet.hairlineWidth,
       backgroundColor: c.hairline,
     },
-  })
+  }),
 );
 
 const styles_h = StyleSheet.create({

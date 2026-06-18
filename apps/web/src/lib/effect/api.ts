@@ -42,7 +42,8 @@ const responseFailure = (
         Effect.map((decoded) => decoded.error),
         Effect.catch(() =>
           Effect.succeed(
-            body.trim().slice(0, 240) || `Request failed (HTTP ${response.status}).`,
+            body.trim().slice(0, 240) ||
+              `Request failed (HTTP ${response.status}).`,
           ),
         ),
       ),
@@ -238,8 +239,5 @@ export const uploadPdf = (file: File, token: string) =>
 export const retryArticle = (articleId: string, url: string, token: string) =>
   Effect.flatMap(InkwellApi, (api) => api.retryArticle(articleId, url, token));
 
-export const loadMemo = (
-  articleId: string,
-  memoId: string,
-  token: string,
-) => Effect.flatMap(InkwellApi, (api) => api.loadMemo(articleId, memoId, token));
+export const loadMemo = (articleId: string, memoId: string, token: string) =>
+  Effect.flatMap(InkwellApi, (api) => api.loadMemo(articleId, memoId, token));

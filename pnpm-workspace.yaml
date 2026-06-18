@@ -3,7 +3,7 @@ packages:
   - packages/*
 
 allowBuilds:
-  '@shopify/react-native-skia': true
+  "@shopify/react-native-skia": true
   esbuild: true
   msgpackr-extract: true
   workerd: true
@@ -13,12 +13,12 @@ allowBuilds:
   core-js: true
   utf-8-validate: true
   unrs-resolver: true
-  '@clerk/shared': false
+  "@clerk/shared": false
 
 minimumReleaseAgeExclude:
-  - '@expo/cli@56.1.16'
-  - '@expo/log-box@56.0.13'
-  - '@expo/metro-config@56.0.14'
+  - "@expo/cli@56.1.16"
+  - "@expo/log-box@56.0.13"
+  - "@expo/metro-config@56.0.14"
   - babel-preset-expo@56.0.15
   - expo-asset@56.0.17
   - expo-constants@56.0.18
@@ -27,8 +27,8 @@ minimumReleaseAgeExclude:
   - expo-modules-core@56.0.17
   - expo-modules-jsi@56.0.9
   - expo@56.0.12
-  - '@expo/metro-runtime@56.0.15'
-  - '@expo/ui@56.0.18'
+  - "@expo/metro-runtime@56.0.15"
+  - "@expo/ui@56.0.18"
   - expo-auth-session@56.0.14
   - expo-image@56.0.11
   - expo-linking@56.0.14
@@ -37,9 +37,9 @@ minimumReleaseAgeExclude:
   - expo-dev-client@56.0.20
   - expo-dev-launcher@56.0.20
   - expo-dev-menu@56.0.17
-  - '@clerk/clerk-js@6.16.0'
-  - '@clerk/expo@3.4.1'
-  - '@clerk/react@6.9.0'
-  - '@clerk/shared@4.17.0'
+  - "@clerk/clerk-js@6.16.0"
+  - "@clerk/expo@3.4.1"
+  - "@clerk/react@6.9.0"
+  - "@clerk/shared@4.17.0"
   - effect@4.0.0-beta.84
-  - '@effect/vitest@4.0.0-beta.84'
+  - "@effect/vitest@4.0.0-beta.84"

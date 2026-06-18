@@ -17,9 +17,9 @@ export const get = query({
           ctx.db
             .query("annotations")
             .withIndex("by_article", (q) => q.eq("articleId", args.articleId))
-            .unique()
+            .unique(),
         );
-      })
+      }),
     ),
 });
 
@@ -42,7 +42,7 @@ export const getForAgent = internalQuery({
           ctx.db
             .query("annotations")
             .withIndex("by_article", (q) => q.eq("articleId", articleId))
-            .unique()
+            .unique(),
         );
         return {
           articleTitle: article.title,
@@ -62,7 +62,7 @@ export const getForAgent = internalQuery({
               }
             : null,
         };
-      })
+      }),
     ),
 });
 
@@ -84,7 +84,7 @@ export const save = mutation({
           ctx.db
             .query("annotations")
             .withIndex("by_article", (q) => q.eq("articleId", args.articleId))
-            .unique()
+            .unique(),
         );
         const updatedAt = Date.now();
         if (existing) {
@@ -100,7 +100,7 @@ export const save = mutation({
               // Likewise keep the last layout snapshot if this client didn't send one.
               layoutJson: args.layoutJson ?? existing.layoutJson,
               updatedAt,
-            })
+            }),
           );
         } else {
           yield* promise(() =>
@@ -114,9 +114,9 @@ export const save = mutation({
               memosJson: args.memosJson ?? "[]",
               layoutJson: args.layoutJson,
               updatedAt,
-            })
+            }),
           );
         }
-      })
+      }),
     ),
 });

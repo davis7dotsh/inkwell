@@ -27,7 +27,7 @@ export class FirecrawlHttpError extends Data.TaggedError("FirecrawlHttpError")<{
 }> {}
 
 export class FirecrawlDecodeError extends Data.TaggedError(
-  "FirecrawlDecodeError"
+  "FirecrawlDecodeError",
 )<{
   readonly operation: string;
   readonly message: string;
@@ -39,7 +39,7 @@ export class FirecrawlApiError extends Data.TaggedError("FirecrawlApiError")<{
 }> {}
 
 export class ArticleNormalizationError extends Data.TaggedError(
-  "ArticleNormalizationError"
+  "ArticleNormalizationError",
 )<{
   readonly message: string;
 }> {}

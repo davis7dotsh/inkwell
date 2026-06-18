@@ -10,10 +10,7 @@ import { Exit } from "effect";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { convexCommand } from "../lib/effect/convex";
-import {
-  exitFailureMessage,
-  runBrowserEffect,
-} from "../lib/effect/react";
+import { exitFailureMessage, runBrowserEffect } from "../lib/effect/react";
 import { tagDisplayColor } from "../lib/tagColors";
 
 export function ReaderTags({
@@ -36,11 +33,11 @@ export function ReaderTags({
   const tagsList = tags ?? [];
   const tagsById = useMemo(
     () => new Map(tagsList.map((tag) => [tag._id as string, tag])),
-    [tagsList]
+    [tagsList],
   );
   const attached = useMemo(
     () => new Set(tagIds.map((id) => id as string)),
-    [tagIds]
+    [tagIds],
   );
 
   // Dismiss the popover on outside click / Escape.
@@ -105,7 +102,11 @@ export function ReaderTags({
           <span
             key={tag._id}
             className="tag-chip tag-chip-static"
-            style={{ color: color.fg, background: color.bg, borderColor: color.border }}
+            style={{
+              color: color.fg,
+              background: color.bg,
+              borderColor: color.border,
+            }}
           >
             {tag.name}
           </span>
@@ -184,7 +185,11 @@ export function ReaderTags({
               placeholder="New tag…"
               aria-label="New tag name"
             />
-            <button type="submit" className="rename-action" disabled={!draft.trim()}>
+            <button
+              type="submit"
+              className="rename-action"
+              disabled={!draft.trim()}
+            >
               Add
             </button>
           </form>

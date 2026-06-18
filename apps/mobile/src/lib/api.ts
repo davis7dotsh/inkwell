@@ -27,7 +27,7 @@ const apiUrl = Effect.gen(function* () {
 
 const responseJson = (
   operation: string,
-  response: Response
+  response: Response,
 ): Effect.Effect<unknown, DecodeError> =>
   Effect.tryPromise({
     try: () => response.json(),
@@ -40,7 +40,7 @@ const responseJson = (
 
 const acceptedArticleResponse = (
   operation: string,
-  response: Response
+  response: Response,
 ): Effect.Effect<ArticleCommandResult, HttpResponseError | DecodeError> =>
   Effect.gen(function* () {
     if (!response.ok) {
@@ -61,14 +61,18 @@ export const saveArticle = (input: {
   Effect.gen(function* () {
     const baseUrl = yield* apiUrl;
     const http = yield* MobileHttp;
-    const response = yield* http.request("save article", `${baseUrl}/articles`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${input.token}`,
-        "Content-Type": "application/json",
+    const response = yield* http.request(
+      "save article",
+      `${baseUrl}/articles`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${input.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ url: input.url }),
       },
-      body: JSON.stringify({ url: input.url }),
-    });
+    );
     return yield* acceptedArticleResponse("save article", response);
   });
 
@@ -90,7 +94,7 @@ export const retryArticle = (input: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ url: input.url }),
-      }
+      },
     );
     return yield* acceptedArticleResponse("retry article", response);
   });
@@ -112,7 +116,7 @@ export const uploadPdf = (input: {
         method: "POST",
         headers: { Authorization: `Bearer ${input.token}` },
         body: form,
-      }
+      },
     );
     return yield* acceptedArticleResponse("upload PDF", response);
   });

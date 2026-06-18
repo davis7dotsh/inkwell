@@ -6,11 +6,7 @@ import { WorkerConfigError, errorMessage } from "./errors";
 import { FirecrawlServiceLive } from "./firecrawl";
 import { MemoBucket, MemoStoreLive } from "./memo";
 import { ArticleNormalizerLive } from "./pipeline";
-import {
-  CurrentUser,
-  WorkerConfig,
-  WorkerConfigSchema,
-} from "./services";
+import { CurrentUser, WorkerConfig, WorkerConfigSchema } from "./services";
 
 export type WorkerBindings = {
   FIRECRAWL_API_KEY: string;
@@ -30,7 +26,7 @@ const configLayer = (env: WorkerBindings) =>
         new WorkerConfigError({
           message: `Invalid Worker configuration: ${errorMessage(error)}`,
         }),
-    })
+    }),
   );
 
 /**
@@ -49,13 +45,13 @@ export const makeRequestLayer = (options: {
     Layer.succeed(CurrentUser, { userId: options.userId }),
     Layer.succeed(MemoBucket, options.env.MEMOS),
     Layer.succeed(FetchHttpClient.Fetch, options.fetchImpl ?? fetch),
-    FetchHttpClient.layer
+    FetchHttpClient.layer,
   );
   const operations = Layer.mergeAll(
     ConvexServiceLive,
     FirecrawlServiceLive,
     MemoStoreLive,
-    ArticleNormalizerLive
+    ArticleNormalizerLive,
   ).pipe(Layer.provide(infrastructure));
   return Layer.mergeAll(infrastructure, operations);
 };
@@ -65,48 +61,32 @@ export type RequestServices = Layer.Success<RequestLayer>;
 
 export const runRequestEffect = <A, E>(
   effect: Effect.Effect<A, E, RequestServices>,
-  layer: RequestLayer
+  layer: RequestLayer,
 ): Promise<A> =>
-  Effect.runPromise(
-    Effect.provide(effect, layer, { local: true })
-  );
+  Effect.runPromise(Effect.provide(effect, layer, { local: true }));
 
-export const runRequestEffectTotal = <
-  A,
-  E,
-  A2
->(
+export const runRequestEffectTotal = <A, E, A2>(
   effect: Effect.Effect<A, E, RequestServices>,
   layer: RequestLayer,
-  onCause: (
-    cause: Cause.Cause<E | WorkerConfigError>
-  ) => Effect.Effect<A2>
+  onCause: (cause: Cause.Cause<E | WorkerConfigError>) => Effect.Effect<A2>,
 ): Promise<A | A2> =>
   Effect.runPromise(
     Effect.provide(effect, layer, { local: true }).pipe(
-      Effect.catchCause(onCause)
-    )
+      Effect.catchCause(onCause),
+    ),
   );
 
 export const makeRequestScope = (
-  options: Parameters<typeof makeRequestLayer>[0]
+  options: Parameters<typeof makeRequestLayer>[0],
 ) => {
   const layer = makeRequestLayer(options);
   return {
     layer,
-    run: <A, E>(
-      effect: Effect.Effect<A, E, RequestServices>
-    ) =>
+    run: <A, E>(effect: Effect.Effect<A, E, RequestServices>) =>
       runRequestEffect(effect, layer),
-    runTotal: <
-      A,
-      E,
-      A2
-    >(
+    runTotal: <A, E, A2>(
       effect: Effect.Effect<A, E, RequestServices>,
-      onCause: (
-        cause: Cause.Cause<E | WorkerConfigError>
-      ) => Effect.Effect<A2>
+      onCause: (cause: Cause.Cause<E | WorkerConfigError>) => Effect.Effect<A2>,
     ) => runRequestEffectTotal(effect, layer, onCause),
     waitUntil: (promise: Promise<unknown>) =>
       options.executionCtx.waitUntil(promise),

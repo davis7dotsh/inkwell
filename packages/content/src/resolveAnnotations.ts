@@ -8,7 +8,12 @@
 // block to the end of the last. They locate a passage, not an exact character
 // span, because annotations were never character-anchored.
 import type { BlockLayout } from "./blockGeometry";
-import { blockText, blocksInRange, nearestBlock, truncate } from "./blockGeometry";
+import {
+  blockText,
+  blocksInRange,
+  nearestBlock,
+  truncate,
+} from "./blockGeometry";
 import { inferDocumentHeadings } from "./documentOutline";
 import type { Annotations, Block } from "./types";
 
@@ -50,7 +55,8 @@ const isFiniteNumber = (value: unknown): value is number =>
 const num = (value: unknown, fallback = 0): number =>
   isFiniteNumber(value) ? value : fallback;
 
-const str = (value: unknown): string => (typeof value === "string" ? value : "");
+const str = (value: unknown): string =>
+  typeof value === "string" ? value : "";
 
 /** Join the given block indices into one quoted passage, capped in length. */
 function joinBlocks(blocks: Block[], indices: number[]): string | undefined {
@@ -74,7 +80,7 @@ export function resolveAnnotations(
   blocks: Block[],
   annotations: Annotations,
   layouts: Map<number, BlockLayout>,
-  scale: number
+  scale: number,
 ): ResolvedAnnotation[] {
   // Recover heading semantics for numbered PDFs; indices stay aligned with the
   // layout map and annotation coordinates.
@@ -123,7 +129,11 @@ export function resolveAnnotations(
 
   for (const box of annotations.boxes) {
     if (!box || !isFiniteNumber(box.y) || !isFiniteNumber(box.h)) continue;
-    const indices = blocksInRange(layouts, box.y * scale, (box.y + box.h) * scale);
+    const indices = blocksInRange(
+      layouts,
+      box.y * scale,
+      (box.y + box.h) * scale,
+    );
     resolved.push({
       y: box.y,
       annotation: {
@@ -192,7 +202,11 @@ export function resolveAnnotations(
   for (const memo of annotations.memos) {
     // A placed voice memo counts even with an empty transcript, but a
     // non-string transcript is malformed data — skip it.
-    if (!memo || !isFiniteNumber(memo.y) || typeof memo.transcript !== "string") {
+    if (
+      !memo ||
+      !isFiniteNumber(memo.y) ||
+      typeof memo.transcript !== "string"
+    ) {
       continue;
     }
     const near = nearestBlock(layouts, memo.y * scale);
@@ -210,9 +224,7 @@ export function resolveAnnotations(
     });
   }
 
-  return resolved
-    .sort((a, b) => a.y - b.y)
-    .map((entry) => entry.annotation);
+  return resolved.sort((a, b) => a.y - b.y).map((entry) => entry.annotation);
 }
 
 /**
@@ -221,7 +233,7 @@ export function resolveAnnotations(
  * null for a missing or malformed snapshot (legacy rows have none).
  */
 export function parseLayoutSnapshot(
-  json: string | undefined | null
+  json: string | undefined | null,
 ): { width: number; layouts: Map<number, BlockLayout> } | null {
   if (!json) return null;
   let parsed: unknown;

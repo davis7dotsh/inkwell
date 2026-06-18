@@ -43,7 +43,7 @@ function blockToMarkdown(block: Block): string {
       return block.items
         .map(
           (item, i) =>
-            `${block.ordered ? `${i + 1}.` : "-"} ${spansToMarkdown(item)}`
+            `${block.ordered ? `${i + 1}.` : "-"} ${spansToMarkdown(item)}`,
         )
         .join("\n");
     case "code": {

@@ -2,7 +2,12 @@
 // boxed sections become quoted excerpts, notes keep their nearby context,
 // highlighter strokes quote the lines they cover.
 import type { BlockLayout } from "./blockGeometry";
-import { blockText, blocksInRange, nearestBlock, truncate } from "./blockGeometry";
+import {
+  blockText,
+  blocksInRange,
+  nearestBlock,
+  truncate,
+} from "./blockGeometry";
 import type { Annotations, ArticleContent } from "./types";
 
 /**
@@ -22,7 +27,7 @@ export function buildExportMarkdown(
   article: ExportArticle,
   annotations: Annotations,
   layouts: Map<number, BlockLayout>,
-  scale: number
+  scale: number,
 ): string {
   const lines: string[] = [];
   lines.push(`# ${article.title}`);
@@ -36,7 +41,12 @@ export function buildExportMarkdown(
     indices
       .map((i) => blockText(article.blocks[i]))
       .filter((t) => t.trim().length > 0)
-      .map((t) => t.split("\n").map((l) => `> ${l}`).join("\n"));
+      .map((t) =>
+        t
+          .split("\n")
+          .map((l) => `> ${l}`)
+          .join("\n"),
+      );
 
   if (annotations.boxes.length > 0) {
     lines.push(`## Key sections (boxed by me)`);
@@ -45,7 +55,7 @@ export function buildExportMarkdown(
       const indices = blocksInRange(
         layouts,
         box.y * scale,
-        (box.y + box.h) * scale
+        (box.y + box.h) * scale,
       );
       const quotes = quoteBlocks(indices);
       if (quotes.length === 0) continue;
@@ -55,7 +65,7 @@ export function buildExportMarkdown(
   }
 
   const highlights = annotations.strokes.filter(
-    (s) => s.tool === "highlighter"
+    (s) => s.tool === "highlighter",
   );
   if (highlights.length > 0) {
     lines.push(`## Highlighted passages`);
@@ -66,7 +76,7 @@ export function buildExportMarkdown(
       const indices = blocksInRange(
         layouts,
         Math.min(...ys),
-        Math.max(...ys)
+        Math.max(...ys),
       ).filter((i) => !seen.has(i));
       indices.forEach((i) => seen.add(i));
       const quotes = quoteBlocks(indices);
@@ -83,14 +93,16 @@ export function buildExportMarkdown(
     for (const note of [...annotations.notes].sort((a, b) => a.y - b.y)) {
       const near = nearestBlock(layouts, note.y * scale);
       const context =
-        near != null ? ` — near: "${truncate(blockText(article.blocks[near]))}"` : "";
+        near != null
+          ? ` — near: "${truncate(blockText(article.blocks[near]))}"`
+          : "";
       lines.push(`- "${note.text.trim()}"${context}`);
     }
     lines.push("");
   }
 
   const spokenMemos = annotations.memos.filter(
-    (m) => m.transcript.trim().length > 0
+    (m) => m.transcript.trim().length > 0,
   );
   if (spokenMemos.length > 0) {
     lines.push(`## Voice memos`);
@@ -98,7 +110,9 @@ export function buildExportMarkdown(
     for (const memo of [...spokenMemos].sort((a, b) => a.y - b.y)) {
       const near = nearestBlock(layouts, memo.y * scale);
       const context =
-        near != null ? ` — near: "${truncate(blockText(article.blocks[near]))}"` : "";
+        near != null
+          ? ` — near: "${truncate(blockText(article.blocks[near]))}"`
+          : "";
       lines.push(`- 🎤 "${memo.transcript.trim()}"${context}`);
     }
     lines.push("");
@@ -112,11 +126,11 @@ export function buildExportMarkdown(
     for (const stroke of penStrokes) {
       const ys = stroke.points.map((p) => p.y * scale);
       blocksInRange(layouts, Math.min(...ys), Math.max(...ys)).forEach((i) =>
-        marked.add(i)
+        marked.add(i),
       );
     }
     lines.push(
-      `${penStrokes.length} pen stroke${penStrokes.length === 1 ? "" : "s"} over:`
+      `${penStrokes.length} pen stroke${penStrokes.length === 1 ? "" : "s"} over:`,
     );
     for (const index of [...marked].sort((a, b) => a - b)) {
       const text = truncate(blockText(article.blocks[index]));

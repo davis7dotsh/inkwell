@@ -38,7 +38,7 @@ let liveListener: ((report: FatalReport) => void) | null = null;
 
 export function toFatalReport(
   error: unknown,
-  uiWasMounted: boolean
+  uiWasMounted: boolean,
 ): FatalReport {
   const err = error instanceof Error ? error : new Error(String(error));
   return {
@@ -77,7 +77,7 @@ export function clearLastFatalReport() {
 }
 
 export function setFatalErrorListener(
-  listener: ((report: FatalReport) => void) | null
+  listener: ((report: FatalReport) => void) | null,
 ) {
   liveListener = listener;
 }

@@ -82,7 +82,7 @@ export function useTheme() {
  * `themed[scheme]`, so no per-render StyleSheet.create.
  */
 export function makeThemedStyles<T extends StyleSheet.NamedStyles<T>>(
-  factory: (c: Palette) => T
+  factory: (c: Palette) => T,
 ): Record<Scheme, T> {
   return { light: factory(light), dark: factory(dark) };
 }
@@ -139,7 +139,7 @@ function withAlpha(hex: string, alpha: number): string {
  */
 export function tagChipColors(
   color: string | undefined,
-  isDark: boolean
+  isDark: boolean,
 ): { fill: string; text: string; border: string } {
   const base = normalizeHex(color?.trim() || DEFAULT_TAG_COLOR);
   if (isDark) {
@@ -184,7 +184,7 @@ const NIGHT_INK: Record<string, string> = {
 
 /** Render-time color for a stored annotation ink. */
 export function displayInkColor(color: string, isDark: boolean): string {
-  return isDark ? NIGHT_INK[color] ?? color : color;
+  return isDark ? (NIGHT_INK[color] ?? color) : color;
 }
 
 /** Max width of the article text column. */

@@ -17,10 +17,7 @@ import {
   resolveAnnotations,
   truncate,
 } from "@inkwell/content";
-import type {
-  Annotations,
-  ResolvedAnnotation,
-} from "@inkwell/content";
+import type { Annotations, ResolvedAnnotation } from "@inkwell/content";
 import {
   BlockSchema,
   BoxAnnotationSchema,
@@ -47,14 +44,8 @@ import { kindOf, normalizeUrl } from "./url";
 // article body well under that and say so, rather than truncating silently.
 const MAX_ARTICLE_CHARS = 80_000;
 
-const parseJsonArray = <T>(
-  json: string,
-  itemSchema: z.ZodType<T>
-): T[] =>
-  Option.getOrElse(
-    decodeTolerantJsonArray(json, itemSchema),
-    () => []
-  );
+const parseJsonArray = <T>(json: string, itemSchema: z.ZodType<T>): T[] =>
+  Option.getOrElse(decodeTolerantJsonArray(json, itemSchema), () => []);
 
 const errorResult = (message: string): CallToolResult => ({
   content: [{ type: "text", text: message }],
@@ -74,7 +65,7 @@ function renderNotesText(
   title: string,
   url: string,
   annotations: ResolvedAnnotation[],
-  anchored: boolean
+  anchored: boolean,
 ): string {
   const lines = [`Annotations on "${title}" (${url}):`];
   if (annotations.length === 0) {
@@ -88,14 +79,15 @@ function renderNotesText(
     if (a.note) parts.push(`: "${truncate(a.note, 200)}"`);
     else if (a.type === "voice") parts.push(": (no transcript)");
     if (a.selectedText) parts.push(` → "${truncate(a.selectedText, 200)}"`);
-    else if (a.nearbyText) parts.push(` — near: "${truncate(a.nearbyText, 160)}"`);
+    else if (a.nearbyText)
+      parts.push(` — near: "${truncate(a.nearbyText, 160)}"`);
     lines.push(parts.join(""));
   }
   if (!anchored) {
     lines.push(
       "",
       "(Anchor text unavailable — these annotations predate layout capture. " +
-        "Open the article in the reader and re-save to anchor them to text.)"
+        "Open the article in the reader and re-save to anchor them to text.)",
     );
   }
   return lines.join("\n");
@@ -106,9 +98,7 @@ export type McpRequestScope = {
   readonly waitUntil: (promise: Promise<unknown>) => void;
 };
 
-export function buildInkwellMcp(
-  scope: McpRequestScope
-): McpServer {
+export function buildInkwellMcp(scope: McpRequestScope): McpServer {
   const server = new McpServer(
     { name: "inkwell", version: "0.1.0" },
     {
@@ -130,19 +120,14 @@ export function buildInkwellMcp(
         "HTTP, not an MCP tool, because file bytes don't belong in tool",
         "arguments.",
       ].join(" "),
-    }
+    },
   );
 
   const runTool = <A, E>(
-    program: Effect.Effect<A, E, RequestServices>
+    program: Effect.Effect<A, E, RequestServices>,
   ): Promise<A | CallToolResult> =>
-    runRequestEffectTotal(
-      program,
-      scope.layer,
-      (cause) =>
-        Effect.succeed(
-          errorResult(errorMessage(Cause.squash(cause)))
-        )
+    runRequestEffectTotal(program, scope.layer, (cause) =>
+      Effect.succeed(errorResult(errorMessage(Cause.squash(cause)))),
     );
 
   server.registerTool(
@@ -218,7 +203,7 @@ export function buildInkwellMcp(
       const promise = runTool(program);
       scope.waitUntil(promise);
       return promise;
-    }
+    },
   );
 
   server.registerTool(
@@ -245,7 +230,7 @@ export function buildInkwellMcp(
           .array(z.string())
           .optional()
           .describe(
-            "Only articles tagged with ANY of these tag ids (from list_tags)"
+            "Only articles tagged with ANY of these tag ids (from list_tags)",
           ),
         limit: z.number().int().min(1).max(200).optional(),
       },
@@ -265,7 +250,7 @@ export function buildInkwellMcp(
             savedAt: z.string(),
             pinned: z.boolean(),
             tags: z.array(z.string()),
-          })
+          }),
         ),
       },
       annotations: { readOnlyHint: true },
@@ -306,8 +291,8 @@ export function buildInkwellMcp(
             ],
             structuredContent: { articles },
           };
-        })
-      )
+        }),
+      ),
   );
 
   server.registerTool(
@@ -327,14 +312,16 @@ export function buildInkwellMcp(
           .optional()
           .describe(
             "Section id from a previous get_article response; returns just " +
-              "that section and its subsections."
+              "that section and its subsections.",
           ),
         offset: z
           .number()
           .int()
           .min(0)
           .optional()
-          .describe("Character offset into the body to start from (default 0)."),
+          .describe(
+            "Character offset into the body to start from (default 0).",
+          ),
         limit: z
           .number()
           .int()
@@ -342,136 +329,146 @@ export function buildInkwellMcp(
           .max(MAX_ARTICLE_CHARS)
           .optional()
           .describe(
-            `Max characters to return (default and ceiling ${MAX_ARTICLE_CHARS}).`
+            `Max characters to return (default and ceiling ${MAX_ARTICLE_CHARS}).`,
           ),
       },
       annotations: { readOnlyHint: true },
     },
     ({ articleId, section, offset, limit }) =>
-      runTool(Effect.gen(function* () {
-      // Section mode and char paging are alternative retrieval modes; mixing
-      // them silently drops the paging args, so reject it outright.
-      if (section !== undefined && (offset !== undefined || limit !== undefined)) {
-        return yield* new ToolOperationError({
-          message: "Pass either `section` or `offset`/`limit`, not both.",
-        });
-      }
-      const { userId } = yield* CurrentUser;
-      const convex = yield* ConvexService;
-      const article = yield* convex.getArticle({ userId, id: articleId });
-      if (!article) {
-        return yield* new ToolOperationError({
-          message: `No article with id ${articleId}.`,
-        });
-      }
-      if (article.status !== "ready" || !article.blocksJson) {
-        return yield* new ToolOperationError({
-          message:
-            article.status === "failed"
-            ? `Article "${article.title}" failed to process: ${article.error ?? "unknown error"}.`
-            : `Article "${article.title}" is still processing — try again shortly.`,
-        });
-      }
+      runTool(
+        Effect.gen(function* () {
+          // Section mode and char paging are alternative retrieval modes; mixing
+          // them silently drops the paging args, so reject it outright.
+          if (
+            section !== undefined &&
+            (offset !== undefined || limit !== undefined)
+          ) {
+            return yield* new ToolOperationError({
+              message: "Pass either `section` or `offset`/`limit`, not both.",
+            });
+          }
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          const article = yield* convex.getArticle({ userId, id: articleId });
+          if (!article) {
+            return yield* new ToolOperationError({
+              message: `No article with id ${articleId}.`,
+            });
+          }
+          if (article.status !== "ready" || !article.blocksJson) {
+            return yield* new ToolOperationError({
+              message:
+                article.status === "failed"
+                  ? `Article "${article.title}" failed to process: ${article.error ?? "unknown error"}.`
+                  : `Article "${article.title}" is still processing — try again shortly.`,
+            });
+          }
 
-      // Recover heading semantics (numbered PDFs) so section ids and slicing
-      // line up with what the reader renders.
-      const blocks = inferDocumentHeadings(
-        parseJsonArray(article.blocksJson, BlockSchema)
-      );
-      const outline = buildDocumentOutline(blocks);
-      const header = [
-        `# ${article.title}`,
-        article.byline ? `By: ${article.byline}` : undefined,
-        article.siteName ? `Site: ${article.siteName}` : undefined,
-        `Source: ${article.url}`,
-        `Saved: ${new Date(article.savedAt).toISOString()}`,
-        `Read status: ${article.readStatus}`,
-        `Pinned: ${article.pinned ? "yes" : "no"}`,
-        article.tags.length > 0
-          ? `Tags: ${article.tags.join(", ")}`
-          : undefined,
-      ]
-        .filter(Boolean)
-        .join("\n");
-
-      // Section mode: just the requested heading down to the next heading of
-      // the same or shallower depth (i.e. the section plus its subsections).
-      if (section !== undefined) {
-        const index = outline.findIndex((entry) => entry.id === section);
-        if (index === -1) {
-          const ids = outline.slice(0, 50).map((e) => `- ${e.id}`);
-          return yield* new ToolOperationError({
-            message:
-              ids.length
-              ? `No section "${section}" in "${article.title}". Sections:\n${ids.join("\n")}`
-              : `Article "${article.title}" has no addressable sections.`,
-          });
-        }
-        const entry = outline[index];
-        const next = outline
-          .slice(index + 1)
-          .find((e) => e.depth <= entry.depth);
-        const end = next ? next.blockIndex : blocks.length;
-        let body = blocksToMarkdown(blocks.slice(entry.blockIndex, end));
-        let note = "";
-        if (body.length > MAX_ARTICLE_CHARS) {
-          body = body.slice(0, MAX_ARTICLE_CHARS);
-          note = `\n\n[Section truncated at ${MAX_ARTICLE_CHARS} characters.]`;
-        }
-        return {
-          content: [
-            {
-              type: "text",
-              text: `${header}\nSection: ${entry.title}\n\n---\n\n${body}${note}`,
-            },
-          ],
-        };
-      }
-
-      const markdown = blocksToMarkdown(blocks);
-      const cap = limit ?? MAX_ARTICLE_CHARS;
-      const start = offset ?? 0;
-      const slice = markdown.slice(start, start + cap);
-      const end = start + slice.length;
-      const footer =
-        end < markdown.length
-          ? `\n\n[${markdown.length} characters total; returned ${start}–${end}. ` +
-            `Continue with offset=${end}, or pass section="<id>" to jump.]`
-          : "";
-
-      // First page carries the metadata header and the section map; later
-      // pages stay lean so the agent isn't re-billed for navigation chrome.
-      if (start === 0) {
-        const SHOWN_SECTIONS = 100;
-        const sectionLines = outline
-          .slice(0, SHOWN_SECTIONS)
-          .map((e) => `${"  ".repeat(e.depth)}- ${e.id} — ${truncate(e.title, 80)}`);
-        if (outline.length > SHOWN_SECTIONS) {
-          sectionLines.push(
-            `- … ${outline.length - SHOWN_SECTIONS} more sections not shown`
+          // Recover heading semantics (numbered PDFs) so section ids and slicing
+          // line up with what the reader renders.
+          const blocks = inferDocumentHeadings(
+            parseJsonArray(article.blocksJson, BlockSchema),
           );
-        }
-        const sections =
-          outline.length > 0
-            ? "\n" + ["", "## Sections", ...sectionLines].join("\n")
-            : "";
-        return {
-          content: [
-            { type: "text", text: `${header}${sections}\n\n---\n\n${slice}${footer}` },
-          ],
-        };
-      }
-      return {
-        content: [
-          {
-            type: "text",
-            text:
-              `# ${article.title} (continued, characters ${start}–${end})` +
-              `\n\n---\n\n${slice}${footer}`,
-          },
-        ],
-      };
-      }))
+          const outline = buildDocumentOutline(blocks);
+          const header = [
+            `# ${article.title}`,
+            article.byline ? `By: ${article.byline}` : undefined,
+            article.siteName ? `Site: ${article.siteName}` : undefined,
+            `Source: ${article.url}`,
+            `Saved: ${new Date(article.savedAt).toISOString()}`,
+            `Read status: ${article.readStatus}`,
+            `Pinned: ${article.pinned ? "yes" : "no"}`,
+            article.tags.length > 0
+              ? `Tags: ${article.tags.join(", ")}`
+              : undefined,
+          ]
+            .filter(Boolean)
+            .join("\n");
+
+          // Section mode: just the requested heading down to the next heading of
+          // the same or shallower depth (i.e. the section plus its subsections).
+          if (section !== undefined) {
+            const index = outline.findIndex((entry) => entry.id === section);
+            if (index === -1) {
+              const ids = outline.slice(0, 50).map((e) => `- ${e.id}`);
+              return yield* new ToolOperationError({
+                message: ids.length
+                  ? `No section "${section}" in "${article.title}". Sections:\n${ids.join("\n")}`
+                  : `Article "${article.title}" has no addressable sections.`,
+              });
+            }
+            const entry = outline[index];
+            const next = outline
+              .slice(index + 1)
+              .find((e) => e.depth <= entry.depth);
+            const end = next ? next.blockIndex : blocks.length;
+            let body = blocksToMarkdown(blocks.slice(entry.blockIndex, end));
+            let note = "";
+            if (body.length > MAX_ARTICLE_CHARS) {
+              body = body.slice(0, MAX_ARTICLE_CHARS);
+              note = `\n\n[Section truncated at ${MAX_ARTICLE_CHARS} characters.]`;
+            }
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `${header}\nSection: ${entry.title}\n\n---\n\n${body}${note}`,
+                },
+              ],
+            };
+          }
+
+          const markdown = blocksToMarkdown(blocks);
+          const cap = limit ?? MAX_ARTICLE_CHARS;
+          const start = offset ?? 0;
+          const slice = markdown.slice(start, start + cap);
+          const end = start + slice.length;
+          const footer =
+            end < markdown.length
+              ? `\n\n[${markdown.length} characters total; returned ${start}–${end}. ` +
+                `Continue with offset=${end}, or pass section="<id>" to jump.]`
+              : "";
+
+          // First page carries the metadata header and the section map; later
+          // pages stay lean so the agent isn't re-billed for navigation chrome.
+          if (start === 0) {
+            const SHOWN_SECTIONS = 100;
+            const sectionLines = outline
+              .slice(0, SHOWN_SECTIONS)
+              .map(
+                (e) =>
+                  `${"  ".repeat(e.depth)}- ${e.id} — ${truncate(e.title, 80)}`,
+              );
+            if (outline.length > SHOWN_SECTIONS) {
+              sectionLines.push(
+                `- … ${outline.length - SHOWN_SECTIONS} more sections not shown`,
+              );
+            }
+            const sections =
+              outline.length > 0
+                ? "\n" + ["", "## Sections", ...sectionLines].join("\n")
+                : "";
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `${header}${sections}\n\n---\n\n${slice}${footer}`,
+                },
+              ],
+            };
+          }
+          return {
+            content: [
+              {
+                type: "text",
+                text:
+                  `# ${article.title} (continued, characters ${start}–${end})` +
+                  `\n\n---\n\n${slice}${footer}`,
+              },
+            ],
+          };
+        }),
+      ),
   );
 
   server.registerTool(
@@ -512,7 +509,7 @@ export function buildInkwellMcp(
                 h: z.number(),
               })
               .optional(),
-          })
+          }),
         ),
         summary: z.object({
           typedNotes: z.number(),
@@ -526,102 +523,95 @@ export function buildInkwellMcp(
       annotations: { readOnlyHint: true },
     },
     ({ articleId }) =>
-      runTool(Effect.gen(function* () {
-      const { userId } = yield* CurrentUser;
-      const convex = yield* ConvexService;
-      const result = yield* convex.getAnnotations({ userId, articleId });
-      if (!result) {
-        return yield* new ToolOperationError({
-          message: `No article with id ${articleId}.`,
-        });
-      }
+      runTool(
+        Effect.gen(function* () {
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          const result = yield* convex.getAnnotations({ userId, articleId });
+          if (!result) {
+            return yield* new ToolOperationError({
+              message: `No article with id ${articleId}.`,
+            });
+          }
 
-      const row = result.annotations;
-      const strokes = row
-        ? parseJsonArray(row.strokesJson, StrokeSchema)
-        : [];
-      const boxes = row
-        ? parseJsonArray(
-            row.boxesJson,
-            BoxAnnotationSchema
-          )
-        : [];
-      const notes = row
-        ? parseJsonArray(
-            row.notesJson,
-            NoteAnnotationSchema
-          )
-        : [];
-      const memos = row
-        ? parseJsonArray(
-            row.memosJson,
-            VoiceMemoAnnotationSchema
-          )
-        : [];
+          const row = result.annotations;
+          const strokes = row
+            ? parseJsonArray(row.strokesJson, StrokeSchema)
+            : [];
+          const boxes = row
+            ? parseJsonArray(row.boxesJson, BoxAnnotationSchema)
+            : [];
+          const notes = row
+            ? parseJsonArray(row.notesJson, NoteAnnotationSchema)
+            : [];
+          const memos = row
+            ? parseJsonArray(row.memosJson, VoiceMemoAnnotationSchema)
+            : [];
 
-      // Resolve pixel anchors to text using the persisted layout snapshot. With
-      // no snapshot the resolver still returns geometry + note text (anchored
-      // is then false), so the output shape is stable either way.
-      const snapshot = row ? parseLayoutSnapshot(row.layoutJson) : null;
-      const blocks = result.blocksJson
-        ? parseJsonArray(result.blocksJson, BlockSchema)
-        : [];
-      const anchored = Boolean(snapshot && blocks.length > 0);
+          // Resolve pixel anchors to text using the persisted layout snapshot. With
+          // no snapshot the resolver still returns geometry + note text (anchored
+          // is then false), so the output shape is stable either way.
+          const snapshot = row ? parseLayoutSnapshot(row.layoutJson) : null;
+          const blocks = result.blocksJson
+            ? parseJsonArray(result.blocksJson, BlockSchema)
+            : [];
+          const anchored = Boolean(snapshot && blocks.length > 0);
 
-      let annotations: ResolvedAnnotation[] = [];
-      if (row) {
-        const set: Annotations = {
-          contentWidth: row.contentWidth,
-          strokes,
-          boxes,
-          notes,
-          memos,
-        };
-        const scale =
-          snapshot && row.contentWidth > 0
-            ? snapshot.width / row.contentWidth
-            : 1;
-        annotations = resolveAnnotations(
-          blocks,
-          set,
-          snapshot?.layouts ?? new Map(),
-          scale
-        );
-      }
+          let annotations: ResolvedAnnotation[] = [];
+          if (row) {
+            const set: Annotations = {
+              contentWidth: row.contentWidth,
+              strokes,
+              boxes,
+              notes,
+              memos,
+            };
+            const scale =
+              snapshot && row.contentWidth > 0
+                ? snapshot.width / row.contentWidth
+                : 1;
+            annotations = resolveAnnotations(
+              blocks,
+              set,
+              snapshot?.layouts ?? new Map(),
+              scale,
+            );
+          }
 
-      // Summary mirrors what's returned, so counts and the array never diverge.
-      const countOf = (type: ResolvedAnnotation["type"]) =>
-        annotations.filter((a) => a.type === type).length;
-      const structuredContent = {
-        articleTitle: result.articleTitle,
-        articleUrl: result.articleUrl,
-        anchored,
-        annotations,
-        summary: {
-          typedNotes: countOf("typed_note"),
-          voiceMemos: countOf("voice"),
-          boxes: countOf("box"),
-          highlightStrokes: countOf("highlight"),
-          penStrokes: countOf("pen"),
-        },
-        updatedAt: row ? new Date(row.updatedAt).toISOString() : undefined,
-      };
+          // Summary mirrors what's returned, so counts and the array never diverge.
+          const countOf = (type: ResolvedAnnotation["type"]) =>
+            annotations.filter((a) => a.type === type).length;
+          const structuredContent = {
+            articleTitle: result.articleTitle,
+            articleUrl: result.articleUrl,
+            anchored,
+            annotations,
+            summary: {
+              typedNotes: countOf("typed_note"),
+              voiceMemos: countOf("voice"),
+              boxes: countOf("box"),
+              highlightStrokes: countOf("highlight"),
+              penStrokes: countOf("pen"),
+            },
+            updatedAt: row ? new Date(row.updatedAt).toISOString() : undefined,
+          };
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: renderNotesText(
-              result.articleTitle,
-              result.articleUrl,
-              annotations,
-              anchored
-            ),
-          },
-        ],
-        structuredContent,
-      };
-      }))
+          return {
+            content: [
+              {
+                type: "text",
+                text: renderNotesText(
+                  result.articleTitle,
+                  result.articleUrl,
+                  annotations,
+                  anchored,
+                ),
+              },
+            ],
+            structuredContent,
+          };
+        }),
+      ),
   );
 
   server.registerTool(
@@ -640,7 +630,7 @@ export function buildInkwellMcp(
             name: z.string(),
             color: z.string().optional(),
             createdAt: z.string(),
-          })
+          }),
         ),
       },
       annotations: { readOnlyHint: true },
@@ -666,8 +656,8 @@ export function buildInkwellMcp(
             ],
             structuredContent: { tags },
           };
-        })
-      )
+        }),
+      ),
   );
 
   server.registerTool(
@@ -712,8 +702,8 @@ export function buildInkwellMcp(
             ],
             structuredContent,
           };
-        })
-      )
+        }),
+      ),
   );
 
   server.registerTool(
@@ -743,8 +733,8 @@ export function buildInkwellMcp(
             ],
             structuredContent: { ok: true },
           };
-        })
-      )
+        }),
+      ),
   );
 
   server.registerTool(
@@ -775,8 +765,8 @@ export function buildInkwellMcp(
             ],
             structuredContent: { ok: true },
           };
-        })
-      )
+        }),
+      ),
   );
 
   server.registerTool(
@@ -809,8 +799,8 @@ export function buildInkwellMcp(
             ],
             structuredContent: { ok: true },
           };
-        })
-      )
+        }),
+      ),
   );
 
   server.registerTool(
@@ -846,8 +836,8 @@ export function buildInkwellMcp(
             ],
             structuredContent: { ok: true },
           };
-        })
-      )
+        }),
+      ),
   );
 
   server.registerTool(
@@ -859,9 +849,7 @@ export function buildInkwellMcp(
         "library. Use the id from list_articles.",
       inputSchema: {
         articleId: z.string().describe("Article id from list_articles"),
-        pinned: z
-          .boolean()
-          .describe("true to pin to the top, false to unpin"),
+        pinned: z.boolean().describe("true to pin to the top, false to unpin"),
       },
       outputSchema: { ok: z.boolean() },
       annotations: { destructiveHint: false },
@@ -880,15 +868,13 @@ export function buildInkwellMcp(
             content: [
               {
                 type: "text" as const,
-                text: `${
-                  pinned ? "Pinned" : "Unpinned"
-                } article ${articleId}.`,
+                text: `${pinned ? "Pinned" : "Unpinned"} article ${articleId}.`,
               },
             ],
             structuredContent: { ok: true },
           };
-        })
-      )
+        }),
+      ),
   );
 
   return server;

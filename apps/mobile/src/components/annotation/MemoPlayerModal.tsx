@@ -73,7 +73,9 @@ export function MemoPlayerModal({ memo, articleId, onDelete, onClose }: Props) {
       },
       onFailure: (error) => {
         setLocalChecked(true);
-        showError(`Couldn't read memo audio: ${operationalErrorMessage(error)}`);
+        showError(
+          `Couldn't read memo audio: ${operationalErrorMessage(error)}`,
+        );
       },
     });
   }, [memo.id, run]);
@@ -96,7 +98,9 @@ export function MemoPlayerModal({ memo, articleId, onDelete, onClose }: Props) {
         }),
       onFailure: (error) => {
         setRemoteFailed(true);
-        showError(`Couldn't load memo audio: ${operationalErrorMessage(error)}`);
+        showError(
+          `Couldn't load memo audio: ${operationalErrorMessage(error)}`,
+        );
       },
     });
   }, [
@@ -121,7 +125,8 @@ export function MemoPlayerModal({ memo, articleId, onDelete, onClose }: Props) {
     showError("This voice memo could not be played.");
   }, [status.error]);
 
-  const duration = status.duration > 0 ? status.duration : memo.durationMs / 1000;
+  const duration =
+    status.duration > 0 ? status.duration : memo.durationMs / 1000;
   const progress =
     duration > 0 ? Math.min(1, status.currentTime / duration) : 0;
 
@@ -149,13 +154,13 @@ export function MemoPlayerModal({ memo, articleId, onDelete, onClose }: Props) {
                   operation: "restart voice memo",
                   message: unknownErrorMessage(error),
                 }),
-            })
-          )
+            }),
+          ),
         ),
         {
           onFailure: (error) =>
             showError(`Couldn't restart audio: ${error.message}`),
-        }
+        },
       );
       return;
     }
@@ -166,8 +171,7 @@ export function MemoPlayerModal({ memo, articleId, onDelete, onClose }: Props) {
     if (!source || duration <= 0) return;
     run(
       Effect.tryPromise({
-        try: () =>
-          player.seekTo(Math.max(0, Math.min(1, fraction)) * duration),
+        try: () => player.seekTo(Math.max(0, Math.min(1, fraction)) * duration),
         catch: (error) =>
           new NativeCommandError({
             operation: "seek voice memo",
@@ -177,7 +181,7 @@ export function MemoPlayerModal({ memo, articleId, onDelete, onClose }: Props) {
       {
         onFailure: (error) =>
           showError(`Couldn't seek audio: ${error.message}`),
-      }
+      },
     );
   };
 
@@ -192,7 +196,11 @@ export function MemoPlayerModal({ memo, articleId, onDelete, onClose }: Props) {
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable style={styles.card} onPress={() => {}}>
           <View style={styles.headerRow}>
-            <MaterialCommunityIcons name="microphone" size={18} color={c.accent} />
+            <MaterialCommunityIcons
+              name="microphone"
+              size={18}
+              color={c.accent}
+            />
             <Text style={styles.title}>Voice memo</Text>
             {memo.status === "local" ? (
               <Text style={styles.syncBadge}>Not synced yet</Text>
@@ -220,7 +228,8 @@ export function MemoPlayerModal({ memo, articleId, onDelete, onClose }: Props) {
               style={styles.barTrack}
               onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
               onPress={(e) =>
-                barWidth > 0 && seekToFraction(e.nativeEvent.locationX / barWidth)
+                barWidth > 0 &&
+                seekToFraction(e.nativeEvent.locationX / barWidth)
               }
               accessibilityLabel="Seek"
             >
@@ -231,7 +240,7 @@ export function MemoPlayerModal({ memo, articleId, onDelete, onClose }: Props) {
               {formatMemoDuration(
                 (status.playing || status.currentTime > 0
                   ? status.currentTime
-                  : duration) * 1000
+                  : duration) * 1000,
               )}
             </Text>
           </View>
@@ -259,7 +268,10 @@ export function MemoPlayerModal({ memo, articleId, onDelete, onClose }: Props) {
               <Text style={[styles.buttonText, styles.deleteText]}>Delete</Text>
             </Pressable>
             <View style={{ flex: 1 }} />
-            <Pressable onPress={onClose} style={[styles.button, styles.doneButton]}>
+            <Pressable
+              onPress={onClose}
+              style={[styles.button, styles.doneButton]}
+            >
               <Text style={[styles.buttonText, styles.doneText]}>Done</Text>
             </Pressable>
           </View>
@@ -381,5 +393,5 @@ const themed = makeThemedStyles((c) =>
     },
     doneText: { color: c.onAccent },
     deleteText: { color: c.danger },
-  })
+  }),
 );

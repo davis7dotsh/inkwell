@@ -120,7 +120,7 @@ export type AgentWriteLog = {
  */
 export function fakeNetwork(
   scrape: () => Response,
-  reads: AgentReads = {}
+  reads: AgentReads = {},
 ): {
   impl: typeof fetch;
   ingest: IngestLog;
@@ -142,8 +142,7 @@ export function fakeNetwork(
     if (url === FIRECRAWL_ENDPOINT || url === FIRECRAWL_PARSE_ENDPOINT) {
       return scrape();
     }
-    const ingestMatch =
-      /\/ingest\/(create-pending|complete|fail)$/.exec(url);
+    const ingestMatch = /\/ingest\/(create-pending|complete|fail)$/.exec(url);
     if (ingestMatch) {
       const op = ingestMatch[1] as keyof IngestLog;
       ingest[op].push({
@@ -152,7 +151,7 @@ export function fakeNetwork(
         body: parseBody(init),
       });
       return jsonResponse(
-        op === "create-pending" ? { articleId: "art1" } : { ok: true }
+        op === "create-pending" ? { articleId: "art1" } : { ok: true },
       );
     }
     // Agent write routes (tag mutations + pin): record and answer canned. The
@@ -160,7 +159,7 @@ export function fakeNetwork(
     // assert on the returned shape.
     const writeMatch =
       /\/agent\/(tags\/create|tags\/rename|tags\/remove|article-tags\/add|article-tags\/remove|article\/pin)$/.exec(
-        url
+        url,
       );
     if (writeMatch) {
       const route = writeMatch[1] as keyof AgentWriteLog;

@@ -17,10 +17,9 @@ import {
 const authState = vi.hoisted(() => ({ userId: null as string | null }));
 
 vi.mock("@clerk/hono", () => ({
-  clerkMiddleware:
-    () => async (_c: unknown, next: () => Promise<void>) => {
-      await next();
-    },
+  clerkMiddleware: () => async (_c: unknown, next: () => Promise<void>) => {
+    await next();
+  },
   getAuth: () => ({
     userId: authState.userId,
     isAuthenticated: authState.userId !== null,
@@ -50,7 +49,7 @@ let nextId = 1;
 
 async function rpc(
   method: string,
-  params: Record<string, unknown>
+  params: Record<string, unknown>,
 ): Promise<JsonRpcResponse> {
   const res = await app.request(
     "/mcp",
@@ -63,7 +62,7 @@ async function rpc(
       body: JSON.stringify({ jsonrpc: "2.0", id: nextId++, method, params }),
     },
     TEST_ENV,
-    makeExecutionCtx()
+    makeExecutionCtx(),
   );
   expect(res.status).toBe(200);
   return res.json();
@@ -99,7 +98,7 @@ describe("POST /mcp auth", () => {
       "/mcp",
       { method: "POST", body: "{}" },
       TEST_ENV,
-      makeExecutionCtx()
+      makeExecutionCtx(),
     );
     expect(res.status).toBe(401);
     expect(res.headers.get("WWW-Authenticate")).toContain("Bearer");
@@ -116,7 +115,7 @@ describe("POST /mcp auth", () => {
           headers: { Accept: "application/json, text/event-stream" },
         },
         TEST_ENV,
-        makeExecutionCtx()
+        makeExecutionCtx(),
       );
       expect(res.status).toBe(405);
       expect(res.headers.get("Allow")).toBe("POST");
@@ -165,7 +164,7 @@ describe("MCP handshake", () => {
     // Destructive tags removals and tag deletion flag themselves as such.
     expect(byName.delete_tag.annotations?.destructiveHint).toBe(true);
     expect(byName.remove_tag_from_article.annotations?.destructiveHint).toBe(
-      true
+      true,
     );
   });
 });
@@ -203,7 +202,7 @@ describe("list_articles", () => {
       limit: 10,
     });
     expect(agentCalls[0].headers["x-inkwell-key"]).toBe(
-      TEST_ENV.WORKER_SHARED_SECRET
+      TEST_ENV.WORKER_SHARED_SECRET,
     );
 
     expect(response.result?.isError).toBeFalsy();
@@ -252,7 +251,7 @@ describe("save_article", () => {
       firecrawlOk({
         html: FIXTURE_HTML,
         metadata: { title: "Hello Inkwell", sourceURL: "https://example.com" },
-      })
+      }),
     );
 
     const response = await callTool("save_article", {
@@ -279,7 +278,7 @@ describe("save_article", () => {
 
   it("reports failed when the scrape errors", async () => {
     const { ingest } = stubNetwork(() =>
-      jsonResponse({ success: false, error: "blocked by robots.txt" })
+      jsonResponse({ success: false, error: "blocked by robots.txt" }),
     );
 
     const response = await callTool("save_article", {
@@ -391,7 +390,10 @@ describe("get_article", () => {
   it("paginates the body with offset and a continue hint", async () => {
     stubNetwork(noScrape, { article: () => sectionedArticle });
 
-    const first = await callTool("get_article", { articleId: "art1", limit: 5 });
+    const first = await callTool("get_article", {
+      articleId: "art1",
+      limit: 5,
+    });
     const firstText = first.result?.content?.[0]?.text as string;
     expect(firstText).toContain("Continue with offset=");
 
@@ -481,7 +483,7 @@ describe("create_tag", () => {
 
     expect(agentWrites["tags/create"]).toHaveLength(1);
     expect(agentWrites["tags/create"][0].url).toBe(
-      `${TEST_ENV.CONVEX_SITE_URL}/agent/tags/create`
+      `${TEST_ENV.CONVEX_SITE_URL}/agent/tags/create`,
     );
     expect(agentWrites["tags/create"][0].body).toEqual({
       userId: "user_1",

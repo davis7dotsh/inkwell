@@ -17,10 +17,9 @@ import {
 const authState = vi.hoisted(() => ({ userId: null as string | null }));
 
 vi.mock("@clerk/hono", () => ({
-  clerkMiddleware:
-    () => async (_c: unknown, next: () => Promise<void>) => {
-      await next();
-    },
+  clerkMiddleware: () => async (_c: unknown, next: () => Promise<void>) => {
+    await next();
+  },
   // Mirrors the real shape for both auth paths the app accepts (session JWT
   // or user-scoped API key): routes narrow on isAuthenticated, then userId.
   getAuth: () => ({
@@ -51,7 +50,7 @@ function postJson(path: string, body: unknown, ctx: ExecutionContext) {
       body: JSON.stringify(body),
     },
     TEST_ENV,
-    ctx
+    ctx,
   );
 }
 
@@ -63,35 +62,29 @@ function stubNetwork(scrape: () => Response): IngestLog {
 }
 
 function makeMemoBucket(options?: { fail?: boolean }) {
-  const values = new Map<
-    string,
-    { bytes: Uint8Array; contentType: string }
-  >();
+  const values = new Map<string, { bytes: Uint8Array; contentType: string }>();
   const etag = '"memo-etag"';
   const bucket = {
     put: vi.fn(
-      async (
-        key: string,
-        value: ArrayBuffer,
-        putOptions?: R2PutOptions
-      ) => {
+      async (key: string, value: ArrayBuffer, putOptions?: R2PutOptions) => {
         if (options?.fail) throw new Error("R2 put failed");
         const contentType =
           putOptions?.httpMetadata &&
           !(putOptions.httpMetadata instanceof Headers)
-            ? putOptions.httpMetadata.contentType ?? "application/octet-stream"
+            ? (putOptions.httpMetadata.contentType ??
+              "application/octet-stream")
             : "application/octet-stream";
         values.set(key, {
           bytes: new Uint8Array(value.slice(0)),
           contentType,
         });
         return {} as R2Object;
-      }
+      },
     ),
     get: vi.fn(
       async (
         key: string,
-        getOptions?: R2GetOptions
+        getOptions?: R2GetOptions,
       ): Promise<R2ObjectBody | R2Object | null> => {
         if (options?.fail) throw new Error("R2 get failed");
         const stored = values.get(key);
@@ -102,22 +95,17 @@ function makeMemoBucket(options?: { fail?: boolean }) {
             : new Headers();
         const noBody =
           onlyIf.get("if-none-match") === etag ||
-          (onlyIf.has("if-match") &&
-            onlyIf.get("if-match") !== etag);
+          (onlyIf.has("if-match") && onlyIf.get("if-match") !== etag);
         let bytes = stored.bytes;
         let range: R2Range | undefined;
         const rangeHeader =
           getOptions?.range instanceof Headers
             ? getOptions.range.get("range")
             : null;
-        const match = /^bytes=(\d+)-(\d+)?$/.exec(
-          rangeHeader ?? ""
-        );
+        const match = /^bytes=(\d+)-(\d+)?$/.exec(rangeHeader ?? "");
         if (match) {
           const offset = Number(match[1]);
-          const end = match[2]
-            ? Number(match[2])
-            : stored.bytes.byteLength - 1;
+          const end = match[2] ? Number(match[2]) : stored.bytes.byteLength - 1;
           range = { offset, length: end - offset + 1 };
           bytes = stored.bytes.slice(offset, end + 1);
         }
@@ -144,12 +132,10 @@ function makeMemoBucket(options?: { fail?: boolean }) {
           arrayBuffer: async () => bytes.slice().buffer,
           bytes: async () => bytes.slice(),
           text: async () => new TextDecoder().decode(bytes),
-          json: async <T>() =>
-            JSON.parse(new TextDecoder().decode(bytes)) as T,
-          blob: async () =>
-            new Blob([bytes], { type: stored.contentType }),
+          json: async <T>() => JSON.parse(new TextDecoder().decode(bytes)) as T,
+          blob: async () => new Blob([bytes], { type: stored.contentType }),
         } as unknown as R2ObjectBody;
-      }
+      },
     ),
     delete: vi.fn(async (key: string) => {
       if (options?.fail) throw new Error("R2 delete failed");
@@ -199,11 +185,11 @@ describe("POST /articles", () => {
         body: JSON.stringify({ url: "https://example.com" }),
       },
       TEST_ENV,
-      ctx
+      ctx,
     );
     expect(missingType.status).toBe(400);
     expect(missingType.headers.get("content-type")).toContain(
-      "application/json"
+      "application/json",
     );
     expect(await missingType.json()).toEqual(missingUrlFailure);
 
@@ -215,13 +201,11 @@ describe("POST /articles", () => {
         body: "{",
       },
       TEST_ENV,
-      ctx
+      ctx,
     );
     expect(malformed.status).toBe(400);
     expect(malformed.headers.get("content-type")).toContain("text/plain");
-    expect(await malformed.text()).toBe(
-      "Malformed JSON in request body"
-    );
+    expect(await malformed.text()).toBe("Malformed JSON in request body");
 
     authState.userId = "user_1";
     const wrongContentType = await app.request(
@@ -232,11 +216,11 @@ describe("POST /articles", () => {
         body: JSON.stringify({ url: "https://example.com" }),
       },
       TEST_ENV,
-      ctx
+      ctx,
     );
     expect(wrongContentType.status).toBe(400);
     expect(wrongContentType.headers.get("content-type")).toContain(
-      "application/json"
+      "application/json",
     );
     expect(await wrongContentType.json()).toEqual(missingUrlFailure);
 
@@ -248,12 +232,10 @@ describe("POST /articles", () => {
         body: JSON.stringify({ url: 42 }),
       },
       TEST_ENV,
-      ctx
+      ctx,
     );
     expect(wrongType.status).toBe(400);
-    expect(wrongType.headers.get("content-type")).toContain(
-      "application/json"
-    );
+    expect(wrongType.headers.get("content-type")).toContain("application/json");
     expect(await wrongType.json()).toEqual({
       success: false,
       error: {
@@ -274,7 +256,7 @@ describe("POST /articles", () => {
     const res = await postJson(
       "/articles",
       { url: "https://example.com" },
-      ctx
+      ctx,
     );
 
     expect(res.status).toBe(500);
@@ -287,7 +269,11 @@ describe("POST /articles", () => {
     const ingest = stubNetwork(() => firecrawlOk({}));
     const { ctx, flush } = makeExecutionCtx();
 
-    const res = await postJson("/articles", { url: "https://example.com" }, ctx);
+    const res = await postJson(
+      "/articles",
+      { url: "https://example.com" },
+      ctx,
+    );
     await flush();
 
     expect(res.status).toBe(401);
@@ -314,18 +300,22 @@ describe("POST /articles", () => {
           title: "Hello Inkwell",
           sourceURL: "https://example.com/posts/hello",
         },
-      })
+      }),
     );
     const { ctx, flush } = makeExecutionCtx();
 
     // No scheme on purpose: the worker normalizes to https://.
-    const res = await postJson("/articles", { url: "example.com/posts/hello" }, ctx);
+    const res = await postJson(
+      "/articles",
+      { url: "example.com/posts/hello" },
+      ctx,
+    );
 
     expect(res.status).toBe(202);
     expect(await res.json()).toEqual({ articleId: "art1" });
     expect(ingest["create-pending"]).toHaveLength(1);
     expect(ingest["create-pending"][0].headers["x-inkwell-key"]).toBe(
-      TEST_ENV.WORKER_SHARED_SECRET
+      TEST_ENV.WORKER_SHARED_SECRET,
     );
     expect(ingest["create-pending"][0].body).toMatchObject({
       userId: "user_1",
@@ -361,14 +351,14 @@ describe("POST /articles", () => {
           title: "Attention",
           sourceURL: "https://example.com/papers/attention.pdf",
         },
-      })
+      }),
     );
     const { ctx, flush } = makeExecutionCtx();
 
     const res = await postJson(
       "/articles",
       { url: "https://example.com/papers/Attention.PDF?ref=hn" },
-      ctx
+      ctx,
     );
 
     expect(res.status).toBe(202);
@@ -377,7 +367,7 @@ describe("POST /articles", () => {
     await flush();
     expect(ingest.complete).toHaveLength(1);
     const blocks = JSON.parse(
-      (ingest.complete[0].body as { blocksJson: string }).blocksJson
+      (ingest.complete[0].body as { blocksJson: string }).blocksJson,
     ) as Block[];
     expect(blocks[0]).toMatchObject({
       type: "heading",
@@ -389,7 +379,11 @@ describe("POST /articles", () => {
     const ingest = stubNetwork(() => new Response("kaboom", { status: 500 }));
     const { ctx, flush } = makeExecutionCtx();
 
-    const res = await postJson("/articles", { url: "https://example.com" }, ctx);
+    const res = await postJson(
+      "/articles",
+      { url: "https://example.com" },
+      ctx,
+    );
     await flush();
 
     expect(res.status).toBe(202);
@@ -406,7 +400,7 @@ describe("POST /articles/upload", () => {
   function uploadRequest(
     ctx: ExecutionContext,
     file: File | string,
-    field = "file"
+    field = "file",
   ) {
     const form = new FormData();
     form.append(field, file);
@@ -414,7 +408,7 @@ describe("POST /articles/upload", () => {
       "/articles/upload",
       { method: "POST", body: form },
       TEST_ENV,
-      ctx
+      ctx,
     );
   }
 
@@ -439,7 +433,7 @@ describe("POST /articles/upload", () => {
 
     const res = await uploadRequest(
       ctx,
-      new File(["hello"], "notes.txt", { type: "text/plain" })
+      new File(["hello"], "notes.txt", { type: "text/plain" }),
     );
     await flush();
 
@@ -461,7 +455,7 @@ describe("POST /articles/upload", () => {
       firecrawlOk({
         markdown: "# Attention\n\nIs all you need.",
         metadata: { title: "Attention Is All You Need" },
-      })
+      }),
     );
     const { ctx, flush } = makeExecutionCtx();
 
@@ -493,7 +487,7 @@ describe("POST /articles/upload", () => {
 
   it("falls back to the filename title when metadata and headings are empty", async () => {
     const ingest = stubNetwork(() =>
-      firecrawlOk({ markdown: "Just one plain paragraph.", metadata: {} })
+      firecrawlOk({ markdown: "Just one plain paragraph.", metadata: {} }),
     );
     const { ctx, flush } = makeExecutionCtx();
 
@@ -541,13 +535,13 @@ describe("voice memo R2 routes", () => {
         body: audio,
       },
       env,
-      ctx
+      ctx,
     );
     expect(put.status).toBe(200);
     expect(await put.json()).toEqual({ size: 5 });
-    expect(
-      values.get("user_1/article_1/memo_1.m4a")
-    ).toMatchObject({ contentType: "audio/mp4" });
+    expect(values.get("user_1/article_1/memo_1.m4a")).toMatchObject({
+      contentType: "audio/mp4",
+    });
 
     const full = await app.request(path, {}, env, ctx);
     expect(full.status).toBe(200);
@@ -559,19 +553,19 @@ describe("voice memo R2 routes", () => {
       path,
       { headers: { Range: "bytes=1-3" } },
       env,
-      ctx
+      ctx,
     );
     expect(ranged.status).toBe(206);
     expect(ranged.headers.get("content-range")).toBe("bytes 1-3/5");
     expect(new Uint8Array(await ranged.arrayBuffer())).toEqual(
-      new Uint8Array([2, 3, 4])
+      new Uint8Array([2, 3, 4]),
     );
 
     const notModified = await app.request(
       path,
       { headers: { "If-None-Match": '"memo-etag"' } },
       env,
-      ctx
+      ctx,
     );
     expect(notModified.status).toBe(304);
 
@@ -579,16 +573,11 @@ describe("voice memo R2 routes", () => {
       path,
       { headers: { "If-Match": '"different"' } },
       env,
-      ctx
+      ctx,
     );
     expect(preconditionFailed.status).toBe(412);
 
-    const deleted = await app.request(
-      path,
-      { method: "DELETE" },
-      env,
-      ctx
-    );
+    const deleted = await app.request(path, { method: "DELETE" }, env, ctx);
     expect(deleted.status).toBe(200);
     expect(await deleted.json()).toEqual({ ok: true });
     const missing = await app.request(path, {}, env, ctx);
@@ -604,7 +593,7 @@ describe("voice memo R2 routes", () => {
       path,
       { method: "PUT", body: audio },
       env,
-      ctx
+      ctx,
     );
     expect(wrongType.status).toBe(415);
 
@@ -619,7 +608,7 @@ describe("voice memo R2 routes", () => {
         body: audio,
       },
       env,
-      ctx
+      ctx,
     );
     expect(tooLarge.status).toBe(413);
 
@@ -627,11 +616,11 @@ describe("voice memo R2 routes", () => {
       "/memos/bad%20id/memo_1",
       {},
       env,
-      ctx
+      ctx,
     );
     expect(invalidParam.status).toBe(400);
     expect(invalidParam.headers.get("content-type")).toContain(
-      "application/json"
+      "application/json",
     );
 
     const failing = {
@@ -646,12 +635,10 @@ describe("voice memo R2 routes", () => {
         body: audio,
       },
       failing,
-      ctx
+      ctx,
     );
     expect(storageFailure.status).toBe(500);
-    expect(await storageFailure.text()).toBe(
-      "Internal Server Error"
-    );
+    expect(await storageFailure.text()).toBe("Internal Server Error");
   });
 });
 
@@ -664,7 +651,7 @@ describe("POST /articles/:id/retry", () => {
     const res = await postJson(
       "/articles/art9/retry",
       { url: "https://example.com" },
-      ctx
+      ctx,
     );
 
     expect(res.status).toBe(401);
@@ -675,14 +662,14 @@ describe("POST /articles/:id/retry", () => {
       firecrawlOk({
         html: FIXTURE_HTML,
         metadata: { title: "Hello Inkwell" },
-      })
+      }),
     );
     const { ctx, flush } = makeExecutionCtx();
 
     const res = await postJson(
       "/articles/art9/retry",
       { url: "https://example.com/posts/hello" },
-      ctx
+      ctx,
     );
     await flush();
 

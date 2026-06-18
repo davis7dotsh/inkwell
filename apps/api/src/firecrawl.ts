@@ -61,7 +61,7 @@ const DEFAULT_RETRY_AFTER_MS = 6_000;
 const MAX_RETRY_AFTER_MS = 30_000;
 
 const retryAfterMs = (
-  response: HttpClientResponse.HttpClientResponse
+  response: HttpClientResponse.HttpClientResponse,
 ): number => {
   const seconds = Number(response.headers["retry-after"]);
   if (!Number.isFinite(seconds) || seconds < 0) {
@@ -71,17 +71,17 @@ const retryAfterMs = (
 };
 
 const responseDetail = (
-  response: HttpClientResponse.HttpClientResponse
+  response: HttpClientResponse.HttpClientResponse,
 ): Effect.Effect<string> =>
   response.text.pipe(
     Effect.map((text) => (text ? ` — ${text.slice(0, 200)}` : "")),
-    Effect.catch(() => Effect.succeed(""))
+    Effect.catch(() => Effect.succeed("")),
   );
 
 const transportError = (
   operation: string,
   retried: boolean,
-  error: unknown
+  error: unknown,
 ): FirecrawlHttpError =>
   new FirecrawlHttpError({
     operation,
@@ -101,7 +101,7 @@ const transportError = (
 
 const decodePayload = (
   response: HttpClientResponse.HttpClientResponse,
-  operation: string
+  operation: string,
 ): Effect.Effect<FirecrawlScrape, FirecrawlDecodeError | FirecrawlApiError> =>
   response.json.pipe(
     Effect.mapError(
@@ -109,7 +109,7 @@ const decodePayload = (
         new FirecrawlDecodeError({
           operation,
           message: `Firecrawl ${operation} returned invalid JSON: ${errorMessage(error)}`,
-        })
+        }),
     ),
     Effect.flatMap((value) =>
       Effect.try({
@@ -119,7 +119,7 @@ const decodePayload = (
             operation,
             message: `Firecrawl ${operation} returned an invalid response: ${errorMessage(error)}`,
           }),
-      })
+      }),
     ),
     Effect.flatMap((json) => {
       if (json.success !== true) {
@@ -150,17 +150,17 @@ const decodePayload = (
         markdown,
         metadata: json.data.metadata,
       });
-    })
+    }),
   );
 
 export class FirecrawlService extends Context.Service<
   FirecrawlService,
   {
     readonly scrapeUrl: (
-      url: string
+      url: string,
     ) => Effect.Effect<FirecrawlScrape, FirecrawlError>;
     readonly parseFile: (
-      file: File
+      file: File,
     ) => Effect.Effect<FirecrawlScrape, FirecrawlError>;
   }
 >()("inkwell/api/FirecrawlService") {}
@@ -176,20 +176,20 @@ export const FirecrawlServiceLive = Layer.effect(
         HttpClientRequest.HttpClientRequest,
         unknown
       >,
-      operation: string
+      operation: string,
     ): Effect.Effect<FirecrawlScrape, FirecrawlError> =>
       Effect.gen(function* () {
         const execute = (retried: boolean) =>
           makeRequest().pipe(
             Effect.mapError((error) =>
-              transportError(operation, retried, error)
+              transportError(operation, retried, error),
             ),
             Effect.flatMap((request) => client.execute(request)),
             Effect.mapError((error) =>
               error instanceof FirecrawlHttpError
                 ? error
-                : transportError(operation, retried, error)
-            )
+                : transportError(operation, retried, error),
+            ),
           );
 
         let response = yield* execute(false);
@@ -225,43 +225,38 @@ export const FirecrawlServiceLive = Layer.effect(
           () =>
             HttpClientRequest.bodyJson(
               HttpClientRequest.post(SCRAPE_ENDPOINT).pipe(
-                HttpClientRequest.bearerToken(token)
+                HttpClientRequest.bearerToken(token),
               ),
               {
                 url,
                 formats: ["markdown", "html"],
                 onlyMainContent: true,
-                parsers: [
-                  { type: "pdf", mode: "auto", maxPages: 200 },
-                ],
+                parsers: [{ type: "pdf", mode: "auto", maxPages: 200 }],
                 timeout: 120000,
-              }
+              },
             ),
-          "scrape"
+          "scrape",
         ),
       parseFile: (file) =>
-        requestPayload(
-          () => {
-            const form = new FormData();
-            form.append("file", file, file.name);
-            form.append(
-              "options",
-              JSON.stringify({
-                formats: ["markdown"],
-                onlyMainContent: true,
-                parsers: ["pdf"],
-                timeout: 120000,
-              })
-            );
-            return Effect.succeed(
-              HttpClientRequest.post(PARSE_ENDPOINT).pipe(
-                HttpClientRequest.bearerToken(token),
-                HttpClientRequest.bodyFormData(form)
-              )
-            );
-          },
-          "parse"
-        ),
+        requestPayload(() => {
+          const form = new FormData();
+          form.append("file", file, file.name);
+          form.append(
+            "options",
+            JSON.stringify({
+              formats: ["markdown"],
+              onlyMainContent: true,
+              parsers: ["pdf"],
+              timeout: 120000,
+            }),
+          );
+          return Effect.succeed(
+            HttpClientRequest.post(PARSE_ENDPOINT).pipe(
+              HttpClientRequest.bearerToken(token),
+              HttpClientRequest.bodyFormData(form),
+            ),
+          );
+        }, "parse"),
     });
-  })
+  }),
 );

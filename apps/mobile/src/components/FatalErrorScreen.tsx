@@ -33,20 +33,22 @@ export function FatalErrorScreen({
   const copyDetails = () => {
     run(
       writeClipboardText(
-        `Inkwell fatal error (${report.occurredAt})\n\n${details}`
+        `Inkwell fatal error (${report.occurredAt})\n\n${details}`,
       ),
       {
         onSuccess: () => setCopied(true),
         onFailure: (error) =>
           showError(`Couldn't copy: ${operationalErrorMessage(error)}`),
-      }
+      },
     );
   };
 
   return (
     <View style={styles.screen}>
       <Text style={styles.title}>
-        {mode === "live" ? "Inkwell hit a fatal error" : "Inkwell crashed last time"}
+        {mode === "live"
+          ? "Inkwell hit a fatal error"
+          : "Inkwell crashed last time"}
       </Text>
       <Text style={styles.subtitle}>
         {mode === "live"
@@ -56,13 +58,18 @@ export function FatalErrorScreen({
         {new Date(report.occurredAt).toLocaleString()}
         {report.uiWasMounted ? "" : " · during startup"}
       </Text>
-      <ScrollView style={styles.detailsBox} contentContainerStyle={styles.detailsContent}>
+      <ScrollView
+        style={styles.detailsBox}
+        contentContainerStyle={styles.detailsContent}
+      >
         <Text selectable style={styles.detailsText}>
           {details || "No details were captured."}
         </Text>
       </ScrollView>
       <Pressable style={styles.copyButton} onPress={copyDetails}>
-        <Text style={styles.copyButtonText}>{copied ? "Copied" : "Copy details"}</Text>
+        <Text style={styles.copyButtonText}>
+          {copied ? "Copied" : "Copy details"}
+        </Text>
       </Pressable>
       <Pressable style={styles.closeButton} onPress={onClose}>
         <Text style={styles.closeButtonText}>
@@ -146,5 +153,5 @@ const themed = makeThemedStyles((c) =>
       fontSize: 14,
       fontWeight: "600",
     },
-  })
+  }),
 );

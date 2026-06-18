@@ -24,13 +24,7 @@ async function copyToClipboard(value: string) {
   }
 }
 
-function CopyableCode({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function CopyableCode({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
 
   return (
@@ -187,8 +181,8 @@ After configuring it, verify that the server initializes and lists all four tool
 
         <Step number={1} title="Create an API key">
           <p>
-            Create a user key for your own Inkwell account. Clerk shows the
-            full key once, so copy it when it appears.
+            Create a user key for your own Inkwell account. Clerk shows the full
+            key once, so copy it when it appears.
           </p>
           <div className="mcp-key-manager">
             <APIKeys />
@@ -205,15 +199,12 @@ After configuring it, verify that the server initializes and lists all four tool
               <h3>Codex</h3>
               <p>
                 Store the key in <code>INKWELL_API_KEY</code>, then add the
-                remote server to your Codex configuration. Keep that
-                environment variable available when Codex starts.
+                remote server to your Codex configuration. Keep that environment
+                variable available when Codex starts.
               </p>
             </div>
             <CopyableCode label="Shell" value={shellCommand} />
-            <CopyableCode
-              label="~/.codex/config.toml"
-              value={codexConfig}
-            />
+            <CopyableCode label="~/.codex/config.toml" value={codexConfig} />
             <p className="mcp-verify">
               Verify with <code>codex mcp list</code>, then open Codex and use{" "}
               <code>/mcp</code>.

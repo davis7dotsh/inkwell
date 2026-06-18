@@ -3,7 +3,10 @@
 // layout the require fails. Inject it until Clerk declares it properly.
 function readPackage(pkg) {
   if (pkg.name === "@clerk/expo") {
-    pkg.dependencies = { ...pkg.dependencies, "@expo/config-plugins": "~56.0.8" };
+    pkg.dependencies = {
+      ...pkg.dependencies,
+      "@expo/config-plugins": "~56.0.8",
+    };
   }
   return pkg;
 }

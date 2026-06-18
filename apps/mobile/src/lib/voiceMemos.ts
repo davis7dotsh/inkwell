@@ -19,7 +19,7 @@ type AppleTranscription = {
   prepare(language: string): Promise<void>;
   transcribe(
     data: ArrayBufferLike,
-    language: string
+    language: string,
   ): Promise<{ segments: { text: string }[]; duration: number }>;
 };
 
@@ -70,7 +70,7 @@ export const prepareTranscription = Effect.suspend(() => {
 
 /** Transcribes one stored recording. Callers decide whether to use a fallback. */
 export const transcribeMemo = (
-  file: File
+  file: File,
 ): Effect.Effect<string, TranscriptionError> =>
   Effect.gen(function* () {
     const service = getTranscription();
@@ -110,7 +110,7 @@ export const storeRecording = (recordingUri: string, memoId: string) =>
 export const memoAudioUrl = (
   apiUrl: string,
   articleId: string,
-  memoId: string
+  memoId: string,
 ): string => `${apiUrl.replace(/\/+$/, "")}/memos/${articleId}/${memoId}`;
 
 const configuredApiUrl = Effect.gen(function* () {
@@ -152,7 +152,7 @@ export const uploadMemoAudio = (input: {
           "Content-Type": "audio/mp4",
         },
         body: file,
-      }
+      },
     );
     if (!response.ok) {
       return yield* new HttpResponseError({
@@ -174,11 +174,13 @@ export const deleteMemoAudio = (input: {
 }) =>
   Effect.gen(function* () {
     const files = yield* MobileFiles;
-    yield* files.deleteMemoFile(input.memoId).pipe(
-      Effect.catch((error) =>
-        Effect.logWarning("Could not delete local memo audio", error)
-      )
-    );
+    yield* files
+      .deleteMemoFile(input.memoId)
+      .pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("Could not delete local memo audio", error),
+        ),
+      );
 
     const config = yield* MobileConfig;
     if (!config.apiUrl || !input.token) return;
@@ -192,7 +194,7 @@ export const deleteMemoAudio = (input: {
         {
           method: "DELETE",
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
       if (!response.ok) {
         return yield* new HttpResponseError({
@@ -203,7 +205,7 @@ export const deleteMemoAudio = (input: {
       }
     }).pipe(
       Effect.catch((error) =>
-        Effect.logWarning("Could not delete remote memo audio", error)
-      )
+        Effect.logWarning("Could not delete remote memo audio", error),
+      ),
     );
   });

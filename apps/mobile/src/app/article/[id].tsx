@@ -134,7 +134,7 @@ function moveAnnotation(
   a: Annotations,
   target: MoveTarget,
   dx: number,
-  dy: number
+  dy: number,
 ): Annotations {
   switch (target.kind) {
     case "stroke": {
@@ -209,14 +209,14 @@ export default function ArticleScreen() {
     if ((article.readStatus ?? "unread") === "unread") {
       run(
         convexCommand("mark article in progress", () =>
-          setReadStatus({ id: articleId, status: "in_progress" })
+          setReadStatus({ id: articleId, status: "in_progress" }),
         ),
         {
           onFailure: (error) =>
             showError(
-              `Couldn't update reading status: ${operationalErrorMessage(error)}`
+              `Couldn't update reading status: ${operationalErrorMessage(error)}`,
             ),
-        }
+        },
       );
     }
   }, [article, articleId, run, setReadStatus]);
@@ -229,9 +229,7 @@ export default function ArticleScreen() {
   const [activeStroke, setActiveStroke] = useState<Stroke | null>(null);
   const [previewBox, setPreviewBox] = useState<BoxAnnotation | null>(null);
   const [noteEditor, setNoteEditor] = useState<
-    | { mode: "new"; at: Point }
-    | { mode: "edit"; note: NoteAnnotation }
-    | null
+    { mode: "new"; at: Point } | { mode: "edit"; note: NoteAnnotation } | null
   >(null);
   const [memoPhase, setMemoPhase] = useState<MemoPhase | null>(null);
   const [playerMemoId, setPlayerMemoId] = useState<string | null>(null);
@@ -244,29 +242,30 @@ export default function ArticleScreen() {
   const [blocks, setBlocks] = useState<Block[]>([]);
   useEffect(() => {
     return run(
-      blocksJson ? decodeArticleBlocks(blocksJson) : Effect.succeed<Block[]>([]),
+      blocksJson
+        ? decodeArticleBlocks(blocksJson)
+        : Effect.succeed<Block[]>([]),
       {
         onSuccess: (decoded) => setBlocks(inferDocumentHeadings(decoded)),
         onFailure: (error) => {
           setBlocks([]);
           showError(
-            `Couldn't decode article content: ${operationalErrorMessage(error)}`
+            `Couldn't decode article content: ${operationalErrorMessage(error)}`,
           );
         },
-      }
+      },
     );
   }, [blocksJson, run]);
   const outline = useMemo(() => buildDocumentOutline(blocks), [blocks]);
   const hasOutline = outline.length > 0;
-  const showOutlineRail =
-    hasOutline && windowWidth >= OUTLINE_RAIL_BREAKPOINT;
+  const showOutlineRail = hasOutline && windowWidth >= OUTLINE_RAIL_BREAKPOINT;
 
   // undefined = still loading, null = no annotations row yet.
   const [loadedAnnotations, setLoadedAnnotations] = useState<
     Annotations | null | undefined
   >(undefined);
   const [annotationLoadError, setAnnotationLoadError] = useState<string | null>(
-    null
+    null,
   );
   useEffect(() => {
     const load =
@@ -300,7 +299,7 @@ export default function ArticleScreen() {
     : windowWidth;
   const contentWidth = Math.min(
     MAX_CONTENT_WIDTH,
-    readerViewportWidth - CONTENT_PADDING * 2
+    readerViewportWidth - CONTENT_PADDING * 2,
   );
   const offsetX = (readerViewportWidth - contentWidth) / 2;
   const scale = annotations ? contentWidth / annotations.contentWidth : 1;
@@ -324,7 +323,7 @@ export default function ArticleScreen() {
       }
       setActiveOutlineId((current) => (current === nextId ? current : nextId));
     },
-    [outline]
+    [outline],
   );
 
   const scrollY = useSharedValue(0);
@@ -343,7 +342,7 @@ export default function ArticleScreen() {
       runOnJS(updateActiveOutline)(
         event.contentOffset.y,
         event.contentSize.height,
-        event.layoutMeasurement.height
+        event.layoutMeasurement.height,
       );
     }
   });
@@ -372,18 +371,18 @@ export default function ArticleScreen() {
         },
         onFailure: (error) =>
           showError(
-            `Couldn't load Pencil preference: ${operationalErrorMessage(error)}`
+            `Couldn't load Pencil preference: ${operationalErrorMessage(error)}`,
           ),
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
+    [],
   );
   const markStylusSeen = useCallback(() => {
     setHasStylus(true);
     run(persistStylusSeen, {
       onFailure: (error) =>
         showError(
-          `Couldn't remember Pencil use: ${operationalErrorMessage(error)}`
+          `Couldn't remember Pencil use: ${operationalErrorMessage(error)}`,
         ),
     });
   }, [run]);
@@ -421,10 +420,13 @@ export default function ArticleScreen() {
   // ---- load & persist ----
   useEffect(() => {
     if (loadedAnnotations === undefined) return;
-    return run(Effect.succeed(loadedAnnotations ?? emptyAnnotations(contentWidth)), {
-      // Seed once; later live updates don't clobber in-progress local edits.
-      onSuccess: (seed) => setAnnotations((current) => current ?? seed),
-    });
+    return run(
+      Effect.succeed(loadedAnnotations ?? emptyAnnotations(contentWidth)),
+      {
+        // Seed once; later live updates don't clobber in-progress local edits.
+        onSuccess: (seed) => setAnnotations((current) => current ?? seed),
+      },
+    );
     // contentWidth intentionally omitted: only used to seed new annotations.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadedAnnotations, run]);
@@ -452,10 +454,10 @@ export default function ArticleScreen() {
                   layouts: Array.from(layouts.entries()),
                 })
               : undefined,
-        })
+        }),
       );
     },
-    [articleId, saveAnnotations, contentWidth]
+    [articleId, saveAnnotations, contentWidth],
   );
 
   useEffect(() => {
@@ -465,9 +467,9 @@ export default function ArticleScreen() {
       {
         onFailure: (error) =>
           showError(
-            `Couldn't save annotations: ${operationalErrorMessage(error)}`
+            `Couldn't save annotations: ${operationalErrorMessage(error)}`,
           ),
-      }
+      },
     );
   }, [annotations, persistAnnotations, run]);
 
@@ -480,7 +482,7 @@ export default function ArticleScreen() {
         });
       }
     },
-    [persistAnnotations]
+    [persistAnnotations],
   );
 
   // ---- annotation mutations ----
@@ -506,20 +508,20 @@ export default function ArticleScreen() {
           Effect.catch((error) =>
             Effect.logWarning(
               "Could not authenticate remote voice memo cleanup",
-              error
-            ).pipe(Effect.as(null))
+              error,
+            ).pipe(Effect.as(null)),
           ),
           Effect.flatMap((token) =>
-            deleteMemoAudio({ token, articleId, memoId })
-          )
+            deleteMemoAudio({ token, articleId, memoId }),
+          ),
         ),
         {
           onFailure: (error) =>
             console.info("[Inkwell] Voice memo cleanup deferred", error),
-        }
+        },
       );
     },
-    [articleId, getToken, run]
+    [articleId, getToken, run],
   );
 
   /** Background audio upload; flips the memo to "uploaded" when it lands. */
@@ -536,15 +538,15 @@ export default function ArticleScreen() {
             update((a) => ({
               ...a,
               memos: a.memos.map((m) =>
-                m.id === memoId ? { ...m, status: "uploaded" as const } : m
+                m.id === memoId ? { ...m, status: "uploaded" as const } : m,
               ),
             })),
           onFailure: (error) =>
             console.info("[Inkwell] Voice memo upload deferred", error),
-        }
+        },
       );
     },
-    [articleId, getToken, run, update]
+    [articleId, getToken, run, update],
   );
 
   // Re-uploads any memo whose audio never left this device (e.g. recorded
@@ -581,9 +583,9 @@ export default function ArticleScreen() {
                 Effect.catch((error) =>
                   Effect.logWarning(
                     "Voice memo transcription unavailable",
-                    error
-                  ).pipe(Effect.as(""))
-                )
+                    error,
+                  ).pipe(Effect.as("")),
+                ),
               );
               const createdAt = yield* Effect.sync(() => Date.now());
               const memo = {
@@ -612,10 +614,10 @@ export default function ArticleScreen() {
                   Effect.catch((error) =>
                     Effect.logWarning(
                       "Could not clean up interrupted voice memo",
-                      error
-                    )
-                  )
-                )
+                      error,
+                    ),
+                  ),
+                ),
         ),
         {
           onSuccess: (memo) => {
@@ -624,20 +626,20 @@ export default function ArticleScreen() {
           },
           onFailure: (error) => {
             showError(
-              `Couldn't save the voice memo: ${operationalErrorMessage(error)}`
+              `Couldn't save the voice memo: ${operationalErrorMessage(error)}`,
             );
             setMemoPhase(null);
           },
           onDefect: (error) => {
             showError(
-              `Couldn't save the voice memo: ${operationalErrorMessage(error)}`
+              `Couldn't save the voice memo: ${operationalErrorMessage(error)}`,
             );
             setMemoPhase(null);
           },
-        }
+        },
       );
     },
-    [articleId, pushUndo, run, update, uploadMemo]
+    [articleId, pushUndo, run, update, uploadMemo],
   );
 
   const onDeleteMemo = useCallback(
@@ -649,7 +651,7 @@ export default function ArticleScreen() {
       setPlayerMemoId(null);
       cleanupMemoAudio(memo.id);
     },
-    [cleanupMemoAudio, update]
+    [cleanupMemoAudio, update],
   );
 
   /** Shifts one annotation by (dx, dy) — used to undo a move. */
@@ -658,7 +660,7 @@ export default function ArticleScreen() {
       kind: "stroke" | "box" | "note" | "memo",
       id: string,
       dx: number,
-      dy: number
+      dy: number,
     ) => {
       update((a) => {
         if (kind === "stroke") {
@@ -677,7 +679,7 @@ export default function ArticleScreen() {
         return original ? moveAnnotation(a, { kind, original }, dx, dy) : a;
       });
     },
-    [update]
+    [update],
   );
 
   const undo = useCallback(() => {
@@ -730,8 +732,8 @@ export default function ArticleScreen() {
         const strokes = a.strokes.filter(
           (stroke) =>
             Math.min(
-              ...stroke.points.map((q) => Math.hypot(q.x - p.x, q.y - p.y))
-            ) > strokeThreshold
+              ...stroke.points.map((q) => Math.hypot(q.x - p.x, q.y - p.y)),
+            ) > strokeThreshold,
         );
         const boxes = a.boxes.filter((b) => {
           const nearX =
@@ -766,7 +768,7 @@ export default function ArticleScreen() {
         return { ...a, strokes, boxes, notes };
       });
     },
-    [update]
+    [update],
   );
 
   // Which annotation a read-mode pencil touch grabs. Later items render on
@@ -804,9 +806,8 @@ export default function ArticleScreen() {
       .reverse()
       .find(
         (st) =>
-          Math.min(
-            ...st.points.map((q) => Math.hypot(q.x - p.x, q.y - p.y))
-          ) <= strokeThreshold
+          Math.min(...st.points.map((q) => Math.hypot(q.x - p.x, q.y - p.y))) <=
+          strokeThreshold,
       );
     if (stroke) return { kind: "stroke", original: stroke };
     const borderThreshold = 24 / s;
@@ -846,7 +847,7 @@ export default function ArticleScreen() {
       moveHitSV.value = target ? 1 : 0;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [findMoveTarget, toPoint]
+    [findMoveTarget, toPoint],
   );
 
   const clearFailedMoveHit = useCallback((token: number) => {
@@ -878,7 +879,7 @@ export default function ArticleScreen() {
         eraseAt(p);
       }
     },
-    [eraseAt, toPoint]
+    [eraseAt, toPoint],
   );
 
   const onPanUpdate = useCallback(
@@ -913,7 +914,7 @@ export default function ArticleScreen() {
         eraseAt(p);
       }
     },
-    [eraseAt, toPoint, update]
+    [eraseAt, toPoint, update],
   );
 
   const onPanEnd = useCallback(() => {
@@ -968,10 +969,10 @@ export default function ArticleScreen() {
         );
       });
       setNoteEditor(
-        existing ? { mode: "edit", note: existing } : { mode: "new", at: p }
+        existing ? { mode: "edit", note: existing } : { mode: "new", at: p },
       );
     },
-    [toPoint]
+    [toPoint],
   );
 
   // Memo-tool tap: an existing chip opens its player; empty space starts a
@@ -997,7 +998,7 @@ export default function ArticleScreen() {
       }
       setMemoPhase({ mode: "recording", at: p });
     },
-    [toPoint]
+    [toPoint],
   );
 
   // Native handle for the ScrollView so the draw pan can hard-block
@@ -1005,7 +1006,10 @@ export default function ArticleScreen() {
   const nativeScroll = useMemo(() => Gesture.Native(), []);
 
   const isDrawTool =
-    tool === "pen" || tool === "highlighter" || tool === "box" || tool === "eraser";
+    tool === "pen" ||
+    tool === "highlighter" ||
+    tool === "box" ||
+    tool === "eraser";
   const isReadMode = tool === "read";
 
   // IMPORTANT: these callbacks run as worklets (no .runOnJS(true)) because
@@ -1107,7 +1111,7 @@ export default function ArticleScreen() {
       onPanStart,
       onPanUpdate,
       onPanEnd,
-    ]
+    ],
   );
 
   const tapGesture = useMemo(
@@ -1128,12 +1132,12 @@ export default function ArticleScreen() {
           if (stateRef.current.tool === "memo") onMemoTap(e.x, e.y);
           else onNoteTap(e.x, e.y);
         }),
-    [tool, onNoteTap, onMemoTap]
+    [tool, onNoteTap, onMemoTap],
   );
 
   const drawGestures = useMemo(
     () => Gesture.Race(panGesture, tapGesture),
-    [panGesture, tapGesture]
+    [panGesture, tapGesture],
   );
   /* eslint-enable react-hooks/refs, react-hooks/immutability */
 
@@ -1145,7 +1149,7 @@ export default function ArticleScreen() {
         update((a) => ({
           ...a,
           notes: a.notes.map((n) =>
-            n.id === noteEditor.note.id ? { ...n, text } : n
+            n.id === noteEditor.note.id ? { ...n, text } : n,
           ),
         }));
       } else {
@@ -1160,7 +1164,7 @@ export default function ArticleScreen() {
       }
       setNoteEditor(null);
     },
-    [noteEditor, pushUndo, update]
+    [noteEditor, pushUndo, update],
   );
 
   const deleteNote = useCallback(() => {
@@ -1176,15 +1180,18 @@ export default function ArticleScreen() {
     setNoteEditor({ mode: "edit", note });
   }, []);
 
-  const onNoteLayout = useCallback((noteId: string, size: { w: number; h: number }) => {
-    noteSizesRef.current.set(noteId, size);
-  }, []);
+  const onNoteLayout = useCallback(
+    (noteId: string, size: { w: number; h: number }) => {
+      noteSizesRef.current.set(noteId, size);
+    },
+    [],
+  );
 
   const onMemoLayout = useCallback(
     (memoId: string, size: { w: number; h: number }) => {
       memoSizesRef.current.set(memoId, size);
     },
-    []
+    [],
   );
 
   const onPressMemo = useCallback((memo: VoiceMemoAnnotation) => {
@@ -1197,9 +1204,7 @@ export default function ArticleScreen() {
 
   const onOutlineNavigate = useCallback(
     (entry: (typeof outline)[number] | null) => {
-      const y = entry
-        ? layoutsRef.current.get(entry.blockIndex)?.y
-        : 0;
+      const y = entry ? layoutsRef.current.get(entry.blockIndex)?.y : 0;
       if (y === undefined) return;
       scrollRef.current?.scrollTo({
         y: Math.max(0, y - 18),
@@ -1208,7 +1213,7 @@ export default function ArticleScreen() {
       setActiveOutlineId(entry?.id ?? DOCUMENT_START_ID);
       setOutlineOpen(false);
     },
-    []
+    [],
   );
 
   // ---- header actions ----
@@ -1236,11 +1241,13 @@ export default function ArticleScreen() {
       },
       annotationsRef.current,
       layoutsRef.current,
-      stateRef.current.scale
+      stateRef.current.scale,
     );
     const fileName =
-      article.title.replace(/[\\/:*?"<>|\n\r]+/g, " ").trim().slice(0, 80) ||
-      "article";
+      article.title
+        .replace(/[\\/:*?"<>|\n\r]+/g, " ")
+        .trim()
+        .slice(0, 80) || "article";
     run(
       shareMarkdown({
         title: article.title,
@@ -1250,7 +1257,7 @@ export default function ArticleScreen() {
       {
         onFailure: (error) =>
           showError(`Couldn't export: ${operationalErrorMessage(error)}`),
-      }
+      },
     );
   }, [article, blocks, run]);
 
@@ -1271,14 +1278,14 @@ export default function ArticleScreen() {
         setReadStatus({
           id: articleId,
           status: isRead ? "unread" : "read",
-        })
+        }),
       ),
       {
         onFailure: (error) =>
           showError(
-            `Couldn't update reading status: ${operationalErrorMessage(error)}`
+            `Couldn't update reading status: ${operationalErrorMessage(error)}`,
           ),
-      }
+      },
     );
   }, [articleId, isRead, run, setReadStatus]);
 
@@ -1289,8 +1296,7 @@ export default function ArticleScreen() {
         year: "numeric",
       })
     : "";
-  const compactHeaderActions =
-    !showOutlineRail && hasOutline && !isUpload;
+  const compactHeaderActions = !showOutlineRail && hasOutline && !isUpload;
   const headerButtonSize = compactHeaderActions ? 32 : 40;
 
   return (
@@ -1392,10 +1398,7 @@ export default function ArticleScreen() {
                   }}
                 >
                   <GestureDetector gesture={drawGestures}>
-                    <View
-                      collapsable={false}
-                      style={styles.scrollContent}
-                    >
+                    <View collapsable={false} style={styles.scrollContent}>
                       <View
                         style={{ width: contentWidth, alignSelf: "center" }}
                       >
@@ -1451,9 +1454,7 @@ export default function ArticleScreen() {
                                 isRead && styles.markReadTextDone,
                               ]}
                             >
-                              {isRead
-                                ? "Read. Mark as unread"
-                                : "Mark as read"}
+                              {isRead ? "Read. Mark as unread" : "Mark as read"}
                             </Text>
                           </Pressable>
                           {isRead ? null : (
@@ -1492,7 +1493,9 @@ export default function ArticleScreen() {
 
           <NoteEditorModal
             visible={noteEditor !== null}
-            initialText={noteEditor?.mode === "edit" ? noteEditor.note.text : ""}
+            initialText={
+              noteEditor?.mode === "edit" ? noteEditor.note.text : ""
+            }
             isEditing={noteEditor?.mode === "edit"}
             onSave={saveNote}
             onDelete={deleteNote}
@@ -1687,5 +1690,5 @@ const themed = makeThemedStyles((c) =>
       fontWeight: "600",
       color: c.inkSecondary,
     },
-  })
+  }),
 );

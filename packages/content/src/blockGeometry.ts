@@ -19,7 +19,7 @@ export function blockText(block: Block): string {
         .map(
           (item, i) =>
             (block.ordered ? `${i + 1}. ` : "• ") +
-            item.map((s) => s.text).join("")
+            item.map((s) => s.text).join(""),
         )
         .join("\n");
     case "code":
@@ -41,7 +41,7 @@ export function truncate(text: string, max = 160): string {
 export function blocksInRange(
   layouts: Map<number, BlockLayout>,
   top: number,
-  bottom: number
+  bottom: number,
 ): number[] {
   const hits: number[] = [];
   for (const [index, layout] of layouts) {
@@ -53,7 +53,7 @@ export function blocksInRange(
 /** Index of the block nearest a y coordinate (0 distance if inside it). */
 export function nearestBlock(
   layouts: Map<number, BlockLayout>,
-  y: number
+  y: number,
 ): number | null {
   let best: number | null = null;
   let bestDistance = Infinity;

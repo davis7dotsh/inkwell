@@ -22,11 +22,7 @@ import { Link } from "react-router-dom";
 
 import { BackdropWash } from "../components/BackdropWash";
 import { BrushStroke } from "../components/BrushStroke";
-import {
-  retryArticle,
-  saveArticle,
-  uploadPdf,
-} from "../lib/effect/api";
+import { retryArticle, saveArticle, uploadPdf } from "../lib/effect/api";
 import { convexCommand } from "../lib/effect/convex";
 import {
   exitFailureMessage,
@@ -188,7 +184,11 @@ function ArticleCard({
           if (e.key === "Escape") onCancelRename();
         }}
       />
-      <button type="submit" className="rename-action" disabled={!titleDraft.trim()}>
+      <button
+        type="submit"
+        className="rename-action"
+        disabled={!titleDraft.trim()}
+      >
         Save
       </button>
       <button
@@ -343,7 +343,7 @@ function ArticleTagEditor({
   const [draft, setDraft] = useState("");
   const attached = useMemo(
     () => new Set(article.tags.map((id) => id as string)),
-    [article.tags]
+    [article.tags],
   );
 
   const onCreateAndAttach = async () => {
@@ -462,7 +462,12 @@ function TagManager({
   }, [onClose]);
 
   return (
-    <div className="tag-modal" role="dialog" aria-modal="true" aria-label="Manage tags">
+    <div
+      className="tag-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Manage tags"
+    >
       <button
         type="button"
         className="tag-modal-scrim"
@@ -494,7 +499,11 @@ function TagManager({
             aria-label="New tag name"
             autoFocus
           />
-          <button type="submit" className="pill-button" disabled={!newName.trim()}>
+          <button
+            type="submit"
+            className="pill-button"
+            disabled={!newName.trim()}
+          >
             Add tag
           </button>
         </form>
@@ -584,7 +593,11 @@ function TagManagerRow({
               }
             }}
           />
-          <button type="submit" className="rename-action" disabled={!nameDraft.trim()}>
+          <button
+            type="submit"
+            className="rename-action"
+            disabled={!nameDraft.trim()}
+          >
             Save
           </button>
           <button
@@ -599,7 +612,11 @@ function TagManagerRow({
         <>
           <span
             className="tag-chip tag-chip-static tag-modal-name"
-            style={{ color: color.fg, background: color.bg, borderColor: color.border }}
+            style={{
+              color: color.fg,
+              background: color.bg,
+              borderColor: color.border,
+            }}
           >
             {tag.name}
           </span>
@@ -620,7 +637,7 @@ function TagManagerRow({
               onClick={() => {
                 if (
                   window.confirm(
-                    `Delete the “${tag.name}” tag? It will be removed from all articles.`
+                    `Delete the “${tag.name}” tag? It will be removed from all articles.`,
                   )
                 ) {
                   onRemoveTag(tag._id);
@@ -668,7 +685,7 @@ export function Library() {
   const tagsList = useMemo(() => tags ?? [], [tags]);
   const tagsById = useMemo(
     () => new Map(tagsList.map((tag) => [tag._id as string, tag])),
-    [tagsList]
+    [tagsList],
   );
 
   // Drop filter selections for tags that no longer exist (e.g. just deleted).
@@ -824,7 +841,7 @@ export function Library() {
     let filtered = articles;
     if (selectedTags.size > 0) {
       filtered = filtered.filter((article) =>
-        article.tags.some((tagId) => selectedTags.has(tagId as string))
+        article.tags.some((tagId) => selectedTags.has(tagId as string)),
       );
     }
     // articles.list is newest-first; flip a copy for oldest-first.
@@ -964,7 +981,9 @@ export function Library() {
       ) : visibleArticles.length === 0 ? (
         <EmptyState>
           {articles && articles.length > 0 ? (
-            <p>Nothing {selectedTags.size > 0 ? "with those tags" : "to show"}.</p>
+            <p>
+              Nothing {selectedTags.size > 0 ? "with those tags" : "to show"}.
+            </p>
           ) : (
             <>
               <p>Nothing saved yet.</p>

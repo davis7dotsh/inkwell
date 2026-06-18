@@ -149,5 +149,5 @@ const themed = makeThemedStyles((c) =>
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.hairline,
     },
-  })
+  }),
 );

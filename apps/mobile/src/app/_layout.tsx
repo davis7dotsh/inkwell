@@ -86,8 +86,8 @@ function AuthGate() {
       clerkProbe === "native_api_disabled"
         ? "Clerk Native API is disabled for the production instance."
         : clerk.isLoaded
-        ? "Convex could not validate the production session."
-        : "Clerk could not initialize the production session."
+          ? "Convex could not validate the production session."
+          : "Clerk could not initialize the production session.",
     );
   }, [clerk.isLoaded, clerkProbe, startupPending, timedOut]);
 
@@ -121,8 +121,7 @@ function AuthGate() {
             style={styles.secondaryButton}
             onPress={() =>
               run(authCommand("reset session", clerk.signOut), {
-                onFailure: (error) =>
-                  showError(operationalErrorMessage(error)),
+                onFailure: (error) => showError(operationalErrorMessage(error)),
               })
             }
           >
@@ -240,12 +239,12 @@ function CrashGate({ children }: { children: React.ReactNode }) {
           setPreviousReport(null);
           showError(
             `The previous crash report was unreadable: ${operationalErrorMessage(
-              error
-            )}`
+              error,
+            )}`,
           );
         },
       }),
-    [run]
+    [run],
   );
 
   if (liveReport) {
@@ -387,5 +386,5 @@ const themed = makeThemedStyles((c) =>
       color: c.accent,
       fontWeight: "600",
     },
-  })
+  }),
 );

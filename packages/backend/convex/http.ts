@@ -26,7 +26,8 @@ function authorize(req: Request) {
 function decode<S extends z.ZodType>(schema: S, input: unknown) {
   return Effect.try({
     try: () => schema.parse(input),
-    catch: () => new HttpResponseError({ status: 400, body: "invalid request" }),
+    catch: () =>
+      new HttpResponseError({ status: 400, body: "invalid request" }),
   });
 }
 
@@ -34,9 +35,7 @@ function decodeBody<S extends z.ZodType>(req: Request, schema: S) {
   return Effect.tryPromise({
     try: () => req.json(),
     catch: () => new HttpResponseError({ status: 400, body: "invalid JSON" }),
-  }).pipe(
-    Effect.flatMap((body) => decode(schema, body))
-  );
+  }).pipe(Effect.flatMap((body) => decode(schema, body)));
 }
 
 function param(req: Request, name: string) {
@@ -48,7 +47,7 @@ const ARTICLE_STATUSES = ["pending", "ready", "failed"] as const;
 
 const isOneOf = <T extends string>(
   value: string | undefined,
-  allowed: readonly T[]
+  allowed: readonly T[],
 ): value is T | undefined =>
   value === undefined || (allowed as readonly string[]).includes(value);
 
@@ -138,11 +137,11 @@ http.route({
         yield* authorize(req);
         const body = yield* decodeBody(req, CreatePendingBody);
         const articleId = yield* promise(() =>
-          ctx.runMutation(internal.articles.createPending, body)
+          ctx.runMutation(internal.articles.createPending, body),
         );
         return Response.json({ articleId });
-      })
-    )
+      }),
+    ),
   ),
 });
 
@@ -156,8 +155,8 @@ http.route({
         const body = yield* decodeBody(req, CompleteBody);
         yield* promise(() => ctx.runMutation(internal.articles.complete, body));
         return Response.json({ ok: true });
-      })
-    )
+      }),
+    ),
   ),
 });
 
@@ -171,8 +170,8 @@ http.route({
         const body = yield* decodeBody(req, FailBody);
         yield* promise(() => ctx.runMutation(internal.articles.fail, body));
         return Response.json({ ok: true });
-      })
-    )
+      }),
+    ),
   ),
 });
 
@@ -196,7 +195,7 @@ http.route({
         ) {
           return yield* httpError(
             400,
-            "limit must be an integer from 1 to 200"
+            "limit must be an integer from 1 to 200",
           );
         }
 
@@ -204,14 +203,14 @@ http.route({
         if (!isOneOf(readStatus, READ_STATUSES)) {
           return yield* httpError(
             400,
-            `readStatus must be one of: ${READ_STATUSES.join(", ")}`
+            `readStatus must be one of: ${READ_STATUSES.join(", ")}`,
           );
         }
         const status = param(req, "status");
         if (!isOneOf(status, ARTICLE_STATUSES)) {
           return yield* httpError(
             400,
-            `status must be one of: ${ARTICLE_STATUSES.join(", ")}`
+            `status must be one of: ${ARTICLE_STATUSES.join(", ")}`,
           );
         }
 
@@ -235,11 +234,11 @@ http.route({
           ctx.runQuery(internal.articles.listForAgent, {
             ...input,
             tagIds: input.tagIds ? [...input.tagIds] : undefined,
-          })
+          }),
         );
         return Response.json({ articles });
-      })
-    )
+      }),
+    ),
   ),
 });
 
@@ -257,14 +256,14 @@ http.route({
         }
         const input = yield* decode(ArticleQuery, { userId, id });
         const article = yield* promise(() =>
-          ctx.runQuery(internal.articles.getForAgent, input)
+          ctx.runQuery(internal.articles.getForAgent, input),
         );
         if (!article) {
           return yield* httpError(404, "not found");
         }
         return Response.json({ article });
-      })
-    )
+      }),
+    ),
   ),
 });
 
@@ -281,11 +280,11 @@ http.route({
         }
         const input = yield* decode(UserIdQuery, { userId });
         const tags = yield* promise(() =>
-          ctx.runQuery(internal.tags.listForAgent, input)
+          ctx.runQuery(internal.tags.listForAgent, input),
         );
         return Response.json({ tags });
-      })
-    )
+      }),
+    ),
   ),
 });
 
@@ -298,11 +297,11 @@ http.route({
         yield* authorize(req);
         const body = yield* decodeBody(req, CreateTagBody);
         const tag = yield* promise(() =>
-          ctx.runMutation(internal.tags.createForAgent, body)
+          ctx.runMutation(internal.tags.createForAgent, body),
         );
         return Response.json({ tag });
-      })
-    )
+      }),
+    ),
   ),
 });
 
@@ -315,11 +314,11 @@ http.route({
         yield* authorize(req);
         const body = yield* decodeBody(req, RenameTagBody);
         yield* promise(() =>
-          ctx.runMutation(internal.tags.renameForAgent, body)
+          ctx.runMutation(internal.tags.renameForAgent, body),
         );
         return Response.json({ ok: true });
-      })
-    )
+      }),
+    ),
   ),
 });
 
@@ -332,11 +331,11 @@ http.route({
         yield* authorize(req);
         const body = yield* decodeBody(req, RemoveTagBody);
         yield* promise(() =>
-          ctx.runMutation(internal.tags.removeForAgent, body)
+          ctx.runMutation(internal.tags.removeForAgent, body),
         );
         return Response.json({ ok: true });
-      })
-    )
+      }),
+    ),
   ),
 });
 
@@ -349,11 +348,11 @@ http.route({
         yield* authorize(req);
         const body = yield* decodeBody(req, ArticleTagBody);
         yield* promise(() =>
-          ctx.runMutation(internal.tags.addToArticleForAgent, body)
+          ctx.runMutation(internal.tags.addToArticleForAgent, body),
         );
         return Response.json({ ok: true });
-      })
-    )
+      }),
+    ),
   ),
 });
 
@@ -366,11 +365,11 @@ http.route({
         yield* authorize(req);
         const body = yield* decodeBody(req, ArticleTagBody);
         yield* promise(() =>
-          ctx.runMutation(internal.tags.removeFromArticleForAgent, body)
+          ctx.runMutation(internal.tags.removeFromArticleForAgent, body),
         );
         return Response.json({ ok: true });
-      })
-    )
+      }),
+    ),
   ),
 });
 
@@ -383,11 +382,11 @@ http.route({
         yield* authorize(req);
         const body = yield* decodeBody(req, PinArticleBody);
         yield* promise(() =>
-          ctx.runMutation(internal.articles.setPinnedForAgent, body)
+          ctx.runMutation(internal.articles.setPinnedForAgent, body),
         );
         return Response.json({ ok: true });
-      })
-    )
+      }),
+    ),
   ),
 });
 
@@ -405,14 +404,14 @@ http.route({
         }
         const input = yield* decode(AnnotationsQuery, { userId, articleId });
         const result = yield* promise(() =>
-          ctx.runQuery(internal.annotations.getForAgent, input)
+          ctx.runQuery(internal.annotations.getForAgent, input),
         );
         if (!result) {
           return yield* httpError(404, "not found");
         }
         return Response.json(result);
-      })
-    )
+      }),
+    ),
   ),
 });
 

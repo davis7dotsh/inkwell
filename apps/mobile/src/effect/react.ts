@@ -18,13 +18,13 @@ type Outcome<A, E> =
 
 export const runMobileEffect = <A, E>(
   effect: Effect.Effect<A, E, MobileServices>,
-  handlers: Handlers<A, E> = {}
+  handlers: Handlers<A, E> = {},
 ): (() => void) => {
   const handled = effect.pipe(
     Effect.match({
       onFailure: (error): Outcome<A, E> => ({ _tag: "Failure", error }),
       onSuccess: (value): Outcome<A, E> => ({ _tag: "Success", value }),
-    })
+    }),
   );
   return mobileRuntime.runCallback(handled, {
     onExit: (exit) => {
@@ -49,7 +49,7 @@ export const runMobileEffect = <A, E>(
 };
 
 export const runMobileEffectSync = <A>(
-  effect: Effect.Effect<A, never, MobileServices>
+  effect: Effect.Effect<A, never, MobileServices>,
 ): A => mobileRuntime.runSync(effect);
 
 export const useMobileEffectRunner = () => {
@@ -60,13 +60,13 @@ export const useMobileEffectRunner = () => {
       for (const cancel of cancellations.current) cancel();
       cancellations.current.clear();
     },
-    []
+    [],
   );
 
   return useCallback(
     <A, E>(
       effect: Effect.Effect<A, E, MobileServices>,
-      handlers: Handlers<A, E> = {}
+      handlers: Handlers<A, E> = {},
     ) => {
       let completed = false;
       let cancel = () => {};
@@ -98,6 +98,6 @@ export const useMobileEffectRunner = () => {
         cancel();
       };
     },
-    []
+    [],
   );
 };

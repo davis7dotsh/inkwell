@@ -71,12 +71,7 @@ export function App() {
         <div className="auth-screen">
           <div className="wordmark wordmark-large">
             <h1>Inkwell</h1>
-            <BrushStroke
-              width={140}
-              height={9}
-              color={c.wash}
-              opacity={0.75}
-            />
+            <BrushStroke width={140} height={9} color={c.wash} opacity={0.75} />
           </div>
           <SignIn />
         </div>

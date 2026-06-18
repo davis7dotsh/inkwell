@@ -29,9 +29,7 @@ const slugify = (value: string) =>
     .slice(0, 64)
     .replace(/^-+|-+$/g, "");
 
-const paragraphText = (
-  block: Extract<Block, { type: "paragraph" }>
-): string =>
+const paragraphText = (block: Extract<Block, { type: "paragraph" }>): string =>
   block.spans
     .map((span) => span.text)
     .join("")
@@ -52,7 +50,7 @@ const hasEmbeddedSectionNumber = (title: string) =>
   /\s\d+(?:\.\d+)+\s+\S/.test(title);
 
 const isPlausibleNumberedHeading = (
-  candidate: NonNullable<ReturnType<typeof numberedHeading>>
+  candidate: NonNullable<ReturnType<typeof numberedHeading>>,
 ) =>
   candidate.title.length <= (candidate.parts.length === 1 ? 80 : 180) &&
   !hasEmbeddedSectionNumber(candidate.title);
@@ -143,7 +141,7 @@ export function inferDocumentHeadings(blocks: Block[]): Block[] {
     seenLabels.add(candidate.label);
     inferredLevels.set(
       index,
-      Math.min(candidate.parts.length, 6) as HeadingLevel
+      Math.min(candidate.parts.length, 6) as HeadingLevel,
     );
   }
 

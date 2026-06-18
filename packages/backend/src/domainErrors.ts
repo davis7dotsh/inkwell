@@ -5,23 +5,23 @@ type MessageFields = {
 };
 
 export class AuthenticationError extends Data.TaggedError(
-  "AuthenticationError"
+  "AuthenticationError",
 )<MessageFields> {}
 
 export class OwnershipError extends Data.TaggedError(
-  "OwnershipError"
+  "OwnershipError",
 )<MessageFields> {}
 
 export class NotFoundError extends Data.TaggedError(
-  "NotFoundError"
+  "NotFoundError",
 )<MessageFields> {}
 
 export class ValidationError extends Data.TaggedError(
-  "ValidationError"
+  "ValidationError",
 )<MessageFields> {}
 
 export class ConflictError extends Data.TaggedError(
-  "ConflictError"
+  "ConflictError",
 )<MessageFields> {}
 
 export type DomainError =

@@ -52,8 +52,12 @@ export const MemosLayer = memo(function MemosLayer({
             size={15}
             color={c.accent}
           />
-          <Text style={styles.duration}>{formatMemoDuration(m.durationMs)}</Text>
-          {m.status === "local" ? <Text style={styles.pendingDot}>•</Text> : null}
+          <Text style={styles.duration}>
+            {formatMemoDuration(m.durationMs)}
+          </Text>
+          {m.status === "local" ? (
+            <Text style={styles.pendingDot}>•</Text>
+          ) : null}
         </Pressable>
       ))}
     </>
@@ -92,5 +96,5 @@ const themed = makeThemedStyles((c) =>
       color: c.accent,
       marginLeft: 1,
     },
-  })
+  }),
 );

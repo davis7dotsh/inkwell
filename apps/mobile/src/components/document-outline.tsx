@@ -31,7 +31,7 @@ export function DocumentOutline({ entries, activeId, onNavigate }: Props) {
     const normalized = query.trim().toLocaleLowerCase();
     if (!normalized) return entries;
     return entries.filter((entry) =>
-      entry.title.toLocaleLowerCase().includes(normalized)
+      entry.title.toLocaleLowerCase().includes(normalized),
     );
   }, [entries, query]);
 
@@ -330,5 +330,5 @@ const themed = makeThemedStyles((c) =>
       fontSize: 14,
       fontWeight: "600",
     },
-  })
+  }),
 );

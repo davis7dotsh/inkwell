@@ -127,9 +127,7 @@ export const VoiceMemoAnnotationSchema = z.object({
 export const StrokesSchema = z.array(StrokeSchema);
 export const BoxAnnotationsSchema = z.array(BoxAnnotationSchema);
 export const NoteAnnotationsSchema = z.array(NoteAnnotationSchema);
-export const VoiceMemoAnnotationsSchema = z.array(
-  VoiceMemoAnnotationSchema
-);
+export const VoiceMemoAnnotationsSchema = z.array(VoiceMemoAnnotationSchema);
 
 export const ContentWidthSchema = positiveFinite;
 
@@ -191,7 +189,7 @@ export const ArticleContentJsonSchema = fromJsonString(ArticleContentSchema);
 export const AnnotationsJsonSchema = fromJsonString(AnnotationsSchema);
 export const LayoutSnapshotJsonSchema = fromJsonString(LayoutSnapshotSchema);
 export const FirecrawlDocumentJsonSchema = fromJsonString(
-  FirecrawlDocumentSchema
+  FirecrawlDocumentSchema,
 );
 
 /**
@@ -201,7 +199,7 @@ export const FirecrawlDocumentJsonSchema = fromJsonString(
  */
 export function decodeTolerantJsonArray<T>(
   json: string,
-  itemSchema: z.ZodType<T>
+  itemSchema: z.ZodType<T>,
 ): Option.Option<T[]> {
   let decoded: unknown;
   try {
@@ -236,7 +234,7 @@ export type ParsedLayoutSnapshot = {
  * Missing/malformed top-level data returns null; malformed entries are skipped.
  */
 export function decodeLayoutSnapshotJson(
-  json: string | undefined | null
+  json: string | undefined | null,
 ): ParsedLayoutSnapshot | null {
   if (!json) return null;
 
@@ -256,7 +254,5 @@ export function decodeLayoutSnapshotJson(
       layouts.set(entry.data[0], entry.data[1]);
     }
   }
-  return layouts.size > 0
-    ? { width: container.data.width, layouts }
-    : null;
+  return layouts.size > 0 ? { width: container.data.width, layouts } : null;
 }

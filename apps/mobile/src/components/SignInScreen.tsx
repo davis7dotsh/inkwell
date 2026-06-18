@@ -17,14 +17,8 @@ import {
 import * as Effect from "effect/Effect";
 
 import { authCommand } from "../effect/commands";
-import {
-  AuthCommandError,
-  operationalErrorMessage,
-} from "../effect/errors";
-import {
-  runMobileEffect,
-  useMobileEffectRunner,
-} from "../effect/react";
+import { AuthCommandError, operationalErrorMessage } from "../effect/errors";
+import { runMobileEffect, useMobileEffectRunner } from "../effect/react";
 import { coolBrowser, warmBrowser } from "../lib/nativeCommands";
 import { makeThemedStyles, serif, useTheme } from "../lib/theme";
 import { showError } from "../lib/toast";
@@ -74,12 +68,12 @@ export function SignInScreen() {
             startSSOFlow({
               strategy,
               redirectUrl: AuthSession.makeRedirectUri(),
-            })
+            }),
           );
           const { createdSessionId, setActive } = result;
           if (createdSessionId && setActive) {
             yield* authCommand("activate session", () =>
-              setActive({ session: createdSessionId })
+              setActive({ session: createdSessionId }),
             );
             return;
           }
@@ -104,10 +98,10 @@ export function SignInScreen() {
             setBusy(null);
             showError(message);
           },
-        }
+        },
       );
     },
-    [run, startSSOFlow]
+    [run, startSSOFlow],
   );
 
   return (
@@ -230,5 +224,5 @@ const themed = makeThemedStyles((c) =>
       textAlign: "center",
       marginTop: 8,
     },
-  })
+  }),
 );

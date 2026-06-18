@@ -36,7 +36,7 @@ const TOOLS: {
 ];
 
 const IPHONE_TOOLS = TOOLS.filter(({ tool }) =>
-  ["read", "note", "memo", "eraser"].includes(tool)
+  ["read", "note", "memo", "eraser"].includes(tool),
 );
 
 // VoiceOver/TalkBack names for the stored pen inks (see penColors in theme).
@@ -92,16 +92,13 @@ export function Toolbar({
             finishDismiss();
           }
         }),
-    [finishDismiss]
+    [finishDismiss],
   );
 
   if (!isPhone && dismissed) {
     return (
       <View
-        style={[
-          styles.handleWrap,
-          { right: Math.max(insets.right, 0) - 8 },
-        ]}
+        style={[styles.handleWrap, { right: Math.max(insets.right, 0) - 8 }]}
         pointerEvents="box-none"
       >
         <Pressable
@@ -376,5 +373,5 @@ const themed = makeThemedStyles((c) =>
       borderColor: c.background,
       transform: [{ scale: 1.2 }],
     },
-  })
+  }),
 );

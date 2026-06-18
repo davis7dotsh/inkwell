@@ -14,10 +14,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import * as Effect from "effect/Effect";
 
-import {
-  NativeCommandError,
-  unknownErrorMessage,
-} from "../../effect/errors";
+import { NativeCommandError, unknownErrorMessage } from "../../effect/errors";
 import { useMobileEffectRunner } from "../../effect/react";
 import { makeThemedStyles, useTheme } from "../../lib/theme";
 import { prepareTranscription } from "../../lib/voiceMemos";
@@ -82,8 +79,8 @@ export function MemoRecorderPanel({ onComplete, onCancel }: Props) {
         }),
     }).pipe(
       Effect.catch((error) =>
-        Effect.logWarning("Could not restore playback audio mode", error)
-      )
+        Effect.logWarning("Could not restore playback audio mode", error),
+      ),
     );
     const cancelStart = run(
       Effect.gen(function* () {
@@ -138,7 +135,7 @@ export function MemoRecorderPanel({ onComplete, onCancel }: Props) {
       {
         onFailure: (error) => onCancel(error.message),
         onDefect: () => onCancel("Couldn't start recording."),
-      }
+      },
     );
     return () => {
       cancelTranscriptionPreparation();
@@ -154,7 +151,7 @@ export function MemoRecorderPanel({ onComplete, onCancel }: Props) {
       settlingRef.current = true;
       const durationMs = Math.max(
         latestDurationMsRef.current,
-        Math.round(recorder.currentTime * 1000)
+        Math.round(recorder.currentTime * 1000),
       );
       run(
         Effect.gen(function* () {
@@ -168,8 +165,8 @@ export function MemoRecorderPanel({ onComplete, onCancel }: Props) {
                 }),
             }).pipe(
               Effect.catch((error) =>
-                Effect.logWarning("Audio recorder stop failed", error)
-              )
+                Effect.logWarning("Audio recorder stop failed", error),
+              ),
             );
           }
           yield* Effect.tryPromise({
@@ -185,13 +182,11 @@ export function MemoRecorderPanel({ onComplete, onCancel }: Props) {
               }),
           }).pipe(
             Effect.catch((error) =>
-              Effect.logWarning("Could not restore playback audio mode", error)
-            )
+              Effect.logWarning("Could not restore playback audio mode", error),
+            ),
           );
           const uri = recorder.uri;
-          return commit && uri && durationMs > 300
-            ? { uri, durationMs }
-            : null;
+          return commit && uri && durationMs > 300 ? { uri, durationMs } : null;
         }),
         {
           onSuccess: (recording) => {
@@ -200,10 +195,10 @@ export function MemoRecorderPanel({ onComplete, onCancel }: Props) {
           },
           onFailure: () => onCancel("Couldn't finish recording."),
           onDefect: () => onCancel("Couldn't finish recording."),
-        }
+        },
       );
     },
-    [recorder, onComplete, onCancel, run]
+    [recorder, onComplete, onCancel, run],
   );
 
   useEffect(() => {
@@ -246,7 +241,11 @@ export function MemoRecorderPanel({ onComplete, onCancel }: Props) {
           hitSlop={6}
           style={styles.cancelButton}
         >
-          <MaterialCommunityIcons name="close" size={20} color={c.inkSecondary} />
+          <MaterialCommunityIcons
+            name="close"
+            size={20}
+            color={c.inkSecondary}
+          />
         </Pressable>
         <Pressable
           onPress={() => settle(true)}
@@ -329,5 +328,5 @@ const themed = makeThemedStyles((c) =>
       justifyContent: "center",
       backgroundColor: c.dangerSolid,
     },
-  })
+  }),
 );

@@ -10,11 +10,7 @@ import {
   type HttpClientResponse,
 } from "effect/unstable/http";
 
-import {
-  ConvexDecodeError,
-  ConvexHttpError,
-  errorMessage,
-} from "./errors";
+import { ConvexDecodeError, ConvexHttpError, errorMessage } from "./errors";
 import { WorkerConfig } from "./services";
 
 export type ConvexServiceEnv = {
@@ -24,11 +20,7 @@ export type ConvexServiceEnv = {
 
 const ArticleKindSchema = z.enum(["web", "pdf"]);
 const ArticleStatusSchema = z.enum(["pending", "ready", "failed"]);
-const ReadStatusSchema = z.enum([
-  "unread",
-  "in_progress",
-  "read",
-]);
+const ReadStatusSchema = z.enum(["unread", "in_progress", "read"]);
 
 export type ArticleKind = z.infer<typeof ArticleKindSchema>;
 export type ArticleStatus = z.infer<typeof ArticleStatusSchema>;
@@ -142,11 +134,9 @@ type AnnotationResult = z.infer<typeof AnnotationsSchema>;
 
 export type ConvexServiceShape = {
   readonly createPending: (
-    args: CreatePendingArgs
+    args: CreatePendingArgs,
   ) => Effect.Effect<{ readonly articleId: string }, ConvexError>;
-  readonly complete: (
-    args: CompleteArgs
-  ) => Effect.Effect<void, ConvexError>;
+  readonly complete: (args: CompleteArgs) => Effect.Effect<void, ConvexError>;
   readonly fail: (args: FailArgs) => Effect.Effect<void, ConvexError>;
   readonly listArticles: (args: {
     userId: string;
@@ -202,10 +192,7 @@ export class ConvexService extends Context.Service<
   ConvexServiceShape
 >()("inkwell/api/ConvexService") {}
 
-const requestFailure = (
-  operation: string,
-  error: unknown
-): ConvexHttpError =>
+const requestFailure = (operation: string, error: unknown): ConvexHttpError =>
   new ConvexHttpError({
     operation,
     status:
@@ -224,7 +211,7 @@ const requestFailure = (
 const decodeResponse = <S extends z.ZodType>(
   response: HttpClientResponse.HttpClientResponse,
   schema: S,
-  operation: string
+  operation: string,
 ): Effect.Effect<z.output<S>, ConvexDecodeError> =>
   response.json.pipe(
     Effect.mapError(
@@ -232,7 +219,7 @@ const decodeResponse = <S extends z.ZodType>(
         new ConvexDecodeError({
           operation,
           message: `Convex ${operation} returned invalid JSON: ${errorMessage(error)}`,
-        })
+        }),
     ),
     Effect.flatMap((value) =>
       Effect.try({
@@ -242,16 +229,16 @@ const decodeResponse = <S extends z.ZodType>(
             operation,
             message: `Convex ${operation} returned an invalid response: ${errorMessage(error)}`,
           }),
-      })
-    )
+      }),
+    ),
   );
 
 const failureDetail = (
-  response: HttpClientResponse.HttpClientResponse
+  response: HttpClientResponse.HttpClientResponse,
 ): Effect.Effect<string> =>
   response.text.pipe(
     Effect.map((text) => (text ? ` — ${text.slice(0, 200)}` : "")),
-    Effect.catch(() => Effect.succeed(""))
+    Effect.catch(() => Effect.succeed("")),
   );
 
 export const ConvexServiceLive = Layer.effect(
@@ -264,27 +251,22 @@ export const ConvexServiceLive = Layer.effect(
     const execute = (
       request: HttpClientRequest.HttpClientRequest,
       operation: string,
-      allowedStatuses: ReadonlyArray<number> = []
-    ): Effect.Effect<
-      HttpClientResponse.HttpClientResponse,
-      ConvexHttpError
-    > =>
+      allowedStatuses: ReadonlyArray<number> = [],
+    ): Effect.Effect<HttpClientResponse.HttpClientResponse, ConvexHttpError> =>
       client
         .execute(
           HttpClientRequest.setHeader(
             request,
             "x-inkwell-key",
-            config.WORKER_SHARED_SECRET
-          )
+            config.WORKER_SHARED_SECRET,
+          ),
         )
         .pipe(
-          Effect.updateService(
-            Headers.CurrentRedactedNames,
-            (names) => [...names, "x-inkwell-key"]
-          ),
-          Effect.mapError((error) =>
-            requestFailure(operation, error)
-          ),
+          Effect.updateService(Headers.CurrentRedactedNames, (names) => [
+            ...names,
+            "x-inkwell-key",
+          ]),
+          Effect.mapError((error) => requestFailure(operation, error)),
           Effect.flatMap((response) => {
             if (response.status >= 200 && response.status < 300) {
               return Effect.succeed(response);
@@ -299,44 +281,40 @@ export const ConvexServiceLive = Layer.effect(
                     operation,
                     status: response.status,
                     message: `Convex ${operation} failed: HTTP ${response.status}${detail}`,
-                  })
-              )
+                  }),
+              ),
             );
-          })
+          }),
         );
 
     const post = <S extends z.ZodType>(
       path: string,
       body: unknown,
-      schema: S
+      schema: S,
     ): Effect.Effect<z.output<S>, ConvexError> => {
       const operation = path;
       return HttpClientRequest.bodyJson(
         HttpClientRequest.post(new URL(path, `${baseUrl}/`)),
-        body
+        body,
       ).pipe(
         Effect.mapError((error) => requestFailure(operation, error)),
         Effect.flatMap((request) => execute(request, operation)),
         Effect.flatMap((response) =>
-          decodeResponse(response, schema, operation)
-        )
+          decodeResponse(response, schema, operation),
+        ),
       );
     };
 
     const get = (
       path: string,
       params: Record<string, string | number | undefined>,
-      allowedStatuses: ReadonlyArray<number> = []
+      allowedStatuses: ReadonlyArray<number> = [],
     ) => {
       const url = new URL(path, `${baseUrl}/`);
       for (const [key, value] of Object.entries(params)) {
         if (value !== undefined) url.searchParams.set(key, String(value));
       }
-      return execute(
-        HttpClientRequest.get(url),
-        path,
-        allowedStatuses
-      );
+      return execute(HttpClientRequest.get(url), path, allowedStatuses);
     };
 
     const write = (path: string, body: unknown) =>
@@ -344,80 +322,61 @@ export const ConvexServiceLive = Layer.effect(
 
     return ConvexService.of({
       createPending: (args) =>
-        post(
-          "/ingest/create-pending",
-          args,
-          CreatePendingResponseSchema
-        ),
+        post("/ingest/create-pending", args, CreatePendingResponseSchema),
       complete: (args) => write("/ingest/complete", args),
       fail: (args) => write("/ingest/fail", args),
       listArticles: (args) => {
         const { tagIds, ...rest } = args;
         return get("/agent/articles", {
           ...rest,
-          tagIds:
-            tagIds && tagIds.length > 0
-              ? tagIds.join(",")
-              : undefined,
+          tagIds: tagIds && tagIds.length > 0 ? tagIds.join(",") : undefined,
         }).pipe(
           Effect.flatMap((response) =>
-            decodeResponse(
-              response,
-              ArticlesResponseSchema,
-              "/agent/articles"
-            )
+            decodeResponse(response, ArticlesResponseSchema, "/agent/articles"),
           ),
-          Effect.map((result) => result.articles)
+          Effect.map((result) => result.articles),
         );
       },
       getArticle: (args) =>
         get("/agent/article", args, [404]).pipe(
           Effect.flatMap((response) =>
             response.status === 404
-              ? response.text.pipe(
-                  Effect.ignore,
-                  Effect.as(null)
-                )
+              ? response.text.pipe(Effect.ignore, Effect.as(null))
               : decodeResponse(
                   response,
                   ArticleResponseSchema,
-                  "/agent/article"
-                ).pipe(Effect.map((result) => result.article))
-          )
+                  "/agent/article",
+                ).pipe(Effect.map((result) => result.article)),
+          ),
         ),
       getAnnotations: (args) =>
         get("/agent/annotations", args, [404]).pipe(
           Effect.flatMap((response) =>
             response.status === 404
-              ? response.text.pipe(
-                  Effect.ignore,
-                  Effect.as(null)
-                )
+              ? response.text.pipe(Effect.ignore, Effect.as(null))
               : decodeResponse(
                   response,
                   AnnotationsSchema,
-                  "/agent/annotations"
-                )
-          )
+                  "/agent/annotations",
+                ),
+          ),
         ),
       listTags: (args) =>
         get("/agent/tags", args).pipe(
           Effect.flatMap((response) =>
-            decodeResponse(response, TagsResponseSchema, "/agent/tags")
+            decodeResponse(response, TagsResponseSchema, "/agent/tags"),
           ),
-          Effect.map((result) => result.tags)
+          Effect.map((result) => result.tags),
         ),
       createTag: (args) =>
         post("/agent/tags/create", args, CreatedTagResponseSchema).pipe(
-          Effect.map((result) => result.tag)
+          Effect.map((result) => result.tag),
         ),
       renameTag: (args) => write("/agent/tags/rename", args),
       removeTag: (args) => write("/agent/tags/remove", args),
-      addTagToArticle: (args) =>
-        write("/agent/article-tags/add", args),
-      removeTagFromArticle: (args) =>
-        write("/agent/article-tags/remove", args),
+      addTagToArticle: (args) => write("/agent/article-tags/add", args),
+      removeTagFromArticle: (args) => write("/agent/article-tags/remove", args),
       setArticlePinned: (args) => write("/agent/article/pin", args),
     });
-  })
+  }),
 );

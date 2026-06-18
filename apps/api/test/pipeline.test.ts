@@ -2,14 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Block } from "@inkwell/content";
 import { Effect } from "effect";
 
-import {
-  processArticleEffect,
-  runPipelineEffect,
-} from "../src/pipeline";
-import {
-  makeRequestLayer,
-  runRequestEffect,
-} from "../src/requestContext";
+import { processArticleEffect, runPipelineEffect } from "../src/pipeline";
+import { makeRequestLayer, runRequestEffect } from "../src/requestContext";
 import { FIXTURE_HTML, TEST_ENV, fakeNetwork, firecrawlOk } from "./helpers";
 
 afterEach(() => {
@@ -23,7 +17,7 @@ describe("processArticle", () => {
       articleId: string;
       userId: string;
       url: string;
-    }
+    },
   ) =>
     runRequestEffect(
       processArticleEffect(options),
@@ -32,7 +26,7 @@ describe("processArticle", () => {
         userId: options.userId,
         executionCtx: { waitUntil: () => undefined },
         fetchImpl,
-      })
+      }),
     );
 
   it("scrapes, parses through @inkwell/content, and completes", async () => {
@@ -44,7 +38,7 @@ describe("processArticle", () => {
           description: "A greeting",
           sourceURL: "https://example.com/hello",
         },
-      })
+      }),
     );
 
     await processArticle(impl, {
@@ -78,7 +72,7 @@ describe("processArticle", () => {
 
   it("marks the article failed when Firecrawl errors", async () => {
     const { impl, ingest } = fakeNetwork(
-      () => new Response("kaboom", { status: 500 })
+      () => new Response("kaboom", { status: 500 }),
     );
 
     await processArticle(impl, {
@@ -126,7 +120,7 @@ describe("processArticle", () => {
         userId: "user_test",
         articleId: "art1",
         url: "https://example.com",
-      })
+      }),
     ).resolves.toEqual({ status: "failed", error: "network down" });
     expect(consoleError).toHaveBeenCalledOnce();
   });
@@ -136,7 +130,7 @@ describe("processArticle", () => {
       .spyOn(console, "error")
       .mockImplementation(() => undefined);
     const { impl, ingest } = fakeNetwork(() =>
-      firecrawlOk({ markdown: "unused", metadata: {} })
+      firecrawlOk({ markdown: "unused", metadata: {} }),
     );
 
     const outcome = await runRequestEffect(
@@ -150,14 +144,14 @@ describe("processArticle", () => {
         userId: "user_test",
         executionCtx: { waitUntil: () => undefined },
         fetchImpl: impl,
-      })
+      }),
     );
 
     expect(outcome).toEqual({ status: "failed", error: "programmer bug" });
     expect(ingest.fail).toHaveLength(1);
     expect(consoleError).toHaveBeenCalledWith(
       "pipeline: unexpected defect while processing article art1",
-      expect.objectContaining({ message: "programmer bug" })
+      expect.objectContaining({ message: "programmer bug" }),
     );
   });
 });

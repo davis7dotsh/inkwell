@@ -29,7 +29,7 @@ export class FileOperationError extends Data.TaggedError("FileOperationError")<{
 }> {}
 
 export class StorageOperationError extends Data.TaggedError(
-  "StorageOperationError"
+  "StorageOperationError",
 )<{
   readonly operation: string;
   readonly key: string;
@@ -47,7 +47,7 @@ export class AuthCommandError extends Data.TaggedError("AuthCommandError")<{
 }> {}
 
 export class MissingAuthTokenError extends Data.TaggedError(
-  "MissingAuthTokenError"
+  "MissingAuthTokenError",
 )<{
   readonly operation: string;
   readonly message: string;

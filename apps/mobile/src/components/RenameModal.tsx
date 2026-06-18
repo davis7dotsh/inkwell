@@ -20,7 +20,12 @@ type Props = {
   onCancel: () => void;
 };
 
-export function RenameModal({ visible, initialTitle, onSave, onCancel }: Props) {
+export function RenameModal({
+  visible,
+  initialTitle,
+  onSave,
+  onCancel,
+}: Props) {
   const { scheme, c } = useTheme();
   const styles = themed[scheme];
   const [title, setTitle] = useState(initialTitle);
@@ -132,5 +137,5 @@ const themed = makeThemedStyles((c) =>
       color: c.inkSecondary,
     },
     saveText: { color: c.onAccent },
-  })
+  }),
 );

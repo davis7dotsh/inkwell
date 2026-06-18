@@ -37,12 +37,7 @@ import { operationalErrorMessage } from "../effect/errors";
 import { useMobileEffectRunner } from "../effect/react";
 import { retryArticle, saveArticle, uploadPdf } from "../lib/api";
 import { pickPdf, readClipboardText } from "../lib/nativeCommands";
-import {
-  makeThemedStyles,
-  serif,
-  tagChipColors,
-  useTheme,
-} from "../lib/theme";
+import { makeThemedStyles, serif, tagChipColors, useTheme } from "../lib/theme";
 import { showError } from "../lib/toast";
 
 const API_URL = mobileConfig.apiUrl;
@@ -217,10 +212,7 @@ function ArticleCard({
           <View style={styles.cardHeading}>
             <View style={styles.titleLine}>
               {item.status === "ready" && isUnopened(item) ? (
-                <View
-                  style={styles.unreadDot}
-                  accessibilityLabel="Unread"
-                />
+                <View style={styles.unreadDot} accessibilityLabel="Unread" />
               ) : null}
               {item.pinned ? (
                 <MaterialCommunityIcons
@@ -236,7 +228,10 @@ function ArticleCard({
               </Text>
             </View>
             <View style={styles.metaRow}>
-              <Text style={[styles.cardMeta, { flexShrink: 1 }]} numberOfLines={1}>
+              <Text
+                style={[styles.cardMeta, { flexShrink: 1 }]}
+                numberOfLines={1}
+              >
                 {[item.siteName, date].filter(Boolean).join("  ·  ")}
               </Text>
             </View>
@@ -344,7 +339,7 @@ export default function LibraryScreen() {
   const [selectedTagIds, setSelectedTagIds] = useState<Id<"tags">[]>([]);
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
   const [renameTarget, setRenameTarget] = useState<ArticleListItem | null>(
-    null
+    null,
   );
   // The tag manager is open when this is non-null; the article (or null for
   // global management) tells it whether to show attach toggles.
@@ -368,7 +363,7 @@ export default function LibraryScreen() {
   // effect needed.
   const activeTagIds = useMemo(
     () => selectedTagIds.filter((id) => tagsById.has(String(id))),
-    [selectedTagIds, tagsById]
+    [selectedTagIds, tagsById],
   );
 
   // Live view of the article the tag manager targets — keeps its attach
@@ -398,7 +393,7 @@ export default function LibraryScreen() {
     if (!API_URL) {
       Alert.alert(
         "Not configured",
-        "Set EXPO_PUBLIC_API_URL in .env.local to save articles."
+        "Set EXPO_PUBLIC_API_URL in .env.local to save articles.",
       );
       return;
     }
@@ -422,7 +417,7 @@ export default function LibraryScreen() {
           Alert.alert("Couldn't save", message);
           setUrl(normalized);
         },
-      }
+      },
     );
   }, [url, getToken, run]);
 
@@ -440,7 +435,7 @@ export default function LibraryScreen() {
     if (!API_URL) {
       Alert.alert(
         "Not configured",
-        "Set EXPO_PUBLIC_API_URL in .env.local to save articles."
+        "Set EXPO_PUBLIC_API_URL in .env.local to save articles.",
       );
       return;
     }
@@ -470,7 +465,7 @@ export default function LibraryScreen() {
               showError(`Couldn't upload: ${message}`);
               Alert.alert("Couldn't upload", message);
             },
-          }
+          },
         );
       },
       onFailure: (error) => {
@@ -483,12 +478,15 @@ export default function LibraryScreen() {
 
   const onDelete = useCallback(
     (id: Id<"articles">) => {
-      run(convexCommand("delete article", () => removeArticle({ id })), {
-        onFailure: (error) =>
-          showError(`Couldn't delete: ${operationalErrorMessage(error)}`),
-      });
+      run(
+        convexCommand("delete article", () => removeArticle({ id })),
+        {
+          onFailure: (error) =>
+            showError(`Couldn't delete: ${operationalErrorMessage(error)}`),
+        },
+      );
     },
-    [removeArticle, run]
+    [removeArticle, run],
   );
 
   const onRename = useCallback((item: ArticleListItem) => {
@@ -500,32 +498,32 @@ export default function LibraryScreen() {
       if (renameTarget) {
         run(
           convexCommand("rename article", () =>
-            renameArticle({ id: renameTarget._id, title })
+            renameArticle({ id: renameTarget._id, title }),
           ),
           {
             onFailure: (error) =>
               showError(`Couldn't rename: ${operationalErrorMessage(error)}`),
-          }
+          },
         );
       }
       setRenameTarget(null);
     },
-    [renameTarget, renameArticle, run]
+    [renameTarget, renameArticle, run],
   );
 
   const onTogglePin = useCallback(
     (item: ArticleListItem) => {
       run(
         convexCommand("update pin", () =>
-          setPinned({ id: item._id, pinned: !item.pinned })
+          setPinned({ id: item._id, pinned: !item.pinned }),
         ),
         {
           onFailure: (error) =>
             showError(`Couldn't update pin: ${operationalErrorMessage(error)}`),
-        }
+        },
       );
     },
-    [run, setPinned]
+    [run, setPinned],
   );
 
   const onEditTags = useCallback((item: ArticleListItem) => {
@@ -545,22 +543,28 @@ export default function LibraryScreen() {
 
   const onCreateTag = useCallback(
     (name: string, color?: string) => {
-      run(convexCommand("create tag", () => createTag({ name, color })), {
-        onFailure: (error) =>
-          showError(`Couldn't create tag: ${operationalErrorMessage(error)}`),
-      });
+      run(
+        convexCommand("create tag", () => createTag({ name, color })),
+        {
+          onFailure: (error) =>
+            showError(`Couldn't create tag: ${operationalErrorMessage(error)}`),
+        },
+      );
     },
-    [createTag, run]
+    [createTag, run],
   );
 
   const onRenameTag = useCallback(
     (id: Id<"tags">, name: string) => {
-      run(convexCommand("rename tag", () => renameTag({ id, name })), {
-        onFailure: (error) =>
-          showError(`Couldn't rename tag: ${operationalErrorMessage(error)}`),
-      });
+      run(
+        convexCommand("rename tag", () => renameTag({ id, name })),
+        {
+          onFailure: (error) =>
+            showError(`Couldn't rename tag: ${operationalErrorMessage(error)}`),
+        },
+      );
     },
-    [renameTag, run]
+    [renameTag, run],
   );
 
   const onSetTagColor = useCallback(
@@ -570,12 +574,12 @@ export default function LibraryScreen() {
         {
           onFailure: (error) =>
             showError(
-              `Couldn't update color: ${operationalErrorMessage(error)}`
+              `Couldn't update color: ${operationalErrorMessage(error)}`,
             ),
-        }
+        },
       );
     },
-    [run, setTagColor]
+    [run, setTagColor],
   );
 
   const onRemoveTag = useCallback(
@@ -592,55 +596,58 @@ export default function LibraryScreen() {
             text: "Delete",
             style: "destructive",
             onPress: () => {
-              run(convexCommand("delete tag", () => removeTag({ id })), {
-                onFailure: (error) =>
-                  showError(
-                    `Couldn't delete tag: ${operationalErrorMessage(error)}`
-                  ),
-              });
+              run(
+                convexCommand("delete tag", () => removeTag({ id })),
+                {
+                  onFailure: (error) =>
+                    showError(
+                      `Couldn't delete tag: ${operationalErrorMessage(error)}`,
+                    ),
+                },
+              );
               // Drop it from the active filter if it was selected.
               setSelectedTagIds((ids) => ids.filter((t) => t !== id));
             },
           },
-        ]
+        ],
       );
     },
-    [removeTag, run, tagsById]
+    [removeTag, run, tagsById],
   );
 
   const onAttachTag = useCallback(
     (articleId: Id<"articles">, tagId: Id<"tags">) => {
       run(
         convexCommand("add tag to article", () =>
-          addTagToArticle({ articleId, tagId })
+          addTagToArticle({ articleId, tagId }),
         ),
         {
           onFailure: (error) =>
             showError(`Couldn't add tag: ${operationalErrorMessage(error)}`),
-        }
+        },
       );
     },
-    [addTagToArticle, run]
+    [addTagToArticle, run],
   );
 
   const onDetachTag = useCallback(
     (articleId: Id<"articles">, tagId: Id<"tags">) => {
       run(
         convexCommand("remove tag from article", () =>
-          removeTagFromArticle({ articleId, tagId })
+          removeTagFromArticle({ articleId, tagId }),
         ),
         {
           onFailure: (error) =>
             showError(`Couldn't remove tag: ${operationalErrorMessage(error)}`),
-        }
+        },
       );
     },
-    [removeTagFromArticle, run]
+    [removeTagFromArticle, run],
   );
 
   const toggleTagFilter = useCallback((id: Id<"tags">) => {
     setSelectedTagIds((ids) =>
-      ids.includes(id) ? ids.filter((t) => t !== id) : [...ids, id]
+      ids.includes(id) ? ids.filter((t) => t !== id) : [...ids, id],
     );
   }, []);
 
@@ -649,7 +656,7 @@ export default function LibraryScreen() {
       if (!API_URL) {
         Alert.alert(
           "Not configured",
-          "Set EXPO_PUBLIC_API_URL in .env.local to save articles."
+          "Set EXPO_PUBLIC_API_URL in .env.local to save articles.",
         );
         return;
       }
@@ -673,10 +680,10 @@ export default function LibraryScreen() {
             showError(`Couldn't retry: ${message}`);
             Alert.alert("Couldn't retry", message);
           },
-        }
+        },
       );
     },
-    [getToken, run]
+    [getToken, run],
   );
 
   const visibleArticles = useMemo(() => {
@@ -696,8 +703,8 @@ export default function LibraryScreen() {
           [item.title, item.siteName, item.excerpt]
             .filter(Boolean)
             .some((value) =>
-              value?.toLocaleLowerCase().includes(normalizedQuery)
-            )
+              value?.toLocaleLowerCase().includes(normalizedQuery),
+            ),
         )
       : tagFiltered;
     // articles.list is newest-first; flip a copy for oldest-first.
@@ -720,7 +727,7 @@ export default function LibraryScreen() {
         }),
         {
           onSuccess: () => urlInputRef.current?.focus(),
-        }
+        },
       );
     }
   }, [addOpen, run]);
@@ -745,7 +752,9 @@ export default function LibraryScreen() {
             onPress={() =>
               run(authCommand("sign out", signOut), {
                 onFailure: (error) =>
-                  showError(`Couldn't sign out: ${operationalErrorMessage(error)}`),
+                  showError(
+                    `Couldn't sign out: ${operationalErrorMessage(error)}`,
+                  ),
               })
             }
             accessibilityLabel="Sign out"
@@ -755,7 +764,9 @@ export default function LibraryScreen() {
           />
         </View>
 
-        <View style={[styles.utilityRow, isCompact && styles.utilityRowCompact]}>
+        <View
+          style={[styles.utilityRow, isCompact && styles.utilityRowCompact]}
+        >
           <View style={styles.searchField}>
             <MaterialCommunityIcons
               name="magnify"
@@ -803,7 +814,9 @@ export default function LibraryScreen() {
         {addOpen ? (
           <View style={styles.captureArea}>
             <Text style={styles.captureLabel}>Add to your library</Text>
-            <View style={[styles.inputRow, isCompact && styles.inputRowCompact]}>
+            <View
+              style={[styles.inputRow, isCompact && styles.inputRowCompact]}
+            >
               <TextInput
                 ref={urlInputRef}
                 style={styles.input}
@@ -876,7 +889,7 @@ export default function LibraryScreen() {
             <Pressable
               onPress={() =>
                 setSortOrder((order) =>
-                  order === "newest" ? "oldest" : "newest"
+                  order === "newest" ? "oldest" : "newest",
                 )
               }
               accessibilityRole="button"
@@ -909,50 +922,50 @@ export default function LibraryScreen() {
               style={styles.tagBarScroll}
               contentContainerStyle={styles.tagBar}
             >
-            {activeTagIds.length > 0 ? (
-              <Pressable
-                onPress={() => setSelectedTagIds([])}
-                accessibilityRole="button"
-                accessibilityLabel="Clear tag filters"
-                style={[styles.tagFilterChip, styles.tagClearChip]}
-              >
-                <MaterialCommunityIcons
-                  name="close"
-                  size={13}
-                  color={c.inkSecondary}
-                />
-                <Text style={styles.tagClearText}>Clear</Text>
-              </Pressable>
-            ) : null}
-            {(tags ?? []).map((tag) => {
-              const active = selectedTagIds.includes(tag._id);
-              const chip = tagChipColors(tag.color, scheme === "dark");
-              return (
+              {activeTagIds.length > 0 ? (
                 <Pressable
-                  key={tag._id}
-                  onPress={() => toggleTagFilter(tag._id)}
+                  onPress={() => setSelectedTagIds([])}
                   accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  style={[
-                    styles.tagFilterChip,
-                    {
-                      backgroundColor: active ? chip.text : chip.fill,
-                      borderColor: active ? chip.text : chip.border,
-                    },
-                  ]}
+                  accessibilityLabel="Clear tag filters"
+                  style={[styles.tagFilterChip, styles.tagClearChip]}
                 >
-                  <Text
-                    style={[
-                      styles.tagFilterText,
-                      { color: active ? c.onAccent : chip.text },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {tag.name}
-                  </Text>
+                  <MaterialCommunityIcons
+                    name="close"
+                    size={13}
+                    color={c.inkSecondary}
+                  />
+                  <Text style={styles.tagClearText}>Clear</Text>
                 </Pressable>
-              );
-            })}
+              ) : null}
+              {(tags ?? []).map((tag) => {
+                const active = selectedTagIds.includes(tag._id);
+                const chip = tagChipColors(tag.color, scheme === "dark");
+                return (
+                  <Pressable
+                    key={tag._id}
+                    onPress={() => toggleTagFilter(tag._id)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    style={[
+                      styles.tagFilterChip,
+                      {
+                        backgroundColor: active ? chip.text : chip.fill,
+                        borderColor: active ? chip.text : chip.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.tagFilterText,
+                        { color: active ? c.onAccent : chip.text },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {tag.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </ScrollView>
           </View>
         ) : null}
@@ -1456,5 +1469,5 @@ const themed = makeThemedStyles((c) =>
       textAlign: "center",
       maxWidth: 280,
     },
-  })
+  }),
 );

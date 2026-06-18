@@ -5,15 +5,9 @@
 import { firecrawlToArticle } from "@inkwell/content";
 import { Cause, Context, Effect, Layer } from "effect";
 
-import {
-  ArticleNormalizationError,
-  errorMessage,
-} from "./errors";
+import { ArticleNormalizationError, errorMessage } from "./errors";
 import { ConvexService } from "./convexService";
-import {
-  FirecrawlService,
-  type FirecrawlScrape,
-} from "./firecrawl";
+import { FirecrawlService, type FirecrawlScrape } from "./firecrawl";
 
 export type PipelineOutcome =
   | { status: "ready"; title: string }
@@ -25,7 +19,7 @@ export class ArticleNormalizer extends Context.Service<
   ArticleNormalizer,
   {
     readonly normalize: (
-      scraped: FirecrawlScrape
+      scraped: FirecrawlScrape,
     ) => Effect.Effect<NormalizedArticle, ArticleNormalizationError>;
   }
 >()("inkwell/api/ArticleNormalizer") {}
@@ -41,7 +35,7 @@ export const ArticleNormalizerLive = Layer.succeed(
             message: errorMessage(error),
           }),
       }),
-  })
+  }),
 );
 
 export const runPipelineEffect = (options: {
@@ -71,11 +65,11 @@ export const runPipelineEffect = (options: {
             Effect.sync(() => {
               console.error(
                 `pipeline: could not mark article ${options.articleId} as failed`,
-                Cause.squash(failCause)
+                Cause.squash(failCause),
               );
-            })
+            }),
           ),
-          Effect.as({ status: "failed", error: message } as const)
+          Effect.as({ status: "failed", error: message } as const),
         );
     };
 
@@ -105,10 +99,10 @@ export const runPipelineEffect = (options: {
         return Effect.sync(() => {
           console.error(
             `pipeline: unexpected defect while processing article ${options.articleId}`,
-            defect
+            defect,
           );
         }).pipe(Effect.andThen(markFailed(defect)));
-      })
+      }),
     );
   });
 

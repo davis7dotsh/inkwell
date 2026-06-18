@@ -2,10 +2,9 @@ import { Context, Effect, Layer } from "effect";
 
 import { MemoStorageError, errorMessage } from "./errors";
 
-export class MemoBucket extends Context.Service<
-  MemoBucket,
-  R2Bucket
->()("inkwell/api/MemoBucket") {}
+export class MemoBucket extends Context.Service<MemoBucket, R2Bucket>()(
+  "inkwell/api/MemoBucket",
+) {}
 
 export class MemoStore extends Context.Service<
   MemoStore,
@@ -13,15 +12,12 @@ export class MemoStore extends Context.Service<
     readonly put: (
       key: string,
       value: ArrayBuffer,
-      contentType: string
+      contentType: string,
     ) => Effect.Effect<void, MemoStorageError>;
     readonly get: (
       key: string,
-      headers: Headers
-    ) => Effect.Effect<
-      R2ObjectBody | R2Object | null,
-      MemoStorageError
-    >;
+      headers: Headers,
+    ) => Effect.Effect<R2ObjectBody | R2Object | null, MemoStorageError>;
     readonly delete: (key: string) => Effect.Effect<void, MemoStorageError>;
   }
 >()("inkwell/api/MemoStore") {}
@@ -61,12 +57,12 @@ export const MemoStoreLive = Layer.effect(
           catch: storageError("delete"),
         }),
     });
-  })
+  }),
 );
 
 /** Ownership by construction: keys are always prefixed by the caller's id. */
 export const memoKey = (
   userId: string,
   articleId: string,
-  memoId: string
+  memoId: string,
 ): string => `${userId}/${articleId}/${memoId}.m4a`;

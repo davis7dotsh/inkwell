@@ -1,28 +1,13 @@
-import {
-  describe,
-  effect as it,
-  expect,
-  layer,
-} from "@effect/vitest";
+import { describe, effect as it, expect, layer } from "@effect/vitest";
 import { Effect, Fiber, Layer, Tracer } from "effect";
 import { TestClock } from "effect/testing";
 
 import { ConvexService } from "../src/convexService";
-import {
-  FirecrawlService,
-} from "../src/firecrawl";
-import {
-  ConvexDecodeError,
-  RequestDecodeError,
-} from "../src/errors";
+import { FirecrawlService } from "../src/firecrawl";
+import { ConvexDecodeError, RequestDecodeError } from "../src/errors";
 import { makeRequestLayer } from "../src/requestContext";
 import { CurrentUser } from "../src/services";
-import {
-  TEST_ENV,
-  fetchQueue,
-  firecrawlOk,
-  jsonResponse,
-} from "./helpers";
+import { TEST_ENV, fetchQueue, firecrawlOk, jsonResponse } from "./helpers";
 
 const requestLayer = (fetchImpl: typeof fetch) =>
   makeRequestLayer({
@@ -39,11 +24,11 @@ describe("Effect API services", () => {
   it("keeps tagged failures in the typed error channel", () =>
     Effect.gen(function* () {
       const message = yield* Effect.fail(
-        new RequestDecodeError({ message: "bad input" })
+        new RequestDecodeError({ message: "bad input" }),
       ).pipe(
         Effect.catchTag("RequestDecodeError", (error) =>
-          Effect.succeed(error.message)
-        )
+          Effect.succeed(error.message),
+        ),
       );
       expect(message).toBe("bad input");
     }));
@@ -69,10 +54,8 @@ describe("Effect API services", () => {
       ]);
       const error = yield* Effect.flip(
         Effect.flatMap(ConvexService, (convex) =>
-          convex.listArticles({ userId: "user_effect" })
-        ).pipe(
-          Effect.provide(requestLayer(impl), { local: true })
-        )
+          convex.listArticles({ userId: "user_effect" }),
+        ).pipe(Effect.provide(requestLayer(impl), { local: true })),
       );
       expect(error).toBeInstanceOf(ConvexDecodeError);
       expect(error._tag).toBe("ConvexDecodeError");
@@ -88,9 +71,7 @@ describe("Effect API services", () => {
           return span;
         },
       });
-      const { impl } = fetchQueue([
-        jsonResponse({ articleId: "art1" }),
-      ]);
+      const { impl } = fetchQueue([jsonResponse({ articleId: "art1" })]);
 
       yield* Effect.flatMap(ConvexService, (convex) =>
         convex.createPending({
@@ -99,22 +80,18 @@ describe("Effect API services", () => {
           kind: "web",
           title: "Example",
           savedAt: 1,
-        })
+        }),
       ).pipe(
         Effect.provide(requestLayer(impl), { local: true }),
-        Effect.withTracer(tracer)
+        Effect.withTracer(tracer),
       );
 
       const requestSpan = spans.find((span) =>
-        span.attributes.has(
-          "http.request.header.x-inkwell-key"
-        )
+        span.attributes.has("http.request.header.x-inkwell-key"),
       );
       expect(requestSpan).toBeDefined();
       expect(
-        requestSpan?.attributes.get(
-          "http.request.header.x-inkwell-key"
-        )
+        requestSpan?.attributes.get("http.request.header.x-inkwell-key"),
       ).toBe("<redacted>");
     }));
 
@@ -133,20 +110,18 @@ describe("Effect API services", () => {
       ]);
 
       yield* Effect.flatMap(FirecrawlService, (firecrawl) =>
-        firecrawl.scrapeUrl("https://example.com")
+        firecrawl.scrapeUrl("https://example.com"),
       ).pipe(
         Effect.provide(requestLayer(impl), { local: true }),
-        Effect.withTracer(tracer)
+        Effect.withTracer(tracer),
       );
 
       const requestSpan = spans.find((span) =>
-        span.attributes.has("http.request.header.authorization")
+        span.attributes.has("http.request.header.authorization"),
       );
       expect(requestSpan).toBeDefined();
       expect(
-        requestSpan?.attributes.get(
-          "http.request.header.authorization"
-        )
+        requestSpan?.attributes.get("http.request.header.authorization"),
       ).toBe("<redacted>");
     }));
 
@@ -159,13 +134,9 @@ describe("Effect API services", () => {
         }),
         firecrawlOk({ markdown: "hello", metadata: {} }),
       ]);
-      const program = Effect.flatMap(
-        FirecrawlService,
-        (firecrawl) =>
-          firecrawl.scrapeUrl("https://example.com")
-      ).pipe(
-        Effect.provide(requestLayer(impl), { local: true })
-      );
+      const program = Effect.flatMap(FirecrawlService, (firecrawl) =>
+        firecrawl.scrapeUrl("https://example.com"),
+      ).pipe(Effect.provide(requestLayer(impl), { local: true }));
       const fiber = yield* Effect.forkChild(program);
       yield* Effect.yieldNow;
       expect(calls).toHaveLength(1);
@@ -182,32 +153,21 @@ describe("Effect API services", () => {
       const started = new Promise<void>((resolve) => {
         markStarted = resolve;
       });
-      const impl = ((
-        input: RequestInfo | URL,
-        init?: RequestInit
-      ) =>
+      const impl = ((input: RequestInfo | URL, init?: RequestInit) =>
         new Promise<Response>((_resolve, reject) => {
           observedSignal =
-            (input instanceof Request
-              ? input.signal
-              : init?.signal) ?? undefined;
+            (input instanceof Request ? input.signal : init?.signal) ??
+            undefined;
           markStarted();
           observedSignal?.addEventListener(
             "abort",
-            () =>
-              reject(
-                new DOMException("request aborted", "AbortError")
-              ),
-            { once: true }
+            () => reject(new DOMException("request aborted", "AbortError")),
+            { once: true },
           );
         })) as typeof fetch;
-      const program = Effect.flatMap(
-        FirecrawlService,
-        (firecrawl) =>
-          firecrawl.scrapeUrl("https://example.com/slow")
-      ).pipe(
-        Effect.provide(requestLayer(impl), { local: true })
-      );
+      const program = Effect.flatMap(FirecrawlService, (firecrawl) =>
+        firecrawl.scrapeUrl("https://example.com/slow"),
+      ).pipe(Effect.provide(requestLayer(impl), { local: true }));
 
       const fiber = yield* Effect.forkChild(program);
       yield* Effect.promise(() => started);
@@ -218,12 +178,14 @@ describe("Effect API services", () => {
     }));
 });
 
-layer(
-  Layer.succeed(CurrentUser, { userId: "layer_user" })
-)("request layer substitution", (it) => {
-  it.effect("injects the current user without global state", () =>
-    Effect.gen(function* () {
-      const current = yield* CurrentUser;
-      expect(current.userId).toBe("layer_user");
-    }));
-});
+layer(Layer.succeed(CurrentUser, { userId: "layer_user" }))(
+  "request layer substitution",
+  (it) => {
+    it.effect("injects the current user without global state", () =>
+      Effect.gen(function* () {
+        const current = yield* CurrentUser;
+        expect(current.userId).toBe("layer_user");
+      }),
+    );
+  },
+);

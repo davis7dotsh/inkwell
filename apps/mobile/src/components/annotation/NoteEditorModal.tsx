@@ -44,7 +44,9 @@ export function NoteEditorModal({
           card is anchored near the top so the keyboard can't cover it. */}
       <Pressable style={styles.backdrop} onPress={onCancel}>
         <Pressable style={styles.card} onPress={() => {}}>
-          <Text style={styles.title}>{isEditing ? "Edit note" : "New note"}</Text>
+          <Text style={styles.title}>
+            {isEditing ? "Edit note" : "New note"}
+          </Text>
           <TextInput
             style={styles.input}
             value={text}
@@ -57,7 +59,9 @@ export function NoteEditorModal({
           <View style={styles.row}>
             {isEditing ? (
               <Pressable onPress={onDelete} style={styles.button}>
-                <Text style={[styles.buttonText, styles.deleteText]}>Delete</Text>
+                <Text style={[styles.buttonText, styles.deleteText]}>
+                  Delete
+                </Text>
               </Pressable>
             ) : null}
             <View style={{ flex: 1 }} />
@@ -142,5 +146,5 @@ const themed = makeThemedStyles((c) =>
     },
     saveText: { color: c.onAccent },
     deleteText: { color: c.danger },
-  })
+  }),
 );

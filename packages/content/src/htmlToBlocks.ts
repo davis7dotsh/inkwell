@@ -151,7 +151,7 @@ function pushText(spans: Span[], text: string, style: InlineStyle): void {
 function collectSpans(
   nodes: AnyNode[],
   style: InlineStyle,
-  spans: Span[]
+  spans: Span[],
 ): void {
   for (const node of nodes) {
     if (isText(node)) {
@@ -281,7 +281,7 @@ function processBlock(el: ElementNode, tag: string, blocks: Block[]): void {
     case "h6": {
       const level = Math.min(
         6,
-        Math.max(1, Number(tag.charAt(1)))
+        Math.max(1, Number(tag.charAt(1))),
       ) as HeadingLevel;
       const spans = buildSpans(el.children);
       if (hasVisibleText(spans)) blocks.push({ type: "heading", level, spans });
@@ -366,7 +366,7 @@ function quoteSpans(el: ElementNode): Span[] {
 function collectListItems(
   listEl: ElementNode,
   items: Span[][],
-  depth: number
+  depth: number,
 ): void {
   for (const child of listEl.children) {
     if (!isElement(child)) continue;
@@ -382,7 +382,7 @@ function collectListItems(
 function collectListItem(
   li: ElementNode,
   items: Span[][],
-  depth: number
+  depth: number,
 ): void {
   // Separate nested lists from the item's own content so they can be
   // flattened into sibling items below it.
@@ -513,8 +513,8 @@ function processTable(el: ElementNode, blocks: Block[]): void {
   const rowCells = rows.map((row) =>
     row.children.filter(
       (cell): cell is ElementNode =>
-        isElement(cell) && (tagOf(cell) === "td" || tagOf(cell) === "th")
-    )
+        isElement(cell) && (tagOf(cell) === "td" || tagOf(cell) === "th"),
+    ),
   );
   const isLayoutTable =
     rows.length <= 1 || rowCells.every((cells) => cells.length <= 1);
@@ -529,7 +529,7 @@ function processTable(el: ElementNode, blocks: Block[]): void {
     for (const cell of cells) {
       const cellSpans = buildSpans(
         cell.children,
-        tagOf(cell) === "th" ? { bold: true } : {}
+        tagOf(cell) === "th" ? { bold: true } : {},
       );
       if (!hasVisibleText(cellSpans)) continue;
       if (spans.length > 0) spans.push({ text: " · " });

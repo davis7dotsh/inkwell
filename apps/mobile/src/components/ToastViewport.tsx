@@ -4,10 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Effect from "effect/Effect";
 
 import { useMobileEffectRunner } from "../effect/react";
-import {
-  subscribeToToasts,
-  type ToastMessage,
-} from "../lib/toast";
+import { subscribeToToasts, type ToastMessage } from "../lib/toast";
 import { makeThemedStyles, useTheme } from "../lib/theme";
 
 import { GlassSurface } from "./glass";
@@ -112,5 +109,5 @@ const themed = makeThemedStyles((c) =>
       lineHeight: 19,
       fontWeight: "600",
     },
-  })
+  }),
 );

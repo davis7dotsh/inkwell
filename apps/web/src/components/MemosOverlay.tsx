@@ -8,10 +8,7 @@ import { Exit } from "effect";
 import React, { useEffect, useRef, useState } from "react";
 
 import { loadMemo } from "../lib/effect/api";
-import {
-  exitFailureMessage,
-  runAuthedEffect,
-} from "../lib/effect/react";
+import { exitFailureMessage, runAuthedEffect } from "../lib/effect/react";
 
 const formatDuration = (durationMs: number): string => {
   const total = Math.max(1, Math.round(durationMs / 1000));
@@ -82,7 +79,7 @@ function MemoChip({
     () => () => {
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
     },
-    []
+    [],
   );
 
   return (
@@ -104,7 +101,9 @@ function MemoChip({
       {open ? (
         <div className="memo-popover">
           {memo.status === "local" ? (
-            <p className="memo-hint">Recorded on iPad — audio not synced yet.</p>
+            <p className="memo-hint">
+              Recorded on iPad — audio not synced yet.
+            </p>
           ) : audioError ? (
             <p className="memo-hint" title={audioError}>
               Couldn't load the audio.

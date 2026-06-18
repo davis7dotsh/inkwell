@@ -37,7 +37,7 @@ export const ClerkEnvironmentResponseSchema = z.object({
     .array(
       z.object({
         code: z.string().optional(),
-      })
+      }),
     )
     .optional(),
 });
@@ -62,11 +62,7 @@ export const mobileConfig = configResult.success
       apiUrl: undefined,
     };
 
-const decodeJson = <A>(
-  schema: z.ZodType<A>,
-  source: string,
-  json: string
-) =>
+const decodeJson = <A>(schema: z.ZodType<A>, source: string, json: string) =>
   Effect.try({
     try: () => schema.parse(JSON.parse(json)),
     catch: (error) =>
@@ -79,7 +75,7 @@ const decodeJson = <A>(
 const decodeTolerantArrayJson = <A>(
   schema: z.ZodType<A>,
   source: string,
-  json: string
+  json: string,
 ): Effect.Effect<A[], DecodeError> => {
   const decoded = decodeTolerantJsonArray(json, schema);
   return Option.isSome(decoded)
@@ -88,12 +84,12 @@ const decodeTolerantArrayJson = <A>(
         new DecodeError({
           source,
           message: "Expected a valid JSON array",
-        })
+        }),
       );
 };
 
 export const decodeArticleBlocks = (
-  json: string
+  json: string,
 ): Effect.Effect<Block[], DecodeError> =>
   decodeJson(BlocksSchema, "article blocks", json).pipe(
     Effect.map((blocks): Block[] =>
@@ -114,7 +110,7 @@ export const decodeArticleBlocks = (
             return {
               ...block,
               items: block.items.map((item) =>
-                item.map((span) => ({ ...span }))
+                item.map((span) => ({ ...span })),
               ),
             };
           case "image":
@@ -122,8 +118,8 @@ export const decodeArticleBlocks = (
           case "rule":
             return { ...block };
         }
-      })
-    )
+      }),
+    ),
   );
 
 export const decodeAnnotations = (input: {
@@ -145,22 +141,22 @@ export const decodeAnnotations = (input: {
     strokes: decodeTolerantArrayJson(
       StrokeSchema,
       "annotation strokes",
-      input.strokesJson
+      input.strokesJson,
     ),
     boxes: decodeTolerantArrayJson(
       BoxAnnotationSchema,
       "annotation boxes",
-      input.boxesJson
+      input.boxesJson,
     ),
     notes: decodeTolerantArrayJson(
       NoteAnnotationSchema,
       "annotation notes",
-      input.notesJson
+      input.notesJson,
     ),
     memos: decodeTolerantArrayJson(
       VoiceMemoAnnotationSchema,
       "annotation voice memos",
-      input.memosJson ?? "[]"
+      input.memosJson ?? "[]",
     ),
   }).pipe(
     Effect.map(
@@ -170,25 +166,25 @@ export const decodeAnnotations = (input: {
           (stroke): Stroke => ({
             ...stroke,
             points: stroke.points.map((point) => ({ ...point })),
-          })
+          }),
         ),
         boxes: boxes.map(
           (box): BoxAnnotation => ({
             ...box,
-          })
+          }),
         ),
         notes: notes.map(
           (note): NoteAnnotation => ({
             ...note,
-          })
+          }),
         ),
         memos: memos.map(
           (memo): VoiceMemoAnnotation => ({
             ...memo,
-          })
+          }),
         ),
-      })
-    )
+      }),
+    ),
   );
 
 export const decodeFatalReport = (json: string) =>

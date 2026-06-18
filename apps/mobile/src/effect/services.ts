@@ -31,7 +31,7 @@ export class MobileHttp extends Context.Service<
     readonly request: (
       operation: string,
       url: string,
-      init?: FetchRequestInit
+      init?: FetchRequestInit,
     ) => Effect.Effect<Response, HttpRequestError>;
   }
 >()("Inkwell/MobileHttp") {}
@@ -40,18 +40,18 @@ export class MobileFiles extends Context.Service<
   MobileFiles,
   {
     readonly findMemoFile: (
-      memoId: string
+      memoId: string,
     ) => Effect.Effect<File | null, FileOperationError>;
     readonly storeRecording: (
       recordingUri: string,
-      memoId: string
+      memoId: string,
     ) => Effect.Effect<File, FileOperationError>;
     readonly deleteMemoFile: (
-      memoId: string
+      memoId: string,
     ) => Effect.Effect<void, FileOperationError>;
     readonly writeMarkdownExport: (
       name: string,
-      markdown: string
+      markdown: string,
     ) => Effect.Effect<File, FileOperationError>;
   }
 >()("Inkwell/MobileFiles") {}
@@ -60,11 +60,11 @@ export class MobileKeyValueStore extends Context.Service<
   MobileKeyValueStore,
   {
     readonly get: (
-      key: string
+      key: string,
     ) => Effect.Effect<string | null, StorageOperationError>;
     readonly set: (
       key: string,
-      value: string
+      value: string,
     ) => Effect.Effect<void, StorageOperationError>;
   }
 >()("Inkwell/MobileKeyValueStore") {}
@@ -80,14 +80,12 @@ export class MobileNative extends Context.Service<
   {
     readonly getClipboardText: Effect.Effect<string, NativeCommandError>;
     readonly setClipboardText: (
-      value: string
+      value: string,
     ) => Effect.Effect<void, NativeCommandError>;
     readonly pickPdf: Effect.Effect<PickedPdf | null, NativeCommandError>;
-    readonly openUrl: (
-      url: string
-    ) => Effect.Effect<void, NativeCommandError>;
+    readonly openUrl: (url: string) => Effect.Effect<void, NativeCommandError>;
     readonly openBrowser: (
-      url: string
+      url: string,
     ) => Effect.Effect<void, NativeCommandError>;
     readonly shareMarkdown: (input: {
       title: string;
@@ -117,7 +115,7 @@ const fileError =
 
 const nativeCommand = <A>(
   operation: string,
-  evaluate: (signal: AbortSignal) => PromiseLike<A>
+  evaluate: (signal: AbortSignal) => PromiseLike<A>,
 ) =>
   Effect.tryPromise({
     try: evaluate,
@@ -215,7 +213,7 @@ const MobileKeyValueStoreLive = Layer.succeed(MobileKeyValueStore, {
 
 const MobileNativeLive = Layer.succeed(MobileNative, {
   getClipboardText: nativeCommand("read clipboard", () =>
-    Clipboard.getStringAsync()
+    Clipboard.getStringAsync(),
   ),
   setClipboardText: (value) =>
     nativeCommand("write clipboard", () => Clipboard.setStringAsync(value)),
@@ -247,7 +245,7 @@ const MobileNativeLive = Layer.succeed(MobileNative, {
       await Share.share(
         fileUrl && Platform.OS === "ios"
           ? { url: fileUrl, title }
-          : { message: markdown }
+          : { message: markdown },
       );
     }),
   warmBrowser: nativeCommand("warm browser", async () => {
@@ -274,5 +272,5 @@ export const MobileLive = Layer.mergeAll(
   MobileFilesLive,
   MobileKeyValueStoreLive,
   MobileNativeLive,
-  MobileIdsLive
+  MobileIdsLive,
 );

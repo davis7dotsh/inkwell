@@ -22,7 +22,7 @@ export const probeClerkEnvironment = Effect.gen(function* () {
         "x-mobile": "1",
         "x-expo-sdk-version": clerkExpoPackage.version,
       },
-    }
+    },
   );
   const value = yield* Effect.tryPromise({
     try: () => response.json(),

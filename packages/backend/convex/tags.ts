@@ -6,7 +6,12 @@ import { v } from "convex/values";
 import { Effect } from "effect";
 
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+} from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { requireUserId } from "./articles";
 import {
@@ -20,7 +25,7 @@ import { promise, runConvexEffect } from "../src/effect";
 
 function requireOwnedTag(
   ctx: QueryCtx,
-  id: Id<"tags">
+  id: Id<"tags">,
 ): Effect.Effect<
   Doc<"tags">,
   AuthenticationError | NotFoundError | OwnershipError
@@ -46,14 +51,14 @@ function sameName(a: string, b: string): boolean {
 function findTagByName(
   ctx: QueryCtx,
   userId: string,
-  name: string
+  name: string,
 ): Effect.Effect<Doc<"tags"> | null> {
   return Effect.gen(function* () {
     const tags = yield* promise(() =>
       ctx.db
         .query("tags")
         .withIndex("by_user", (q) => q.eq("userId", userId))
-        .collect()
+        .collect(),
     );
     return tags.find((tag) => sameName(tag.name, name)) ?? null;
   });
@@ -65,7 +70,7 @@ function ensureTag(
   ctx: MutationCtx,
   userId: string,
   rawName: string,
-  color?: string
+  color?: string,
 ): Effect.Effect<Id<"tags">, ValidationError> {
   return Effect.gen(function* () {
     const name = rawName.trim();
@@ -82,21 +87,21 @@ function ensureTag(
         name,
         color: color?.trim() || undefined,
         createdAt: Date.now(),
-      })
+      }),
     );
   });
 }
 
 function deleteTagAndLinks(
   ctx: MutationCtx,
-  tagId: Id<"tags">
+  tagId: Id<"tags">,
 ): Effect.Effect<void> {
   return Effect.gen(function* () {
     const links = yield* promise(() =>
       ctx.db
         .query("articleTags")
         .withIndex("by_tag", (q) => q.eq("tagId", tagId))
-        .collect()
+        .collect(),
     );
     for (const link of links) {
       yield* promise(() => ctx.db.delete(link._id));
@@ -117,13 +122,13 @@ export const list = query({
           ctx.db
             .query("tags")
             .withIndex("by_user", (q) => q.eq("userId", userId))
-            .collect()
+            .collect(),
         );
         tags.sort((a, b) =>
-          a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+          a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
         );
         return tags;
-      })
+      }),
     ),
 });
 
@@ -134,7 +139,7 @@ export const create = mutation({
       Effect.gen(function* () {
         const userId = yield* requireUserId(ctx);
         return yield* ensureTag(ctx, userId, args.name, args.color);
-      })
+      }),
     ),
 });
 
@@ -158,7 +163,7 @@ export const rename = mutation({
           });
         }
         yield* promise(() => ctx.db.patch(args.id, { name }));
-      })
+      }),
     ),
 });
 
@@ -171,9 +176,9 @@ export const setColor = mutation({
         yield* promise(() =>
           ctx.db.patch(args.id, {
             color: args.color?.trim() || undefined,
-          })
+          }),
         );
-      })
+      }),
     ),
 });
 
@@ -184,7 +189,7 @@ export const remove = mutation({
       Effect.gen(function* () {
         yield* requireOwnedTag(ctx, args.id);
         yield* deleteTagAndLinks(ctx, args.id);
-      })
+      }),
     ),
 });
 
@@ -206,9 +211,9 @@ export const addToArticle = mutation({
           ctx.db
             .query("articleTags")
             .withIndex("by_article_tag", (q) =>
-              q.eq("articleId", args.articleId).eq("tagId", args.tagId)
+              q.eq("articleId", args.articleId).eq("tagId", args.tagId),
             )
-            .unique()
+            .unique(),
         );
         if (existing) return; // already attached — no-op
         yield* promise(() =>
@@ -216,9 +221,9 @@ export const addToArticle = mutation({
             userId,
             articleId: args.articleId,
             tagId: args.tagId,
-          })
+          }),
         );
-      })
+      }),
     ),
 });
 
@@ -239,14 +244,14 @@ export const removeFromArticle = mutation({
           ctx.db
             .query("articleTags")
             .withIndex("by_article_tag", (q) =>
-              q.eq("articleId", args.articleId).eq("tagId", args.tagId)
+              q.eq("articleId", args.articleId).eq("tagId", args.tagId),
             )
-            .unique()
+            .unique(),
         );
         if (existing) {
           yield* promise(() => ctx.db.delete(existing._id));
         }
-      })
+      }),
     ),
 });
 
@@ -261,10 +266,10 @@ export const listForAgent = internalQuery({
           ctx.db
             .query("tags")
             .withIndex("by_user", (q) => q.eq("userId", args.userId))
-            .collect()
+            .collect(),
         );
         tags.sort((a, b) =>
-          a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+          a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
         );
         return tags.map((tag) => ({
           id: tag._id,
@@ -272,7 +277,7 @@ export const listForAgent = internalQuery({
           color: tag.color,
           createdAt: tag.createdAt,
         }));
-      })
+      }),
     ),
 });
 
@@ -281,15 +286,10 @@ export const createForAgent = internalMutation({
   handler: (ctx, args) =>
     runConvexEffect(
       Effect.gen(function* () {
-        const tagId = yield* ensureTag(
-          ctx,
-          args.userId,
-          args.name,
-          args.color
-        );
+        const tagId = yield* ensureTag(ctx, args.userId, args.name, args.color);
         const tag = yield* promise(() => ctx.db.get(tagId));
         return { id: tagId, name: tag!.name, color: tag!.color };
-      })
+      }),
     ),
 });
 
@@ -323,7 +323,7 @@ export const renameForAgent = internalMutation({
         }
         yield* promise(() => ctx.db.patch(tagId, { name }));
         return { ok: true };
-      })
+      }),
     ),
 });
 
@@ -345,7 +345,7 @@ export const removeForAgent = internalMutation({
         }
         yield* deleteTagAndLinks(ctx, tagId);
         return { ok: true };
-      })
+      }),
     ),
 });
 
@@ -377,9 +377,9 @@ export const addToArticleForAgent = internalMutation({
           ctx.db
             .query("articleTags")
             .withIndex("by_article_tag", (q) =>
-              q.eq("articleId", articleId).eq("tagId", tagId)
+              q.eq("articleId", articleId).eq("tagId", tagId),
             )
-            .unique()
+            .unique(),
         );
         if (!existing) {
           yield* promise(() =>
@@ -387,11 +387,11 @@ export const addToArticleForAgent = internalMutation({
               userId: args.userId,
               articleId,
               tagId,
-            })
+            }),
           );
         }
         return { ok: true };
-      })
+      }),
     ),
 });
 
@@ -416,14 +416,14 @@ export const removeFromArticleForAgent = internalMutation({
           ctx.db
             .query("articleTags")
             .withIndex("by_article_tag", (q) =>
-              q.eq("articleId", articleId).eq("tagId", tagId)
+              q.eq("articleId", articleId).eq("tagId", tagId),
             )
-            .unique()
+            .unique(),
         );
         if (existing) {
           yield* promise(() => ctx.db.delete(existing._id));
         }
         return { ok: true };
-      })
+      }),
     ),
 });

@@ -56,5 +56,5 @@ const themed = makeThemedStyles((c) =>
       borderRadius: 8,
       borderStyle: "dashed",
     },
-  })
+  }),
 );
