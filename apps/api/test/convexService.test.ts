@@ -1,14 +1,27 @@
 import { describe, expect, it } from "vitest";
+import { Effect } from "effect";
 
-import { createConvexService } from "../src/convexService";
+import { ConvexService, type ConvexServiceShape } from "../src/convexService";
+import { makeRequestLayer, runRequestEffect } from "../src/requestContext";
 import { TEST_ENV, fetchQueue, jsonResponse } from "./helpers";
+
+const call = <A>(
+  fetchImpl: typeof fetch,
+  operation: (service: ConvexServiceShape) => Effect.Effect<A, unknown>,
+) =>
+  runRequestEffect(
+    Effect.flatMap(ConvexService, operation),
+    makeRequestLayer({
+      env: { ...TEST_ENV, MEMOS: {} as R2Bucket },
+      userId: "user_1",
+      executionCtx: { waitUntil: () => undefined },
+      fetchImpl,
+    }),
+  );
 
 describe("convexService", () => {
   it("posts createPending with shared-secret auth", async () => {
-    const { impl, calls } = fetchQueue([
-      jsonResponse({ articleId: "art42" }),
-    ]);
-    const service = createConvexService(impl, TEST_ENV);
+    const { impl, calls } = fetchQueue([jsonResponse({ articleId: "art42" })]);
     const args = {
       userId: "user_1",
       url: "https://example.com/a",
@@ -17,15 +30,15 @@ describe("convexService", () => {
       savedAt: 1717900000000,
     };
 
-    const result = await service.createPending(args);
+    const result = await call(impl, (service) => service.createPending(args));
 
     expect(result).toEqual({ articleId: "art42" });
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe(
-      `${TEST_ENV.CONVEX_SITE_URL}/ingest/create-pending`
+      `${TEST_ENV.CONVEX_SITE_URL}/ingest/create-pending`,
     );
     expect(calls[0].headers["x-inkwell-key"]).toBe(
-      TEST_ENV.WORKER_SHARED_SECRET
+      TEST_ENV.WORKER_SHARED_SECRET,
     );
     expect(calls[0].headers["content-type"]).toBe("application/json");
     expect(calls[0].body).toEqual(args);
@@ -36,23 +49,24 @@ describe("convexService", () => {
       jsonResponse({ ok: true }),
       jsonResponse({ ok: true }),
     ]);
-    const service = createConvexService(impl, TEST_ENV);
 
-    await service.complete({
-      articleId: "art1",
-      expectedUserId: "user_test",
-      title: "T",
-      blocksJson: "[]",
-    });
-    await service.fail({
-      articleId: "art1",
-      expectedUserId: "user_test",
-      error: "boom",
-    });
-
-    expect(calls[0].url).toBe(
-      `${TEST_ENV.CONVEX_SITE_URL}/ingest/complete`
+    await call(impl, (service) =>
+      service.complete({
+        articleId: "art1",
+        expectedUserId: "user_test",
+        title: "T",
+        blocksJson: "[]",
+      }),
     );
+    await call(impl, (service) =>
+      service.fail({
+        articleId: "art1",
+        expectedUserId: "user_test",
+        error: "boom",
+      }),
+    );
+
+    expect(calls[0].url).toBe(`${TEST_ENV.CONVEX_SITE_URL}/ingest/complete`);
     expect(calls[1].url).toBe(`${TEST_ENV.CONVEX_SITE_URL}/ingest/fail`);
     expect(calls[1].body).toEqual({
       articleId: "art1",
@@ -75,30 +89,30 @@ describe("convexService", () => {
         tags: ["tag1"],
       },
     ];
-    const { impl, calls } = fetchQueue([
-      jsonResponse({ articles }),
-    ]);
-    const service = createConvexService(impl, TEST_ENV);
+    const { impl, calls } = fetchQueue([jsonResponse({ articles })]);
 
     await expect(
-      service.listArticles({ userId: "user_1", limit: 10 })
+      call(impl, (service) =>
+        service.listArticles({ userId: "user_1", limit: 10 }),
+      ),
     ).resolves.toEqual(articles);
     expect(calls[0].url).toBe(
-      `${TEST_ENV.CONVEX_SITE_URL}/agent/articles?userId=user_1&limit=10`
+      `${TEST_ENV.CONVEX_SITE_URL}/agent/articles?userId=user_1&limit=10`,
     );
     expect(calls[0].headers["x-inkwell-key"]).toBe(
-      TEST_ENV.WORKER_SHARED_SECRET
+      TEST_ENV.WORKER_SHARED_SECRET,
     );
   });
 
   it("joins tagIds into a comma-separated filter param", async () => {
     const { impl, calls } = fetchQueue([jsonResponse({ articles: [] })]);
-    const service = createConvexService(impl, TEST_ENV);
 
-    await service.listArticles({
-      userId: "user_1",
-      tagIds: ["tag1", "tag2"],
-    });
+    await call(impl, (service) =>
+      service.listArticles({
+        userId: "user_1",
+        tagIds: ["tag1", "tag2"],
+      }),
+    );
 
     const url = new URL(calls[0].url);
     expect(url.pathname).toBe("/agent/articles");
@@ -108,9 +122,10 @@ describe("convexService", () => {
 
   it("omits the tagIds param when no tags are given", async () => {
     const { impl, calls } = fetchQueue([jsonResponse({ articles: [] })]);
-    const service = createConvexService(impl, TEST_ENV);
 
-    await service.listArticles({ userId: "user_1", tagIds: [] });
+    await call(impl, (service) =>
+      service.listArticles({ userId: "user_1", tagIds: [] }),
+    );
 
     expect(new URL(calls[0].url).searchParams.has("tagIds")).toBe(false);
   });
@@ -121,14 +136,15 @@ describe("convexService", () => {
       { id: "tag2", name: "Rust", createdAt: 2 },
     ];
     const { impl, calls } = fetchQueue([jsonResponse({ tags })]);
-    const service = createConvexService(impl, TEST_ENV);
 
-    await expect(service.listTags({ userId: "user_1" })).resolves.toEqual(tags);
+    await expect(
+      call(impl, (service) => service.listTags({ userId: "user_1" })),
+    ).resolves.toEqual(tags);
     expect(calls[0].url).toBe(
-      `${TEST_ENV.CONVEX_SITE_URL}/agent/tags?userId=user_1`
+      `${TEST_ENV.CONVEX_SITE_URL}/agent/tags?userId=user_1`,
     );
     expect(calls[0].headers["x-inkwell-key"]).toBe(
-      TEST_ENV.WORKER_SHARED_SECRET
+      TEST_ENV.WORKER_SHARED_SECRET,
     );
   });
 
@@ -136,14 +152,17 @@ describe("convexService", () => {
     const { impl, calls } = fetchQueue([
       jsonResponse({ tag: { id: "tag1", name: "AI", color: "#f00" } }),
     ]);
-    const service = createConvexService(impl, TEST_ENV);
 
     await expect(
-      service.createTag({ userId: "user_1", name: "AI", color: "#f00" })
+      call(impl, (service) =>
+        service.createTag({
+          userId: "user_1",
+          name: "AI",
+          color: "#f00",
+        }),
+      ),
     ).resolves.toEqual({ id: "tag1", name: "AI", color: "#f00" });
-    expect(calls[0].url).toBe(
-      `${TEST_ENV.CONVEX_SITE_URL}/agent/tags/create`
-    );
+    expect(calls[0].url).toBe(`${TEST_ENV.CONVEX_SITE_URL}/agent/tags/create`);
     expect(calls[0].body).toEqual({
       userId: "user_1",
       name: "AI",
@@ -159,25 +178,35 @@ describe("convexService", () => {
       jsonResponse({ ok: true }),
       jsonResponse({ ok: true }),
     ]);
-    const service = createConvexService(impl, TEST_ENV);
 
-    await service.renameTag({ userId: "user_1", tagId: "tag1", name: "ML" });
-    await service.removeTag({ userId: "user_1", tagId: "tag1" });
-    await service.addTagToArticle({
-      userId: "user_1",
-      articleId: "art1",
-      tagId: "tag1",
-    });
-    await service.removeTagFromArticle({
-      userId: "user_1",
-      articleId: "art1",
-      tagId: "tag1",
-    });
-    await service.setArticlePinned({
-      userId: "user_1",
-      id: "art1",
-      pinned: true,
-    });
+    await call(impl, (service) =>
+      Effect.all(
+        [
+          service.renameTag({
+            userId: "user_1",
+            tagId: "tag1",
+            name: "ML",
+          }),
+          service.removeTag({ userId: "user_1", tagId: "tag1" }),
+          service.addTagToArticle({
+            userId: "user_1",
+            articleId: "art1",
+            tagId: "tag1",
+          }),
+          service.removeTagFromArticle({
+            userId: "user_1",
+            articleId: "art1",
+            tagId: "tag1",
+          }),
+          service.setArticlePinned({
+            userId: "user_1",
+            id: "art1",
+            pinned: true,
+          }),
+        ],
+        { concurrency: 1, discard: true },
+      ),
+    );
 
     expect(calls.map((c) => c.url)).toEqual([
       `${TEST_ENV.CONVEX_SITE_URL}/agent/tags/rename`,
@@ -194,28 +223,28 @@ describe("convexService", () => {
   });
 
   it("returns null for missing articles", async () => {
-    const { impl } = fetchQueue([
-      new Response("not found", { status: 404 }),
-    ]);
-    const service = createConvexService(impl, TEST_ENV);
+    const missing = new Response("not found", { status: 404 });
+    const { impl } = fetchQueue([missing]);
 
     await expect(
-      service.getArticle({ userId: "user_1", id: "missing" })
+      call(impl, (service) =>
+        service.getArticle({ userId: "user_1", id: "missing" }),
+      ),
     ).resolves.toBeNull();
+    expect(missing.bodyUsed).toBe(true);
   });
 
   it("surfaces Convex HTTP-action failures", async () => {
-    const { impl } = fetchQueue([
-      jsonResponse({ error: "forbidden" }, 403),
-    ]);
-    const service = createConvexService(impl, TEST_ENV);
+    const { impl } = fetchQueue([jsonResponse({ error: "forbidden" }, 403)]);
 
     await expect(
-      service.fail({
-        articleId: "art1",
-        expectedUserId: "user_test",
-        error: "boom",
-      })
+      call(impl, (service) =>
+        service.fail({
+          articleId: "art1",
+          expectedUserId: "user_test",
+          error: "boom",
+        }),
+      ),
     ).rejects.toThrow(/forbidden/);
   });
 });

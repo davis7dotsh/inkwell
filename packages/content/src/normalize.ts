@@ -8,11 +8,11 @@ import type { ArticleContent, Block } from "./types";
 
 /** The slice of Firecrawl v2 `data.metadata` that normalization consumes. */
 export type FirecrawlMetadata = {
-  title?: string;
-  description?: string;
-  ogTitle?: string;
-  ogDescription?: string;
-  sourceURL?: string;
+  title?: string | null;
+  description?: string | null;
+  ogTitle?: string | null;
+  ogDescription?: string | null;
+  sourceURL?: string | null;
 };
 
 /** The slice of a Firecrawl v2 `data` payload that normalization consumes. */
@@ -59,7 +59,7 @@ export function firecrawlToArticle(input: FirecrawlDocument): ArticleContent {
 
   if (!html && !markdown) {
     throw new Error(
-      `Firecrawl returned no content${subject}: both html and markdown are empty`
+      `Firecrawl returned no content${subject}: both html and markdown are empty`,
     );
   }
 
@@ -70,7 +70,7 @@ export function firecrawlToArticle(input: FirecrawlDocument): ArticleContent {
       value ? `${value.length} chars` : "absent";
     throw new Error(
       `Firecrawl content produced zero readable blocks${subject} ` +
-        `(html: ${sizeOf(html)}, markdown: ${sizeOf(markdown)})`
+        `(html: ${sizeOf(html)}, markdown: ${sizeOf(markdown)})`,
     );
   }
 

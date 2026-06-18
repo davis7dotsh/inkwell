@@ -1,7 +1,7 @@
 // Small themed modal for renaming an article (works on iOS and Android,
 // unlike Alert.prompt). Mirrors the NoteEditorModal interaction patterns:
 // backdrop tap dismisses, card anchored high so the keyboard can't cover it.
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   Modal,
   Pressable,
@@ -20,13 +20,15 @@ type Props = {
   onCancel: () => void;
 };
 
-export function RenameModal({ visible, initialTitle, onSave, onCancel }: Props) {
+export function RenameModal({
+  visible,
+  initialTitle,
+  onSave,
+  onCancel,
+}: Props) {
   const { scheme, c } = useTheme();
   const styles = themed[scheme];
   const [title, setTitle] = useState(initialTitle);
-  useEffect(() => {
-    if (visible) setTitle(initialTitle);
-  }, [visible, initialTitle]);
 
   const commit = () => {
     const trimmed = title.trim();
@@ -39,6 +41,7 @@ export function RenameModal({ visible, initialTitle, onSave, onCancel }: Props) 
       transparent
       animationType="fade"
       onRequestClose={onCancel}
+      onShow={() => setTitle(initialTitle)}
     >
       <Pressable style={styles.backdrop} onPress={onCancel}>
         <Pressable style={styles.card} onPress={() => {}}>
@@ -134,5 +137,5 @@ const themed = makeThemedStyles((c) =>
       color: c.inkSecondary,
     },
     saveText: { color: c.onAccent },
-  })
+  }),
 );

@@ -7,7 +7,9 @@ import { api } from "@inkwell/backend/convex/_generated/api";
 import type { Id } from "@inkwell/backend/convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
+import { Exit } from "effect";
 import React, {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -20,7 +22,13 @@ import { Link } from "react-router-dom";
 
 import { BackdropWash } from "../components/BackdropWash";
 import { BrushStroke } from "../components/BrushStroke";
-import { hcWithType } from "../lib/api";
+import { retryArticle, saveArticle, uploadPdf } from "../lib/effect/api";
+import { convexCommand } from "../lib/effect/convex";
+import {
+  exitFailureMessage,
+  runAuthedEffect,
+  runBrowserEffect,
+} from "../lib/effect/react";
 import { tagDisplayColor, TAG_COLOR_SWATCHES } from "../lib/tagColors";
 import { useTheme } from "../lib/theme";
 
@@ -176,7 +184,11 @@ function ArticleCard({
           if (e.key === "Escape") onCancelRename();
         }}
       />
-      <button type="submit" className="rename-action" disabled={!titleDraft.trim()}>
+      <button
+        type="submit"
+        className="rename-action"
+        disabled={!titleDraft.trim()}
+      >
         Save
       </button>
       <button
@@ -331,7 +343,7 @@ function ArticleTagEditor({
   const [draft, setDraft] = useState("");
   const attached = useMemo(
     () => new Set(article.tags.map((id) => id as string)),
-    [article.tags]
+    [article.tags],
   );
 
   const onCreateAndAttach = async () => {
@@ -422,6 +434,7 @@ function ArticleTagEditor({
 /** Library-wide tag manager: rename, recolor, and delete tags. */
 function TagManager({
   allTags,
+  error,
   onCreateTag,
   onRenameTag,
   onSetColor,
@@ -429,6 +442,7 @@ function TagManager({
   onClose,
 }: {
   allTags: TagItem[];
+  error: string | null;
   onCreateTag: (name: string) => Promise<Id<"tags"> | null>;
   onRenameTag: (id: Id<"tags">, name: string) => void;
   onSetColor: (id: Id<"tags">, color: string | undefined) => void;
@@ -448,7 +462,12 @@ function TagManager({
   }, [onClose]);
 
   return (
-    <div className="tag-modal" role="dialog" aria-modal="true" aria-label="Manage tags">
+    <div
+      className="tag-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Manage tags"
+    >
       <button
         type="button"
         className="tag-modal-scrim"
@@ -480,10 +499,19 @@ function TagManager({
             aria-label="New tag name"
             autoFocus
           />
-          <button type="submit" className="pill-button" disabled={!newName.trim()}>
+          <button
+            type="submit"
+            className="pill-button"
+            disabled={!newName.trim()}
+          >
             Add tag
           </button>
         </form>
+        {error ? (
+          <p className="tag-modal-error" role="alert">
+            {error}
+          </p>
+        ) : null}
         {allTags.length === 0 ? (
           <p className="tag-modal-empty">No tags yet.</p>
         ) : (
@@ -565,7 +593,11 @@ function TagManagerRow({
               }
             }}
           />
-          <button type="submit" className="rename-action" disabled={!nameDraft.trim()}>
+          <button
+            type="submit"
+            className="rename-action"
+            disabled={!nameDraft.trim()}
+          >
             Save
           </button>
           <button
@@ -580,7 +612,11 @@ function TagManagerRow({
         <>
           <span
             className="tag-chip tag-chip-static tag-modal-name"
-            style={{ color: color.fg, background: color.bg, borderColor: color.border }}
+            style={{
+              color: color.fg,
+              background: color.bg,
+              borderColor: color.border,
+            }}
           >
             {tag.name}
           </span>
@@ -601,7 +637,7 @@ function TagManagerRow({
               onClick={() => {
                 if (
                   window.confirm(
-                    `Delete the “${tag.name}” tag? It will be removed from all articles.`
+                    `Delete the “${tag.name}” tag? It will be removed from all articles.`,
                   )
                 ) {
                   onRemoveTag(tag._id);
@@ -639,6 +675,7 @@ export function Library() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [tagManagerError, setTagManagerError] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
@@ -648,7 +685,7 @@ export function Library() {
   const tagsList = useMemo(() => tags ?? [], [tags]);
   const tagsById = useMemo(
     () => new Map(tagsList.map((tag) => [tag._id as string, tag])),
-    [tagsList]
+    [tagsList],
   );
 
   // Drop filter selections for tags that no longer exist (e.g. just deleted).
@@ -661,18 +698,49 @@ export function Library() {
     });
   }, [tags, tagsById]);
 
-  // Per-request Authorization header: the Clerk token is short-lived, so it
-  // is fetched fresh on every call rather than baked into the client.
-  const client = useMemo(
-    () =>
-      hcWithType(import.meta.env.VITE_API_URL ?? "", {
-        headers: async (): Promise<Record<string, string>> => {
-          const token = await getToken();
-          return token ? { Authorization: `Bearer ${token}` } : {};
-        },
-      }),
-    [getToken]
+  const launchCommand = useCallback(
+    (
+      operation: string,
+      run: () => Promise<unknown>,
+      onSuccess?: () => void,
+    ) => {
+      setSaveError(null);
+      void runBrowserEffect(convexCommand(operation, run)).then((exit) => {
+        if (Exit.isSuccess(exit)) {
+          onSuccess?.();
+        } else {
+          setSaveError(exitFailureMessage(exit, `${operation} failed.`));
+        }
+      });
+    },
+    [],
   );
+
+  const launchTagManagerCommand = useCallback(
+    (operation: string, run: () => Promise<unknown>) => {
+      setTagManagerError(null);
+      void runBrowserEffect(convexCommand(operation, run)).then((exit) => {
+        if (Exit.isFailure(exit)) {
+          setTagManagerError(exitFailureMessage(exit, `${operation} failed.`));
+        }
+      });
+    },
+    [],
+  );
+
+  const createTagWithError = async (
+    name: string,
+    reportError: (message: string) => void,
+  ): Promise<Id<"tags"> | null> => {
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    const exit = await runBrowserEffect(
+      convexCommand("Create tag", () => createTag({ name: trimmed })),
+    );
+    if (Exit.isSuccess(exit)) return exit.value;
+    reportError(exitFailureMessage(exit, "Couldn't create this tag."));
+    return null;
+  };
 
   const onSave = async (e: FormEvent) => {
     e.preventDefault();
@@ -680,19 +748,17 @@ export function Library() {
     if (!url || saving) return;
     setSaving(true);
     setSaveError(null);
-    try {
-      const res = await client.articles.$post({ json: { url } });
-      if (res.ok) {
-        // The pending card arrives via the live query; nothing else to do.
-        setDraft("");
-      } else {
-        setSaveError(`Save failed (HTTP ${res.status}).`);
-      }
-    } catch {
-      setSaveError("Couldn't reach the API — check VITE_API_URL.");
-    } finally {
-      setSaving(false);
+    const exit = await runAuthedEffect(
+      (token) => saveArticle(url, token),
+      getToken,
+    );
+    if (Exit.isSuccess(exit)) {
+      // The pending card arrives via the live query; nothing else to do.
+      setDraft("");
+    } else {
+      setSaveError(exitFailureMessage(exit, "Couldn't save this article."));
     }
+    setSaving(false);
   };
 
   const onPickFile = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -701,16 +767,14 @@ export function Library() {
     if (!file || uploading) return;
     setUploading(true);
     setSaveError(null);
-    try {
-      const res = await client.articles.upload.$post({ form: { file } });
-      if (!res.ok) {
-        setSaveError(`Upload failed (HTTP ${res.status}).`);
-      }
-    } catch {
-      setSaveError("Couldn't reach the API — check VITE_API_URL.");
-    } finally {
-      setUploading(false);
+    const exit = await runAuthedEffect(
+      (token) => uploadPdf(file, token),
+      getToken,
+    );
+    if (Exit.isFailure(exit)) {
+      setSaveError(exitFailureMessage(exit, "Couldn't upload this PDF."));
     }
+    setUploading(false);
   };
 
   const onRetry = async (article: ArticleListItem) => {
@@ -718,40 +782,50 @@ export function Library() {
     // lands; a failed retry just leaves it failed. The url travels in the
     // body — the worker's Convex access is write-only, so it can't look the
     // article up itself.
-    await client.articles[":id"].retry
-      .$post({ param: { id: article._id }, json: { url: article.url } })
-      .catch(() => undefined);
+    setSaveError(null);
+    const exit = await runAuthedEffect(
+      (token) => retryArticle(article._id, article.url, token),
+      getToken,
+    );
+    if (Exit.isFailure(exit)) {
+      setSaveError(exitFailureMessage(exit, "Couldn't retry this article."));
+    }
   };
 
   const onDelete = (id: Id<"articles">) => {
     if (window.confirm("Delete this article and its annotations?")) {
-      void removeArticle({ id });
+      launchCommand("Delete article", () => removeArticle({ id }));
     }
   };
 
   const onCommitRename = (id: Id<"articles">, title: string) => {
     const trimmed = title.trim();
-    if (trimmed) void renameArticle({ id, title: trimmed });
+    if (trimmed) {
+      launchCommand("Rename article", () =>
+        renameArticle({ id, title: trimmed }),
+      );
+    }
     setRenamingId(null);
   };
 
   const onSetPinned = (id: Id<"articles">, pinned: boolean) =>
-    void setPinned({ id, pinned });
+    launchCommand(pinned ? "Pin article" : "Unpin article", () =>
+      setPinned({ id, pinned }),
+    );
 
   const onCreateTag = async (name: string): Promise<Id<"tags"> | null> => {
-    const trimmed = name.trim();
-    if (!trimmed) return null;
-    try {
-      return await createTag({ name: trimmed });
-    } catch {
-      return null;
-    }
+    setSaveError(null);
+    return createTagWithError(name, setSaveError);
   };
 
   const onAttachTag = (articleId: Id<"articles">, tagId: Id<"tags">) =>
-    void addTagToArticle({ articleId, tagId });
+    launchCommand("Add tag to article", () =>
+      addTagToArticle({ articleId, tagId }),
+    );
   const onDetachTag = (articleId: Id<"articles">, tagId: Id<"tags">) =>
-    void removeTagFromArticle({ articleId, tagId });
+    launchCommand("Remove tag from article", () =>
+      removeTagFromArticle({ articleId, tagId }),
+    );
 
   const toggleTagFilter = (id: string) =>
     setSelectedTags((prev) => {
@@ -767,7 +841,7 @@ export function Library() {
     let filtered = articles;
     if (selectedTags.size > 0) {
       filtered = filtered.filter((article) =>
-        article.tags.some((tagId) => selectedTags.has(tagId as string))
+        article.tags.some((tagId) => selectedTags.has(tagId as string)),
       );
     }
     // articles.list is newest-first; flip a copy for oldest-first.
@@ -838,7 +912,11 @@ export function Library() {
           onChange={(e) => void onPickFile(e)}
         />
       </form>
-      {saveError ? <p className="save-error">{saveError}</p> : null}
+      {saveError ? (
+        <p className="save-error" role="alert">
+          {saveError}
+        </p>
+      ) : null}
 
       <div className="tag-bar" role="group" aria-label="Filter by tag">
         {tagsList.map((tag) => {
@@ -878,7 +956,10 @@ export function Library() {
         <button
           type="button"
           className="tag-bar-manage"
-          onClick={() => setTagManagerOpen(true)}
+          onClick={() => {
+            setTagManagerError(null);
+            setTagManagerOpen(true);
+          }}
         >
           {tagsList.length > 0 ? "Manage tags" : "+ Add tags"}
         </button>
@@ -900,7 +981,9 @@ export function Library() {
       ) : visibleArticles.length === 0 ? (
         <EmptyState>
           {articles && articles.length > 0 ? (
-            <p>Nothing {selectedTags.size > 0 ? "with those tags" : "to show"}.</p>
+            <p>
+              Nothing {selectedTags.size > 0 ? "with those tags" : "to show"}.
+            </p>
           ) : (
             <>
               <p>Nothing saved yet.</p>
@@ -936,11 +1019,26 @@ export function Library() {
       {tagManagerOpen ? (
         <TagManager
           allTags={tagsList}
-          onCreateTag={onCreateTag}
-          onRenameTag={(id, name) => void renameTag({ id, name })}
-          onSetColor={(id, color) => void setTagColor({ id, color })}
-          onRemoveTag={(id) => void removeTag({ id })}
-          onClose={() => setTagManagerOpen(false)}
+          error={tagManagerError}
+          onCreateTag={(name) => {
+            setTagManagerError(null);
+            return createTagWithError(name, setTagManagerError);
+          }}
+          onRenameTag={(id, name) =>
+            launchTagManagerCommand("Rename tag", () => renameTag({ id, name }))
+          }
+          onSetColor={(id, color) =>
+            launchTagManagerCommand("Change tag color", () =>
+              setTagColor({ id, color }),
+            )
+          }
+          onRemoveTag={(id) =>
+            launchTagManagerCommand("Delete tag", () => removeTag({ id }))
+          }
+          onClose={() => {
+            setTagManagerError(null);
+            setTagManagerOpen(false);
+          }}
         />
       ) : null}
     </div>

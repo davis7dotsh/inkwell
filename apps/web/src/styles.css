@@ -478,6 +478,12 @@ button {
   border-radius: 10px;
 }
 
+.tag-modal-error {
+  margin: -8px 0 14px;
+  color: var(--seal);
+  font-size: 14px;
+}
+
 .tag-modal-empty {
   color: var(--ink-faint);
   font-size: 14px;

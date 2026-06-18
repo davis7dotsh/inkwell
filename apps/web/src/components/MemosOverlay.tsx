@@ -1,12 +1,14 @@
 // Interactive voice-memo chips over the web reader column. Click a chip to
 // expand its transcript and play the audio. The audio route is Clerk-authed
-// and <audio src> can't carry an Authorization header, so the bytes arrive
-// via fetch (memos are 1–5MB) and play from an object URL.
+// and <audio src> can't carry an Authorization header, so the Effect HTTP
+// client loads the bytes (memos are 1–5MB) for an object URL.
 import { useAuth } from "@clerk/react";
 import type { Annotations, VoiceMemoAnnotation } from "@inkwell/content";
+import { Exit } from "effect";
 import React, { useEffect, useRef, useState } from "react";
 
-const API_URL: string = import.meta.env.VITE_API_URL ?? "";
+import { loadMemo } from "../lib/effect/api";
+import { exitFailureMessage, runAuthedEffect } from "../lib/effect/react";
 
 const formatDuration = (durationMs: number): string => {
   const total = Math.max(1, Math.round(durationMs / 1000));
@@ -36,8 +38,7 @@ function MemoChip({
   const { getToken } = useAuth();
   const [open, setOpen] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  // No API URL configured → error state from the start, not endless loading.
-  const [audioError, setAudioError] = useState(!API_URL);
+  const [audioError, setAudioError] = useState<string | null>(null);
   const objectUrlRef = useRef<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -54,35 +55,31 @@ function MemoChip({
   // Fetch the audio once, on first expand.
   useEffect(() => {
     if (!open || audioUrl || audioError) return;
-    if (memo.status !== "uploaded" || !API_URL) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const token = await getToken();
-        if (!token) throw new Error("not signed in");
-        const res = await fetch(
-          `${API_URL.replace(/\/+$/, "")}/memos/${articleId}/${memo.id}`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (!res.ok) throw new Error(`audio fetch failed: ${res.status}`);
-        const blob = await res.blob();
-        if (cancelled) return;
-        objectUrlRef.current = URL.createObjectURL(blob);
+    if (memo.status !== "uploaded") return;
+    const controller = new AbortController();
+    void runAuthedEffect(
+      (token) => loadMemo(articleId, memo.id, token),
+      getToken,
+      { signal: controller.signal },
+    ).then((exit) => {
+      if (controller.signal.aborted) return;
+      if (Exit.isSuccess(exit)) {
+        objectUrlRef.current = URL.createObjectURL(exit.value);
         setAudioUrl(objectUrlRef.current);
-      } catch {
-        if (!cancelled) setAudioError(true);
+      } else {
+        setAudioError(
+          exitFailureMessage(exit, "Couldn't load the voice memo."),
+        );
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    });
+    return () => controller.abort();
   }, [open, audioUrl, audioError, memo.status, memo.id, articleId, getToken]);
 
   useEffect(
     () => () => {
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
     },
-    []
+    [],
   );
 
   return (
@@ -104,9 +101,13 @@ function MemoChip({
       {open ? (
         <div className="memo-popover">
           {memo.status === "local" ? (
-            <p className="memo-hint">Recorded on iPad — audio not synced yet.</p>
+            <p className="memo-hint">
+              Recorded on iPad — audio not synced yet.
+            </p>
           ) : audioError ? (
-            <p className="memo-hint">Couldn't load the audio.</p>
+            <p className="memo-hint" title={audioError}>
+              Couldn't load the audio.
+            </p>
           ) : audioUrl ? (
             // eslint-disable-next-line jsx-a11y/media-has-caption -- the transcript below is the caption
             <audio controls src={audioUrl} />

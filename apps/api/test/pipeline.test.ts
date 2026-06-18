@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Block } from "@inkwell/content";
+import { Effect } from "effect";
 
-import { createConvexService } from "../src/convexService";
-import { processArticle } from "../src/pipeline";
+import { processArticleEffect, runPipelineEffect } from "../src/pipeline";
+import { makeRequestLayer, runRequestEffect } from "../src/requestContext";
 import { FIXTURE_HTML, TEST_ENV, fakeNetwork, firecrawlOk } from "./helpers";
 
 afterEach(() => {
@@ -10,6 +11,24 @@ afterEach(() => {
 });
 
 describe("processArticle", () => {
+  const processArticle = (
+    fetchImpl: typeof fetch,
+    options: {
+      articleId: string;
+      userId: string;
+      url: string;
+    },
+  ) =>
+    runRequestEffect(
+      processArticleEffect(options),
+      makeRequestLayer({
+        env: { ...TEST_ENV, MEMOS: {} as R2Bucket },
+        userId: options.userId,
+        executionCtx: { waitUntil: () => undefined },
+        fetchImpl,
+      }),
+    );
+
   it("scrapes, parses through @inkwell/content, and completes", async () => {
     const { impl, ingest } = fakeNetwork(() =>
       firecrawlOk({
@@ -19,16 +38,13 @@ describe("processArticle", () => {
           description: "A greeting",
           sourceURL: "https://example.com/hello",
         },
-      })
+      }),
     );
 
-    await processArticle({
-      fetchImpl: impl,
-      env: TEST_ENV,
+    await processArticle(impl, {
       userId: "user_test",
       articleId: "art1",
       url: "https://example.com/hello",
-      convex: createConvexService(impl, TEST_ENV),
     });
 
     expect(ingest.fail).toHaveLength(0);
@@ -56,16 +72,13 @@ describe("processArticle", () => {
 
   it("marks the article failed when Firecrawl errors", async () => {
     const { impl, ingest } = fakeNetwork(
-      () => new Response("kaboom", { status: 500 })
+      () => new Response("kaboom", { status: 500 }),
     );
 
-    await processArticle({
-      fetchImpl: impl,
-      env: TEST_ENV,
+    await processArticle(impl, {
       userId: "user_test",
       articleId: "art1",
       url: "https://example.com/hello",
-      convex: createConvexService(impl, TEST_ENV),
     });
 
     expect(ingest.complete).toHaveLength(0);
@@ -80,13 +93,10 @@ describe("processArticle", () => {
     // success: true but no html/markdown — the real firecrawlToArticle throws.
     const { impl, ingest } = fakeNetwork(() => firecrawlOk({ metadata: {} }));
 
-    await processArticle({
-      fetchImpl: impl,
-      env: TEST_ENV,
+    await processArticle(impl, {
       userId: "user_test",
       articleId: "art1",
       url: "https://example.com/empty",
-      convex: createConvexService(impl, TEST_ENV),
     });
 
     expect(ingest.complete).toHaveLength(0);
@@ -106,15 +116,42 @@ describe("processArticle", () => {
     }) as unknown as typeof fetch;
 
     await expect(
-      processArticle({
-        fetchImpl: impl,
-        env: TEST_ENV,
+      processArticle(impl, {
         userId: "user_test",
         articleId: "art1",
         url: "https://example.com",
-        convex: createConvexService(impl, TEST_ENV),
-      })
+      }),
     ).resolves.toEqual({ status: "failed", error: "network down" });
     expect(consoleError).toHaveBeenCalledOnce();
+  });
+
+  it("logs unexpected defects and still marks the article failed", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const { impl, ingest } = fakeNetwork(() =>
+      firecrawlOk({ markdown: "unused", metadata: {} }),
+    );
+
+    const outcome = await runRequestEffect(
+      runPipelineEffect({
+        userId: "user_test",
+        articleId: "art1",
+        fetchContent: Effect.die(new Error("programmer bug")),
+      }),
+      makeRequestLayer({
+        env: { ...TEST_ENV, MEMOS: {} as R2Bucket },
+        userId: "user_test",
+        executionCtx: { waitUntil: () => undefined },
+        fetchImpl: impl,
+      }),
+    );
+
+    expect(outcome).toEqual({ status: "failed", error: "programmer bug" });
+    expect(ingest.fail).toHaveLength(1);
+    expect(consoleError).toHaveBeenCalledWith(
+      "pipeline: unexpected defect while processing article art1",
+      expect.objectContaining({ message: "programmer bug" }),
+    );
   });
 });

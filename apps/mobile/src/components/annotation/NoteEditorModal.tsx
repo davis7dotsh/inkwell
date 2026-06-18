@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   Modal,
   Pressable,
@@ -31,9 +31,6 @@ export function NoteEditorModal({
   const { scheme, c } = useTheme();
   const styles = themed[scheme];
   const [text, setText] = useState(initialText);
-  useEffect(() => {
-    if (visible) setText(initialText);
-  }, [visible, initialText]);
 
   return (
     <Modal
@@ -41,12 +38,15 @@ export function NoteEditorModal({
       transparent
       animationType="fade"
       onRequestClose={onCancel}
+      onShow={() => setText(initialText)}
     >
       {/* Tapping the backdrop always dismisses — never trap the user. The
           card is anchored near the top so the keyboard can't cover it. */}
       <Pressable style={styles.backdrop} onPress={onCancel}>
         <Pressable style={styles.card} onPress={() => {}}>
-          <Text style={styles.title}>{isEditing ? "Edit note" : "New note"}</Text>
+          <Text style={styles.title}>
+            {isEditing ? "Edit note" : "New note"}
+          </Text>
           <TextInput
             style={styles.input}
             value={text}
@@ -59,7 +59,9 @@ export function NoteEditorModal({
           <View style={styles.row}>
             {isEditing ? (
               <Pressable onPress={onDelete} style={styles.button}>
-                <Text style={[styles.buttonText, styles.deleteText]}>Delete</Text>
+                <Text style={[styles.buttonText, styles.deleteText]}>
+                  Delete
+                </Text>
               </Pressable>
             ) : null}
             <View style={{ flex: 1 }} />
@@ -144,5 +146,5 @@ const themed = makeThemedStyles((c) =>
     },
     saveText: { color: c.onAccent },
     deleteText: { color: c.danger },
-  })
+  }),
 );

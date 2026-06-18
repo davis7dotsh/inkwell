@@ -1,12 +1,10 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "strict": true,
-    "noEmit": true,
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2022", "DOM"],
-    "skipLibCheck": true
+    "lib": ["ES2022", "DOM"]
   },
-  "include": ["convex"]
+  "include": ["convex", "src"]
 }

@@ -12,7 +12,10 @@ import {
 } from "expo-audio";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import * as Effect from "effect/Effect";
 
+import { NativeCommandError, unknownErrorMessage } from "../../effect/errors";
+import { useMobileEffectRunner } from "../../effect/react";
 import { makeThemedStyles, useTheme } from "../../lib/theme";
 import { prepareTranscription } from "../../lib/voiceMemos";
 
@@ -42,10 +45,13 @@ const formatClock = (ms: number) => {
 export function MemoRecorderPanel({ onComplete, onCancel }: Props) {
   const { scheme, c } = useTheme();
   const styles = themed[scheme];
+  const run = useMobileEffectRunner();
   const [failed, setFailed] = useState(false);
   // Settling guards Stop/Cancel double-taps and the mount/unmount window.
   const settlingRef = useRef(false);
   const startedRef = useRef(false);
+  const wasRecordingRef = useRef(false);
+  const latestDurationMsRef = useRef(0);
 
   const recorder = useAudioRecorder(SPEECH_PRESET, (status) => {
     // Media-services reset (rare daemon crash) invalidates the recorder
@@ -55,63 +61,162 @@ export function MemoRecorderPanel({ onComplete, onCancel }: Props) {
   const recorderState = useAudioRecorderState(recorder, 100);
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const permission = await requestRecordingPermissionsAsync();
-      if (cancelled) return;
-      if (!permission.granted) {
-        onCancel("Microphone access is needed for voice memos.");
-        return;
-      }
-      // Model download overlaps with the user speaking.
-      prepareTranscription();
-      await setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-      });
-      if (cancelled) return;
-      await recorder.prepareToRecordAsync();
-      if (cancelled) return;
-      recorder.record({ forDuration: MAX_SECONDS });
-      startedRef.current = true;
-    })().catch(() => {
-      if (!cancelled) onCancel("Couldn't start recording.");
+    // Model preparation is independent so it overlaps with permission/setup.
+    const cancelTranscriptionPreparation = run(prepareTranscription, {
+      onFailure: (error) =>
+        console.info("[Inkwell] Transcription preparation:", error.message),
     });
+    const restorePlaybackAudioMode = Effect.tryPromise({
+      try: () =>
+        setAudioModeAsync({
+          allowsRecording: false,
+          playsInSilentMode: true,
+        }),
+      catch: (error) =>
+        new NativeCommandError({
+          operation: "restore playback audio mode",
+          message: unknownErrorMessage(error),
+        }),
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("Could not restore playback audio mode", error),
+      ),
+    );
+    const cancelStart = run(
+      Effect.gen(function* () {
+        const permission = yield* Effect.tryPromise({
+          try: () => requestRecordingPermissionsAsync(),
+          catch: (error) =>
+            new NativeCommandError({
+              operation: "request microphone permission",
+              message: unknownErrorMessage(error),
+            }),
+        });
+        if (!permission.granted) {
+          return yield* new NativeCommandError({
+            operation: "request microphone permission",
+            message: "Microphone access is needed for voice memos.",
+          });
+        }
+        yield* Effect.tryPromise({
+          try: () =>
+            setAudioModeAsync({
+              allowsRecording: true,
+              playsInSilentMode: true,
+            }),
+          catch: (error) =>
+            new NativeCommandError({
+              operation: "enable recording audio mode",
+              message: unknownErrorMessage(error),
+            }),
+        }).pipe(Effect.uninterruptible);
+        yield* Effect.tryPromise({
+          try: () => recorder.prepareToRecordAsync(),
+          catch: (error) =>
+            new NativeCommandError({
+              operation: "prepare audio recorder",
+              message: unknownErrorMessage(error),
+            }),
+        });
+        yield* Effect.try({
+          try: () => recorder.record({ forDuration: MAX_SECONDS }),
+          catch: (error) =>
+            new NativeCommandError({
+              operation: "start audio recorder",
+              message: unknownErrorMessage(error),
+            }),
+        });
+        startedRef.current = true;
+        // Keep the audio-mode finalizer owned by this fiber for the lifetime
+        // of the take. Interrupting while Expo's uncancellable mode switch is
+        // pending now waits for it before restoring playback mode.
+        return yield* Effect.never;
+      }).pipe(Effect.ensuring(restorePlaybackAudioMode)),
+      {
+        onFailure: (error) => onCancel(error.message),
+        onDefect: () => onCancel("Couldn't start recording."),
+      },
+    );
     return () => {
-      cancelled = true;
-      // Leaving .playAndRecord otherwise makes later playback quiet.
-      void setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+      cancelTranscriptionPreparation();
+      cancelStart();
     };
     // Runs once for the lifetime of the panel (one take per mount).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const settle = useCallback(
-    async (commit: boolean) => {
+    (commit: boolean) => {
       if (settlingRef.current) return;
       settlingRef.current = true;
-      const durationMs = Math.round(recorder.currentTime * 1000);
-      try {
-        if (startedRef.current) await recorder.stop();
-      } catch {
-        // A dead recorder still settles below.
-      }
-      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
-      const uri = recorder.uri;
-      if (commit && uri && durationMs > 300) {
-        onComplete({ uri, durationMs });
-      } else {
-        onCancel();
-      }
+      const durationMs = Math.max(
+        latestDurationMsRef.current,
+        Math.round(recorder.currentTime * 1000),
+      );
+      run(
+        Effect.gen(function* () {
+          if (startedRef.current) {
+            yield* Effect.tryPromise({
+              try: () => recorder.stop(),
+              catch: (error) =>
+                new NativeCommandError({
+                  operation: "stop audio recorder",
+                  message: unknownErrorMessage(error),
+                }),
+            }).pipe(
+              Effect.catch((error) =>
+                Effect.logWarning("Audio recorder stop failed", error),
+              ),
+            );
+          }
+          yield* Effect.tryPromise({
+            try: () =>
+              setAudioModeAsync({
+                allowsRecording: false,
+                playsInSilentMode: true,
+              }),
+            catch: (error) =>
+              new NativeCommandError({
+                operation: "restore playback audio mode",
+                message: unknownErrorMessage(error),
+              }),
+          }).pipe(
+            Effect.catch((error) =>
+              Effect.logWarning("Could not restore playback audio mode", error),
+            ),
+          );
+          const uri = recorder.uri;
+          return commit && uri && durationMs > 300 ? { uri, durationMs } : null;
+        }),
+        {
+          onSuccess: (recording) => {
+            if (recording) onComplete(recording);
+            else onCancel();
+          },
+          onFailure: () => onCancel("Couldn't finish recording."),
+          onDefect: () => onCancel("Couldn't finish recording."),
+        },
+      );
     },
-    [recorder, onComplete, onCancel]
+    [recorder, onComplete, onCancel, run],
   );
 
   useEffect(() => {
-    if (failed) void settle(false).then(() => undefined);
+    if (failed) settle(false);
     // settle is stable enough; failure handling should not re-fire on rerenders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [failed]);
+
+  useEffect(() => {
+    if (recorderState.durationMillis > 0) {
+      latestDurationMsRef.current = recorderState.durationMillis;
+    }
+    if (recorderState.isRecording) {
+      wasRecordingRef.current = true;
+      return;
+    }
+    if (startedRef.current && wasRecordingRef.current) settle(true);
+  }, [recorderState.durationMillis, recorderState.isRecording, settle]);
 
   const meterFraction =
     recorderState.metering != null
@@ -130,16 +235,20 @@ export function MemoRecorderPanel({ onComplete, onCancel }: Props) {
           <View style={{ flex: 1 - meterFraction }} />
         </View>
         <Pressable
-          onPress={() => void settle(false)}
+          onPress={() => settle(false)}
           accessibilityRole="button"
           accessibilityLabel="Discard recording"
           hitSlop={6}
           style={styles.cancelButton}
         >
-          <MaterialCommunityIcons name="close" size={20} color={c.inkSecondary} />
+          <MaterialCommunityIcons
+            name="close"
+            size={20}
+            color={c.inkSecondary}
+          />
         </Pressable>
         <Pressable
-          onPress={() => void settle(true)}
+          onPress={() => settle(true)}
           accessibilityRole="button"
           accessibilityLabel="Finish recording"
           hitSlop={6}
@@ -219,5 +328,5 @@ const themed = makeThemedStyles((c) =>
       justifyContent: "center",
       backgroundColor: c.dangerSolid,
     },
-  })
+  }),
 );

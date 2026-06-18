@@ -14,7 +14,12 @@ import {
   Text,
   View,
 } from "react-native";
+import * as Effect from "effect/Effect";
 
+import { authCommand } from "../effect/commands";
+import { AuthCommandError, operationalErrorMessage } from "../effect/errors";
+import { runMobileEffect, useMobileEffectRunner } from "../effect/react";
+import { coolBrowser, warmBrowser } from "../lib/nativeCommands";
 import { makeThemedStyles, serif, useTheme } from "../lib/theme";
 import { showError } from "../lib/toast";
 
@@ -40,45 +45,63 @@ export function SignInScreen() {
   const { startSSOFlow } = useSSO();
   const { scheme, c } = useTheme();
   const styles = themed[scheme];
+  const run = useMobileEffectRunner();
   const [busy, setBusy] = useState<Provider["strategy"] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Warm up the in-app browser so the first tap feels instant.
   useEffect(() => {
-    void WebBrowser.warmUpAsync();
+    const cancelWarmup = run(warmBrowser);
     return () => {
-      void WebBrowser.coolDownAsync();
+      cancelWarmup();
+      runMobileEffect(coolBrowser);
     };
-  }, []);
+  }, [run]);
 
   const signInWith = useCallback(
-    async (strategy: Provider["strategy"]) => {
+    (strategy: Provider["strategy"]) => {
       setBusy(strategy);
       setError(null);
-      try {
-        const { createdSessionId, setActive, authSessionResult } =
-          await startSSOFlow({
-            strategy,
-            redirectUrl: AuthSession.makeRedirectUri(),
+      run(
+        Effect.gen(function* () {
+          const result = yield* authCommand("start sign-in", () =>
+            startSSOFlow({
+              strategy,
+              redirectUrl: AuthSession.makeRedirectUri(),
+            }),
+          );
+          const { createdSessionId, setActive } = result;
+          if (createdSessionId && setActive) {
+            yield* authCommand("activate session", () =>
+              setActive({ session: createdSessionId }),
+            );
+            return;
+          }
+          if (result.authSessionResult?.type === "cancel") return;
+          return yield* new AuthCommandError({
+            operation: "complete sign-in",
+            message:
+              "Sign-in didn't complete. If this account is new, try again or use another provider.",
           });
-        if (createdSessionId && setActive) {
-          await setActive({ session: createdSessionId });
-          return; // useConvexAuth flips and the gate swaps screens.
-        }
-        if (authSessionResult?.type === "cancel") return;
-        const message =
-          "Sign-in didn't complete. If this account is new, try again or use another provider.";
-        setError(message);
-        showError(message);
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        setError(message);
-        showError(message);
-      } finally {
-        setBusy(null);
-      }
+        }),
+        {
+          onSuccess: () => setBusy(null),
+          onFailure: (failure) => {
+            const message = operationalErrorMessage(failure);
+            setError(message);
+            setBusy(null);
+            showError(message);
+          },
+          onDefect: (failure) => {
+            const message = operationalErrorMessage(failure);
+            setError(message);
+            setBusy(null);
+            showError(message);
+          },
+        },
+      );
     },
-    [startSSOFlow]
+    [run, startSSOFlow],
   );
 
   return (
@@ -99,7 +122,7 @@ export function SignInScreen() {
             }
             disabled={busy !== null}
             accessibilityRole="button"
-            onPress={() => void signInWith(provider.strategy)}
+            onPress={() => signInWith(provider.strategy)}
           >
             <GlassSurface
               isInteractive
@@ -201,5 +224,5 @@ const themed = makeThemedStyles((c) =>
       textAlign: "center",
       marginTop: 8,
     },
-  })
+  }),
 );

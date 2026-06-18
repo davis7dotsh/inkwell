@@ -1,18 +1,23 @@
 import type { Block, Span } from "@inkwell/content";
 import { Image } from "expo-image";
-import * as WebBrowser from "expo-web-browser";
 import React, { memo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
+import { operationalErrorMessage } from "../effect/errors";
+import { useMobileEffectRunner } from "../effect/react";
+import { openBrowser } from "../lib/nativeCommands";
 import { makeThemedStyles, mono, serif, useTheme } from "../lib/theme";
+import { showError } from "../lib/toast";
 
 function SpanText({ spans }: { spans: Span[] }) {
   const { scheme } = useTheme();
   const styles = themed[scheme];
+  const run = useMobileEffectRunner();
   return (
     <>
       {spans.map((span, i) => {
-        const isLink = !!span.href;
+        const href = span.href;
+        const isLink = !!href;
         return (
           <Text
             key={i}
@@ -24,7 +29,13 @@ function SpanText({ spans }: { spans: Span[] }) {
             ]}
             onPress={
               isLink
-                ? () => WebBrowser.openBrowserAsync(span.href!).catch(() => {})
+                ? () =>
+                    run(openBrowser(href), {
+                      onFailure: (error) =>
+                        showError(
+                          `Couldn't open link: ${operationalErrorMessage(error)}`,
+                        ),
+                    })
                 : undefined
             }
           >
@@ -56,7 +67,7 @@ function ArticleImage({
   const { scheme } = useTheme();
   const styles = themed[scheme];
   const [aspect, setAspect] = useState(
-    width && height ? width / height : 16 / 9
+    width && height ? width / height : 16 / 9,
   );
   const [naturalWidth, setNaturalWidth] = useState<number | undefined>(width);
   const renderWidth = Math.min(naturalWidth ?? columnWidth, columnWidth);
@@ -86,7 +97,13 @@ function ArticleImage({
   );
 }
 
-function BlockView({ block, contentWidth }: { block: Block; contentWidth: number }) {
+function BlockView({
+  block,
+  contentWidth,
+}: {
+  block: Block;
+  contentWidth: number;
+}) {
   const { scheme } = useTheme();
   const styles = themed[scheme];
   switch (block.type) {
@@ -155,7 +172,10 @@ type Props = {
   /** Rendered width of the content column (px) — images size against it. */
   contentWidth: number;
   /** Reports each top-level block's layout relative to the content container. */
-  onBlockLayout?: (index: number, layout: { y: number; height: number }) => void;
+  onBlockLayout?: (
+    index: number,
+    layout: { y: number; height: number },
+  ) => void;
 };
 
 /**
@@ -269,7 +289,7 @@ const themed = makeThemedStyles((c) =>
       height: StyleSheet.hairlineWidth,
       backgroundColor: c.hairline,
     },
-  })
+  }),
 );
 
 const styles_h = StyleSheet.create({

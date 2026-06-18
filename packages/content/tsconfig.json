@@ -1,12 +1,10 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "strict": true,
-    "noEmit": true,
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2022"],
-    "skipLibCheck": true
+    "lib": ["ES2022"]
   },
   "include": ["src", "test"]
 }

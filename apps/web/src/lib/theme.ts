@@ -98,7 +98,7 @@ const NIGHT_INK: Record<string, string> = {
 
 /** Render-time color for a stored annotation ink. */
 export function displayInkColor(color: string, isDark: boolean): string {
-  return isDark ? NIGHT_INK[color] ?? color : color;
+  return isDark ? (NIGHT_INK[color] ?? color) : color;
 }
 
 /** Wider desktop reading column; annotations scale from their saved width. */

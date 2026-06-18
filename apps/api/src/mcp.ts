@@ -17,41 +17,40 @@ import {
   resolveAnnotations,
   truncate,
 } from "@inkwell/content";
-import type {
-  Annotations,
-  Block,
-  BoxAnnotation,
-  NoteAnnotation,
-  ResolvedAnnotation,
-  Stroke,
-  VoiceMemoAnnotation,
-} from "@inkwell/content";
+import type { Annotations, ResolvedAnnotation } from "@inkwell/content";
+import {
+  BlockSchema,
+  BoxAnnotationSchema,
+  NoteAnnotationSchema,
+  StrokeSchema,
+  VoiceMemoAnnotationSchema,
+  decodeTolerantJsonArray,
+} from "@inkwell/content/schema";
+import { Cause, Effect, Option } from "effect";
 import { z } from "zod";
 
-import type { ConvexService } from "./convexService";
-import { processArticle } from "./pipeline";
-import type { PipelineEnv } from "./pipeline";
+import { ConvexService } from "./convexService";
+import { ToolOperationError, errorMessage } from "./errors";
+import { processArticleEffect } from "./pipeline";
+import {
+  runRequestEffectTotal,
+  type RequestLayer,
+  type RequestServices,
+} from "./requestContext";
+import { CurrentUser } from "./services";
 import { kindOf, normalizeUrl } from "./url";
 
 // Clients truncate tool results (Claude Code around ~25k tokens); cap the
 // article body well under that and say so, rather than truncating silently.
 const MAX_ARTICLE_CHARS = 80_000;
 
+const parseJsonArray = <T>(json: string, itemSchema: z.ZodType<T>): T[] =>
+  Option.getOrElse(decodeTolerantJsonArray(json, itemSchema), () => []);
+
 const errorResult = (message: string): CallToolResult => ({
   content: [{ type: "text", text: message }],
   isError: true,
 });
-
-/** JSON column → typed array; annotation rows always hold valid JSON, but
- * never let a corrupt row take the whole tool down. */
-function parseJsonArray<T>(json: string): T[] {
-  try {
-    const parsed = JSON.parse(json);
-    return Array.isArray(parsed) ? (parsed as T[]) : [];
-  } catch {
-    return [];
-  }
-}
 
 const KIND_LABEL: Record<ResolvedAnnotation["type"], string> = {
   typed_note: "📝 note",
@@ -66,7 +65,7 @@ function renderNotesText(
   title: string,
   url: string,
   annotations: ResolvedAnnotation[],
-  anchored: boolean
+  anchored: boolean,
 ): string {
   const lines = [`Annotations on "${title}" (${url}):`];
   if (annotations.length === 0) {
@@ -80,28 +79,26 @@ function renderNotesText(
     if (a.note) parts.push(`: "${truncate(a.note, 200)}"`);
     else if (a.type === "voice") parts.push(": (no transcript)");
     if (a.selectedText) parts.push(` → "${truncate(a.selectedText, 200)}"`);
-    else if (a.nearbyText) parts.push(` — near: "${truncate(a.nearbyText, 160)}"`);
+    else if (a.nearbyText)
+      parts.push(` — near: "${truncate(a.nearbyText, 160)}"`);
     lines.push(parts.join(""));
   }
   if (!anchored) {
     lines.push(
       "",
       "(Anchor text unavailable — these annotations predate layout capture. " +
-        "Open the article in the reader and re-save to anchor them to text.)"
+        "Open the article in the reader and re-save to anchor them to text.)",
     );
   }
   return lines.join("\n");
 }
 
-/** The slice of ExecutionContext the tools need (structural, fake-able). */
-export type WaitUntil = { waitUntil(promise: Promise<unknown>): void };
+export type McpRequestScope = {
+  readonly layer: RequestLayer;
+  readonly waitUntil: (promise: Promise<unknown>) => void;
+};
 
-export function buildInkwellMcp(
-  userId: string,
-  env: PipelineEnv,
-  executionCtx: WaitUntil,
-  convex: ConvexService
-): McpServer {
+export function buildInkwellMcp(scope: McpRequestScope): McpServer {
   const server = new McpServer(
     { name: "inkwell", version: "0.1.0" },
     {
@@ -123,8 +120,15 @@ export function buildInkwellMcp(
         "HTTP, not an MCP tool, because file bytes don't belong in tool",
         "arguments.",
       ].join(" "),
-    }
+    },
   );
+
+  const runTool = <A, E>(
+    program: Effect.Effect<A, E, RequestServices>,
+  ): Promise<A | CallToolResult> =>
+    runRequestEffectTotal(program, scope.layer, (cause) =>
+      Effect.succeed(errorResult(errorMessage(Cause.squash(cause)))),
+    );
 
   server.registerTool(
     "save_article",
@@ -145,44 +149,61 @@ export function buildInkwellMcp(
       },
       annotations: { destructiveHint: false, openWorldHint: true },
     },
-    async ({ url: rawUrl }) => {
-      const url = normalizeUrl(rawUrl);
-      if (!url) return errorResult(`Not a valid http(s) URL: ${rawUrl}`);
+    ({ url: rawUrl }) => {
+      const program = Effect.gen(function* () {
+        const url = normalizeUrl(rawUrl);
+        if (!url) {
+          return yield* new ToolOperationError({
+            message: `Not a valid http(s) URL: ${rawUrl}`,
+          });
+        }
+        const { userId } = yield* CurrentUser;
+        const convex = yield* ConvexService;
+        const { articleId } = yield* convex.createPending({
+          userId,
+          url: url.toString(),
+          kind: kindOf(url),
+          title: url.toString(),
+          savedAt: Date.now(),
+        });
+        const outcome = yield* processArticleEffect({
+          articleId,
+          userId,
+          url: url.toString(),
+        });
 
-      const { articleId } = await convex.createPending({
-        userId,
-        url: url.toString(),
-        kind: kindOf(url),
-        title: url.toString(), // placeholder until the scrape completes
-        savedAt: Date.now(),
+        const structuredContent =
+          outcome.status === "ready"
+            ? {
+                articleId,
+                status: outcome.status,
+                title: outcome.title,
+              }
+            : {
+                articleId,
+                status: outcome.status,
+                error: outcome.error,
+              };
+        const text =
+          outcome.status === "ready"
+            ? `Saved "${outcome.title}" (article id: ${articleId}).`
+            : `Save failed: ${outcome.error} (article id: ${articleId} — ` +
+              `retry by saving the same URL again).`;
+        return {
+          content: [{ type: "text" as const, text }],
+          structuredContent,
+        };
       });
-      const pipeline = processArticle({
-        fetchImpl: fetch,
-        env,
-        articleId,
-        userId,
-        url: url.toString(),
-        convex,
-      });
-      // Backstop: if the client disconnects mid-save (timeout, ctrl-C), the
-      // runtime would cancel this invocation and strand the row in pending —
-      // waitUntil keeps the pipeline (and its complete/fail write) running.
-      // Note waitUntil only extends ~30s past a disconnect; if that ever
-      // bites, the full fix is a stale-pending sweep in Convex.
-      executionCtx.waitUntil(pipeline.catch(() => undefined));
-      const outcome = await pipeline;
-
-      const structuredContent =
-        outcome.status === "ready"
-          ? { articleId, status: outcome.status, title: outcome.title }
-          : { articleId, status: outcome.status, error: outcome.error };
-      const text =
-        outcome.status === "ready"
-          ? `Saved "${outcome.title}" (article id: ${articleId}).`
-          : `Save failed: ${outcome.error} (article id: ${articleId} — ` +
-            `retry by saving the same URL again).`;
-      return { content: [{ type: "text", text }], structuredContent };
-    }
+      // Register the exact same, total Promise that the MCP adapter awaits.
+      // There is one Effect execution and waitUntil can never observe a
+      // rejection because runTool maps every cause to a tool error result.
+      // This remains best-effort: Cloudflare's post-disconnect window can be
+      // shorter than Firecrawl's timeout, and durable execution would require
+      // a separately approved Queue or Workflow.
+      const promise = runTool(program);
+      scope.waitUntil(promise);
+      return promise;
+    },
   );
 
   server.registerTool(
@@ -209,7 +230,7 @@ export function buildInkwellMcp(
           .array(z.string())
           .optional()
           .describe(
-            "Only articles tagged with ANY of these tag ids (from list_tags)"
+            "Only articles tagged with ANY of these tag ids (from list_tags)",
           ),
         limit: z.number().int().min(1).max(200).optional(),
       },
@@ -229,39 +250,49 @@ export function buildInkwellMcp(
             savedAt: z.string(),
             pinned: z.boolean(),
             tags: z.array(z.string()),
-          })
+          }),
         ),
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ readStatus, status, tagIds, limit }) => {
-      const rows = await convex.listArticles({
-        userId,
-        readStatus,
-        status,
-        tagIds,
-        limit,
-      });
-      const articles = rows.map((row) => ({
-        id: row.id,
-        title: row.title,
-        url: row.url,
-        kind: row.kind,
-        status: row.status,
-        error: row.error,
-        readStatus: row.readStatus,
-        byline: row.byline,
-        siteName: row.siteName,
-        excerpt: row.excerpt,
-        savedAt: new Date(row.savedAt).toISOString(),
-        pinned: row.pinned,
-        tags: row.tags,
-      }));
-      return {
-        content: [{ type: "text", text: JSON.stringify({ articles }) }],
-        structuredContent: { articles },
-      };
-    }
+    ({ readStatus, status, tagIds, limit }) =>
+      runTool(
+        Effect.gen(function* () {
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          const rows = yield* convex.listArticles({
+            userId,
+            readStatus,
+            status,
+            tagIds,
+            limit,
+          });
+          const articles = rows.map((row) => ({
+            id: row.id,
+            title: row.title,
+            url: row.url,
+            kind: row.kind,
+            status: row.status,
+            error: row.error,
+            readStatus: row.readStatus,
+            byline: row.byline,
+            siteName: row.siteName,
+            excerpt: row.excerpt,
+            savedAt: new Date(row.savedAt).toISOString(),
+            pinned: row.pinned,
+            tags: Array.from(row.tags),
+          }));
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ articles }),
+              },
+            ],
+            structuredContent: { articles },
+          };
+        }),
+      ),
   );
 
   server.registerTool(
@@ -281,14 +312,16 @@ export function buildInkwellMcp(
           .optional()
           .describe(
             "Section id from a previous get_article response; returns just " +
-              "that section and its subsections."
+              "that section and its subsections.",
           ),
         offset: z
           .number()
           .int()
           .min(0)
           .optional()
-          .describe("Character offset into the body to start from (default 0)."),
+          .describe(
+            "Character offset into the body to start from (default 0).",
+          ),
         limit: z
           .number()
           .int()
@@ -296,127 +329,146 @@ export function buildInkwellMcp(
           .max(MAX_ARTICLE_CHARS)
           .optional()
           .describe(
-            `Max characters to return (default and ceiling ${MAX_ARTICLE_CHARS}).`
+            `Max characters to return (default and ceiling ${MAX_ARTICLE_CHARS}).`,
           ),
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ articleId, section, offset, limit }) => {
-      // Section mode and char paging are alternative retrieval modes; mixing
-      // them silently drops the paging args, so reject it outright.
-      if (section !== undefined && (offset !== undefined || limit !== undefined)) {
-        return errorResult(
-          "Pass either `section` or `offset`/`limit`, not both."
-        );
-      }
-      const article = await convex.getArticle({ userId, id: articleId });
-      if (!article) return errorResult(`No article with id ${articleId}.`);
-      if (article.status !== "ready" || !article.blocksJson) {
-        return errorResult(
-          article.status === "failed"
-            ? `Article "${article.title}" failed to process: ${article.error ?? "unknown error"}.`
-            : `Article "${article.title}" is still processing — try again shortly.`
-        );
-      }
+    ({ articleId, section, offset, limit }) =>
+      runTool(
+        Effect.gen(function* () {
+          // Section mode and char paging are alternative retrieval modes; mixing
+          // them silently drops the paging args, so reject it outright.
+          if (
+            section !== undefined &&
+            (offset !== undefined || limit !== undefined)
+          ) {
+            return yield* new ToolOperationError({
+              message: "Pass either `section` or `offset`/`limit`, not both.",
+            });
+          }
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          const article = yield* convex.getArticle({ userId, id: articleId });
+          if (!article) {
+            return yield* new ToolOperationError({
+              message: `No article with id ${articleId}.`,
+            });
+          }
+          if (article.status !== "ready" || !article.blocksJson) {
+            return yield* new ToolOperationError({
+              message:
+                article.status === "failed"
+                  ? `Article "${article.title}" failed to process: ${article.error ?? "unknown error"}.`
+                  : `Article "${article.title}" is still processing — try again shortly.`,
+            });
+          }
 
-      // Recover heading semantics (numbered PDFs) so section ids and slicing
-      // line up with what the reader renders.
-      const blocks = inferDocumentHeadings(
-        parseJsonArray<Block>(article.blocksJson)
-      );
-      const outline = buildDocumentOutline(blocks);
-      const header = [
-        `# ${article.title}`,
-        article.byline ? `By: ${article.byline}` : undefined,
-        article.siteName ? `Site: ${article.siteName}` : undefined,
-        `Source: ${article.url}`,
-        `Saved: ${new Date(article.savedAt).toISOString()}`,
-        `Read status: ${article.readStatus}`,
-        `Pinned: ${article.pinned ? "yes" : "no"}`,
-        article.tags.length > 0
-          ? `Tags: ${article.tags.join(", ")}`
-          : undefined,
-      ]
-        .filter(Boolean)
-        .join("\n");
-
-      // Section mode: just the requested heading down to the next heading of
-      // the same or shallower depth (i.e. the section plus its subsections).
-      if (section !== undefined) {
-        const index = outline.findIndex((entry) => entry.id === section);
-        if (index === -1) {
-          const ids = outline.slice(0, 50).map((e) => `- ${e.id}`);
-          return errorResult(
-            ids.length
-              ? `No section "${section}" in "${article.title}". Sections:\n${ids.join("\n")}`
-              : `Article "${article.title}" has no addressable sections.`
+          // Recover heading semantics (numbered PDFs) so section ids and slicing
+          // line up with what the reader renders.
+          const blocks = inferDocumentHeadings(
+            parseJsonArray(article.blocksJson, BlockSchema),
           );
-        }
-        const entry = outline[index];
-        const next = outline
-          .slice(index + 1)
-          .find((e) => e.depth <= entry.depth);
-        const end = next ? next.blockIndex : blocks.length;
-        let body = blocksToMarkdown(blocks.slice(entry.blockIndex, end));
-        let note = "";
-        if (body.length > MAX_ARTICLE_CHARS) {
-          body = body.slice(0, MAX_ARTICLE_CHARS);
-          note = `\n\n[Section truncated at ${MAX_ARTICLE_CHARS} characters.]`;
-        }
-        return {
-          content: [
-            {
-              type: "text",
-              text: `${header}\nSection: ${entry.title}\n\n---\n\n${body}${note}`,
-            },
-          ],
-        };
-      }
+          const outline = buildDocumentOutline(blocks);
+          const header = [
+            `# ${article.title}`,
+            article.byline ? `By: ${article.byline}` : undefined,
+            article.siteName ? `Site: ${article.siteName}` : undefined,
+            `Source: ${article.url}`,
+            `Saved: ${new Date(article.savedAt).toISOString()}`,
+            `Read status: ${article.readStatus}`,
+            `Pinned: ${article.pinned ? "yes" : "no"}`,
+            article.tags.length > 0
+              ? `Tags: ${article.tags.join(", ")}`
+              : undefined,
+          ]
+            .filter(Boolean)
+            .join("\n");
 
-      const markdown = blocksToMarkdown(blocks);
-      const cap = limit ?? MAX_ARTICLE_CHARS;
-      const start = offset ?? 0;
-      const slice = markdown.slice(start, start + cap);
-      const end = start + slice.length;
-      const footer =
-        end < markdown.length
-          ? `\n\n[${markdown.length} characters total; returned ${start}–${end}. ` +
-            `Continue with offset=${end}, or pass section="<id>" to jump.]`
-          : "";
+          // Section mode: just the requested heading down to the next heading of
+          // the same or shallower depth (i.e. the section plus its subsections).
+          if (section !== undefined) {
+            const index = outline.findIndex((entry) => entry.id === section);
+            if (index === -1) {
+              const ids = outline.slice(0, 50).map((e) => `- ${e.id}`);
+              return yield* new ToolOperationError({
+                message: ids.length
+                  ? `No section "${section}" in "${article.title}". Sections:\n${ids.join("\n")}`
+                  : `Article "${article.title}" has no addressable sections.`,
+              });
+            }
+            const entry = outline[index];
+            const next = outline
+              .slice(index + 1)
+              .find((e) => e.depth <= entry.depth);
+            const end = next ? next.blockIndex : blocks.length;
+            let body = blocksToMarkdown(blocks.slice(entry.blockIndex, end));
+            let note = "";
+            if (body.length > MAX_ARTICLE_CHARS) {
+              body = body.slice(0, MAX_ARTICLE_CHARS);
+              note = `\n\n[Section truncated at ${MAX_ARTICLE_CHARS} characters.]`;
+            }
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `${header}\nSection: ${entry.title}\n\n---\n\n${body}${note}`,
+                },
+              ],
+            };
+          }
 
-      // First page carries the metadata header and the section map; later
-      // pages stay lean so the agent isn't re-billed for navigation chrome.
-      if (start === 0) {
-        const SHOWN_SECTIONS = 100;
-        const sectionLines = outline
-          .slice(0, SHOWN_SECTIONS)
-          .map((e) => `${"  ".repeat(e.depth)}- ${e.id} — ${truncate(e.title, 80)}`);
-        if (outline.length > SHOWN_SECTIONS) {
-          sectionLines.push(
-            `- … ${outline.length - SHOWN_SECTIONS} more sections not shown`
-          );
-        }
-        const sections =
-          outline.length > 0
-            ? "\n" + ["", "## Sections", ...sectionLines].join("\n")
-            : "";
-        return {
-          content: [
-            { type: "text", text: `${header}${sections}\n\n---\n\n${slice}${footer}` },
-          ],
-        };
-      }
-      return {
-        content: [
-          {
-            type: "text",
-            text:
-              `# ${article.title} (continued, characters ${start}–${end})` +
-              `\n\n---\n\n${slice}${footer}`,
-          },
-        ],
-      };
-    }
+          const markdown = blocksToMarkdown(blocks);
+          const cap = limit ?? MAX_ARTICLE_CHARS;
+          const start = offset ?? 0;
+          const slice = markdown.slice(start, start + cap);
+          const end = start + slice.length;
+          const footer =
+            end < markdown.length
+              ? `\n\n[${markdown.length} characters total; returned ${start}–${end}. ` +
+                `Continue with offset=${end}, or pass section="<id>" to jump.]`
+              : "";
+
+          // First page carries the metadata header and the section map; later
+          // pages stay lean so the agent isn't re-billed for navigation chrome.
+          if (start === 0) {
+            const SHOWN_SECTIONS = 100;
+            const sectionLines = outline
+              .slice(0, SHOWN_SECTIONS)
+              .map(
+                (e) =>
+                  `${"  ".repeat(e.depth)}- ${e.id} — ${truncate(e.title, 80)}`,
+              );
+            if (outline.length > SHOWN_SECTIONS) {
+              sectionLines.push(
+                `- … ${outline.length - SHOWN_SECTIONS} more sections not shown`,
+              );
+            }
+            const sections =
+              outline.length > 0
+                ? "\n" + ["", "## Sections", ...sectionLines].join("\n")
+                : "";
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `${header}${sections}\n\n---\n\n${slice}${footer}`,
+                },
+              ],
+            };
+          }
+          return {
+            content: [
+              {
+                type: "text",
+                text:
+                  `# ${article.title} (continued, characters ${start}–${end})` +
+                  `\n\n---\n\n${slice}${footer}`,
+              },
+            ],
+          };
+        }),
+      ),
   );
 
   server.registerTool(
@@ -457,7 +509,7 @@ export function buildInkwellMcp(
                 h: z.number(),
               })
               .optional(),
-          })
+          }),
         ),
         summary: z.object({
           typedNotes: z.number(),
@@ -470,81 +522,96 @@ export function buildInkwellMcp(
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ articleId }) => {
-      const result = await convex.getAnnotations({ userId, articleId });
-      if (!result) return errorResult(`No article with id ${articleId}.`);
+    ({ articleId }) =>
+      runTool(
+        Effect.gen(function* () {
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          const result = yield* convex.getAnnotations({ userId, articleId });
+          if (!result) {
+            return yield* new ToolOperationError({
+              message: `No article with id ${articleId}.`,
+            });
+          }
 
-      const row = result.annotations;
-      const strokes = row ? parseJsonArray<Stroke>(row.strokesJson) : [];
-      const boxes = row ? parseJsonArray<BoxAnnotation>(row.boxesJson) : [];
-      const notes = row ? parseJsonArray<NoteAnnotation>(row.notesJson) : [];
-      const memos = row
-        ? parseJsonArray<VoiceMemoAnnotation>(row.memosJson)
-        : [];
+          const row = result.annotations;
+          const strokes = row
+            ? parseJsonArray(row.strokesJson, StrokeSchema)
+            : [];
+          const boxes = row
+            ? parseJsonArray(row.boxesJson, BoxAnnotationSchema)
+            : [];
+          const notes = row
+            ? parseJsonArray(row.notesJson, NoteAnnotationSchema)
+            : [];
+          const memos = row
+            ? parseJsonArray(row.memosJson, VoiceMemoAnnotationSchema)
+            : [];
 
-      // Resolve pixel anchors to text using the persisted layout snapshot. With
-      // no snapshot the resolver still returns geometry + note text (anchored
-      // is then false), so the output shape is stable either way.
-      const snapshot = row ? parseLayoutSnapshot(row.layoutJson) : null;
-      const blocks = result.blocksJson
-        ? parseJsonArray<Block>(result.blocksJson)
-        : [];
-      const anchored = Boolean(snapshot && blocks.length > 0);
+          // Resolve pixel anchors to text using the persisted layout snapshot. With
+          // no snapshot the resolver still returns geometry + note text (anchored
+          // is then false), so the output shape is stable either way.
+          const snapshot = row ? parseLayoutSnapshot(row.layoutJson) : null;
+          const blocks = result.blocksJson
+            ? parseJsonArray(result.blocksJson, BlockSchema)
+            : [];
+          const anchored = Boolean(snapshot && blocks.length > 0);
 
-      let annotations: ResolvedAnnotation[] = [];
-      if (row) {
-        const set: Annotations = {
-          contentWidth: row.contentWidth,
-          strokes,
-          boxes,
-          notes,
-          memos,
-        };
-        const scale =
-          snapshot && row.contentWidth > 0
-            ? snapshot.width / row.contentWidth
-            : 1;
-        annotations = resolveAnnotations(
-          blocks,
-          set,
-          snapshot?.layouts ?? new Map(),
-          scale
-        );
-      }
+          let annotations: ResolvedAnnotation[] = [];
+          if (row) {
+            const set: Annotations = {
+              contentWidth: row.contentWidth,
+              strokes,
+              boxes,
+              notes,
+              memos,
+            };
+            const scale =
+              snapshot && row.contentWidth > 0
+                ? snapshot.width / row.contentWidth
+                : 1;
+            annotations = resolveAnnotations(
+              blocks,
+              set,
+              snapshot?.layouts ?? new Map(),
+              scale,
+            );
+          }
 
-      // Summary mirrors what's returned, so counts and the array never diverge.
-      const countOf = (type: ResolvedAnnotation["type"]) =>
-        annotations.filter((a) => a.type === type).length;
-      const structuredContent = {
-        articleTitle: result.articleTitle,
-        articleUrl: result.articleUrl,
-        anchored,
-        annotations,
-        summary: {
-          typedNotes: countOf("typed_note"),
-          voiceMemos: countOf("voice"),
-          boxes: countOf("box"),
-          highlightStrokes: countOf("highlight"),
-          penStrokes: countOf("pen"),
-        },
-        updatedAt: row ? new Date(row.updatedAt).toISOString() : undefined,
-      };
+          // Summary mirrors what's returned, so counts and the array never diverge.
+          const countOf = (type: ResolvedAnnotation["type"]) =>
+            annotations.filter((a) => a.type === type).length;
+          const structuredContent = {
+            articleTitle: result.articleTitle,
+            articleUrl: result.articleUrl,
+            anchored,
+            annotations,
+            summary: {
+              typedNotes: countOf("typed_note"),
+              voiceMemos: countOf("voice"),
+              boxes: countOf("box"),
+              highlightStrokes: countOf("highlight"),
+              penStrokes: countOf("pen"),
+            },
+            updatedAt: row ? new Date(row.updatedAt).toISOString() : undefined,
+          };
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: renderNotesText(
-              result.articleTitle,
-              result.articleUrl,
-              annotations,
-              anchored
-            ),
-          },
-        ],
-        structuredContent,
-      };
-    }
+          return {
+            content: [
+              {
+                type: "text",
+                text: renderNotesText(
+                  result.articleTitle,
+                  result.articleUrl,
+                  annotations,
+                  anchored,
+                ),
+              },
+            ],
+            structuredContent,
+          };
+        }),
+      ),
   );
 
   server.registerTool(
@@ -563,24 +630,34 @@ export function buildInkwellMcp(
             name: z.string(),
             color: z.string().optional(),
             createdAt: z.string(),
-          })
+          }),
         ),
       },
       annotations: { readOnlyHint: true },
     },
-    async () => {
-      const rows = await convex.listTags({ userId });
-      const tags = rows.map((tag) => ({
-        id: tag.id,
-        name: tag.name,
-        color: tag.color,
-        createdAt: new Date(tag.createdAt).toISOString(),
-      }));
-      return {
-        content: [{ type: "text", text: JSON.stringify({ tags }) }],
-        structuredContent: { tags },
-      };
-    }
+    () =>
+      runTool(
+        Effect.gen(function* () {
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          const rows = yield* convex.listTags({ userId });
+          const tags = rows.map((tag) => ({
+            id: tag.id,
+            name: tag.name,
+            color: tag.color,
+            createdAt: new Date(tag.createdAt).toISOString(),
+          }));
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ tags }),
+              },
+            ],
+            structuredContent: { tags },
+          };
+        }),
+      ),
   );
 
   server.registerTool(
@@ -605,16 +682,28 @@ export function buildInkwellMcp(
       },
       annotations: { destructiveHint: false },
     },
-    async ({ name, color }) => {
-      const tag = await convex.createTag({ userId, name, color });
-      const structuredContent = { id: tag.id, name: tag.name, color: tag.color };
-      return {
-        content: [
-          { type: "text", text: `Tag "${tag.name}" (id: ${tag.id}).` },
-        ],
-        structuredContent,
-      };
-    }
+    ({ name, color }) =>
+      runTool(
+        Effect.gen(function* () {
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          const tag = yield* convex.createTag({ userId, name, color });
+          const structuredContent = {
+            id: tag.id,
+            name: tag.name,
+            color: tag.color,
+          };
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Tag "${tag.name}" (id: ${tag.id}).`,
+              },
+            ],
+            structuredContent,
+          };
+        }),
+      ),
   );
 
   server.registerTool(
@@ -629,13 +718,23 @@ export function buildInkwellMcp(
       outputSchema: { ok: z.boolean() },
       annotations: { destructiveHint: false },
     },
-    async ({ tagId, name }) => {
-      await convex.renameTag({ userId, tagId, name });
-      return {
-        content: [{ type: "text", text: `Renamed tag ${tagId} to "${name}".` }],
-        structuredContent: { ok: true },
-      };
-    }
+    ({ tagId, name }) =>
+      runTool(
+        Effect.gen(function* () {
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          yield* convex.renameTag({ userId, tagId, name });
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Renamed tag ${tagId} to "${name}".`,
+              },
+            ],
+            structuredContent: { ok: true },
+          };
+        }),
+      ),
   );
 
   server.registerTool(
@@ -651,13 +750,23 @@ export function buildInkwellMcp(
       outputSchema: { ok: z.boolean() },
       annotations: { destructiveHint: true },
     },
-    async ({ tagId }) => {
-      await convex.removeTag({ userId, tagId });
-      return {
-        content: [{ type: "text", text: `Deleted tag ${tagId}.` }],
-        structuredContent: { ok: true },
-      };
-    }
+    ({ tagId }) =>
+      runTool(
+        Effect.gen(function* () {
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          yield* convex.removeTag({ userId, tagId });
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Deleted tag ${tagId}.`,
+              },
+            ],
+            structuredContent: { ok: true },
+          };
+        }),
+      ),
   );
 
   server.registerTool(
@@ -675,18 +784,23 @@ export function buildInkwellMcp(
       outputSchema: { ok: z.boolean() },
       annotations: { destructiveHint: false },
     },
-    async ({ articleId, tagId }) => {
-      await convex.addTagToArticle({ userId, articleId, tagId });
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Added tag ${tagId} to article ${articleId}.`,
-          },
-        ],
-        structuredContent: { ok: true },
-      };
-    }
+    ({ articleId, tagId }) =>
+      runTool(
+        Effect.gen(function* () {
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          yield* convex.addTagToArticle({ userId, articleId, tagId });
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Added tag ${tagId} to article ${articleId}.`,
+              },
+            ],
+            structuredContent: { ok: true },
+          };
+        }),
+      ),
   );
 
   server.registerTool(
@@ -703,18 +817,27 @@ export function buildInkwellMcp(
       outputSchema: { ok: z.boolean() },
       annotations: { destructiveHint: true },
     },
-    async ({ articleId, tagId }) => {
-      await convex.removeTagFromArticle({ userId, articleId, tagId });
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Removed tag ${tagId} from article ${articleId}.`,
-          },
-        ],
-        structuredContent: { ok: true },
-      };
-    }
+    ({ articleId, tagId }) =>
+      runTool(
+        Effect.gen(function* () {
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          yield* convex.removeTagFromArticle({
+            userId,
+            articleId,
+            tagId,
+          });
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Removed tag ${tagId} from article ${articleId}.`,
+              },
+            ],
+            structuredContent: { ok: true },
+          };
+        }),
+      ),
   );
 
   server.registerTool(
@@ -726,25 +849,32 @@ export function buildInkwellMcp(
         "library. Use the id from list_articles.",
       inputSchema: {
         articleId: z.string().describe("Article id from list_articles"),
-        pinned: z
-          .boolean()
-          .describe("true to pin to the top, false to unpin"),
+        pinned: z.boolean().describe("true to pin to the top, false to unpin"),
       },
       outputSchema: { ok: z.boolean() },
       annotations: { destructiveHint: false },
     },
-    async ({ articleId, pinned }) => {
-      await convex.setArticlePinned({ userId, id: articleId, pinned });
-      return {
-        content: [
-          {
-            type: "text",
-            text: `${pinned ? "Pinned" : "Unpinned"} article ${articleId}.`,
-          },
-        ],
-        structuredContent: { ok: true },
-      };
-    }
+    ({ articleId, pinned }) =>
+      runTool(
+        Effect.gen(function* () {
+          const { userId } = yield* CurrentUser;
+          const convex = yield* ConvexService;
+          yield* convex.setArticlePinned({
+            userId,
+            id: articleId,
+            pinned,
+          });
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `${pinned ? "Pinned" : "Unpinned"} article ${articleId}.`,
+              },
+            ],
+            structuredContent: { ok: true },
+          };
+        }),
+      ),
   );
 
   return server;

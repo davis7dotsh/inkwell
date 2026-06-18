@@ -5,13 +5,16 @@
   "scripts": {
     "dev": "convex dev",
     "codegen": "convex codegen",
+    "codegen:check": "if [ -z \"${CONVEX_DEPLOY_KEY:-}\" ]; then echo 'Skipping Convex codegen drift check: CONVEX_DEPLOY_KEY is not available.'; else convex codegen && git diff --exit-code -- convex/_generated && test -z \"$(git ls-files --others --exclude-standard -- convex/_generated)\"; fi",
     "deploy": "convex deploy",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "convex": "^1.40.0"
+    "convex": "^1.40.0",
+    "effect": "4.0.0-beta.84",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "typescript": "~5.9.3"
+    "typescript": "5.9.3"
   }
 }

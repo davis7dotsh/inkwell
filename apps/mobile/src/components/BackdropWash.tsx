@@ -36,10 +36,38 @@ type Row = {
 // Stacked from the corner upward: each stroke a little shorter, a little
 // farther from the edge, and fainter — the pattern dissolves into the paper.
 const ROWS: Row[] = [
-  { path: RIBBON, w: 0.3, aspect: 0.08, lift: 0.035, inset: -0.03, opacity: 0.34 },
-  { path: LINE, w: 0.26, aspect: 0.06, lift: 0.085, inset: -0.01, opacity: 0.24 },
-  { path: RIBBON, w: 0.21, aspect: 0.075, lift: 0.135, inset: 0.015, opacity: 0.16 },
-  { path: LINE, w: 0.16, aspect: 0.055, lift: 0.185, inset: 0.04, opacity: 0.09 },
+  {
+    path: RIBBON,
+    w: 0.3,
+    aspect: 0.08,
+    lift: 0.035,
+    inset: -0.03,
+    opacity: 0.34,
+  },
+  {
+    path: LINE,
+    w: 0.26,
+    aspect: 0.06,
+    lift: 0.085,
+    inset: -0.01,
+    opacity: 0.24,
+  },
+  {
+    path: RIBBON,
+    w: 0.21,
+    aspect: 0.075,
+    lift: 0.135,
+    inset: 0.015,
+    opacity: 0.16,
+  },
+  {
+    path: LINE,
+    w: 0.16,
+    aspect: 0.055,
+    lift: 0.185,
+    inset: 0.04,
+    opacity: 0.09,
+  },
 ];
 
 const TILT = (-8 * Math.PI) / 180;

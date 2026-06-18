@@ -1,19 +1,15 @@
-// Remembers whether an Apple Pencil has ever been used on this device.
-// There is no API to query Pencil pairing — the practical pattern is to
-// observe the first stylus touch and persist the fact. Once known, fingers
-// scroll while the pencil draws; until then, fingers draw.
-import Storage from "expo-sqlite/kv-store";
+import * as Effect from "effect/Effect";
+
+import { MobileKeyValueStore } from "../effect/services";
 
 const KEY = "stylus-seen";
 
-export async function loadStylusSeen(): Promise<boolean> {
-  try {
-    return (await Storage.getItem(KEY)) === "1";
-  } catch {
-    return false;
-  }
-}
+export const loadStylusSeen = Effect.gen(function* () {
+  const storage = yield* MobileKeyValueStore;
+  return (yield* storage.get(KEY)) === "1";
+});
 
-export function persistStylusSeen(): void {
-  Storage.setItem(KEY, "1").catch(() => {});
-}
+export const persistStylusSeen = Effect.gen(function* () {
+  const storage = yield* MobileKeyValueStore;
+  yield* storage.set(KEY, "1");
+});
