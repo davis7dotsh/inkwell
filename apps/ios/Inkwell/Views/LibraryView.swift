@@ -213,6 +213,8 @@ struct LibraryView: View {
                                 .accessibilityIdentifier("clearLibraryFilters")
                         }
                     }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
                 }
             }
         }

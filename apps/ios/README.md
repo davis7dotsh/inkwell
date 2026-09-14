@@ -22,7 +22,7 @@ Use `INKWELL_SIMULATOR_ID` to select a simulator, or `INKWELL_DEVICE_ID` with `p
 
 Debug uses the existing staging Clerk, Convex, and API services. Release uses production. The Debug app has its own orange icon, bundle identifier, and `inkwell-dev://` sign-in callback, so it coexists with the production app, which keeps `inkwell://`.
 
-To connect the simulator to `pnpm api`, copy `Configuration/Local.xcconfig.example` to `Configuration/Local.xcconfig` and rebuild. This ignored override points only simulator builds at `http://localhost:8787`. A physical iPad uses the deployed staging API unless you provide a reachable development address.
+To connect the simulator to `pnpm api`, copy `apps/ios/Configuration/Local.xcconfig.example` to `apps/ios/Configuration/Local.xcconfig` from the repository root and rebuild. This ignored override points only simulator builds at `http://localhost:8787`. A physical iPad uses the deployed staging API unless you provide a reachable development address.
 
 GitHub and Google sign-in open the system authentication browser. The app follows Clerk's native frontend API protocol; device and session credentials stay in Keychain. Existing users may need to sign in once after replacing the React Native app.
 
