@@ -5,6 +5,7 @@ struct LibraryView: View {
     @Bindable var store: InkwellStore
     let authentication: Authentication
     let onLeaveDemo: () -> Void
+    @Environment(\.scenePhase) private var scenePhase
     @State private var search = ""
     @State private var selectedTags: Set<String> = []
     @State private var oldestFirst = false
@@ -143,9 +144,16 @@ struct LibraryView: View {
             } message: { article in Text(article.title) }
             .task {
                 await store.refresh()
+            }
+            .task(id: scenePhase) {
+                guard scenePhase == .active, !store.isDemo else { return }
+                var delay = 30
                 while !Task.isCancelled {
-                    do { try await Task.sleep(for: .seconds(5)) } catch { break }
-                    await store.refresh()
+                    do { try await Task.sleep(for: .seconds(delay)) } catch { break }
+                    guard !Task.isCancelled, scenePhase == .active else { break }
+                    guard !store.isLoading else { continue }
+                    let refreshed = await store.refresh()
+                    delay = refreshed ? 30 : min(delay * 2, 300)
                 }
             }
         }
@@ -188,6 +196,7 @@ struct LibraryView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .refreshable { await store.refresh() }
+        .accessibilityIdentifier("libraryList")
         .overlay {
             if filteredArticles.isEmpty {
                 if store.isLoading && store.articles.isEmpty {
@@ -199,12 +208,14 @@ struct LibraryView: View {
                         Text(search.isEmpty && selectedTags.isEmpty ? "Save an article or import a PDF to begin." : "Try another search or clear your filters.")
                     } actions: {
                         if search.isEmpty && selectedTags.isEmpty { Button("Add article") { showCapture = true } }
-                        else { Button("Clear filters") { search = ""; selectedTags.removeAll() } }
+                        else {
+                            Button("Clear filters") { search = ""; selectedTags.removeAll() }
+                                .accessibilityIdentifier("clearLibraryFilters")
+                        }
                     }
                 }
             }
         }
-        .accessibilityIdentifier("libraryList")
     }
 
     private func articleRow(_ article: Article) -> some View {

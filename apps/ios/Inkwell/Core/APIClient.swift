@@ -33,10 +33,19 @@ final class APIClient {
     let authentication: Authentication
     private let session: URLSession
 
-    init(configuration: AppConfiguration, authentication: Authentication, session: URLSession = .shared) {
+    init(configuration: AppConfiguration, authentication: Authentication, session: URLSession? = nil) {
         self.configuration = configuration
         self.authentication = authentication
-        self.session = session
+        if let session {
+            self.session = session
+        } else {
+            // Authenticated audio belongs only in the account-scoped memo store.
+            // Ignoring cached requests alone still permits response storage.
+            let transport = URLSessionConfiguration.ephemeral
+            transport.urlCache = nil
+            transport.requestCachePolicy = .reloadIgnoringLocalCacheData
+            self.session = URLSession(configuration: transport)
+        }
     }
 
     private struct ConvexRequest: Encodable {

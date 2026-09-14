@@ -16,6 +16,9 @@ struct AppConfiguration: Sendable {
             guard let url = URL(string: string(key)), ["http", "https"].contains(url.scheme ?? ""), url.host != nil else { return nil }
             return url
         }
-        return AppConfiguration(apiBaseURL: url("APIBaseURL"), convexURL: url("ConvexURL"), clerkPublishableKey: string("ClerkPublishableKey"))
+        return AppConfiguration(
+            apiBaseURL: url("APIBaseURL"), convexURL: url("ConvexURL"),
+            clerkPublishableKey: string("ClerkPublishableKey"), callbackScheme: string("InkwellURLScheme")
+        )
     }
 }

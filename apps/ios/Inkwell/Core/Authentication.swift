@@ -73,8 +73,8 @@ final class Authentication {
         needsSecondFactor = false
         defer { isLoading = false }
         do {
-            // Keep the callback already authorized in the deployed Clerk instances:
-            // Expo AuthSession.makeRedirectUri() used the bare custom scheme.
+            // Clerk authorizes the bare custom scheme. Debug has its own scheme
+            // so the two installed app configurations cannot receive each other's callback.
             let redirect = "\(configuration.callbackScheme)://"
             let parameters = ["strategy": provider.strategy, "redirect_url": redirect]
             let created: ClerkReply<ClerkSignIn> = try await request("/v1/client/sign_ins", method: "POST", form: parameters)
@@ -182,7 +182,7 @@ final class Authentication {
         }
         clearCredentials()
         if let remoteFailure {
-            error = "Signed out on this iPad. The server could not be reached to close the remote session: \(remoteFailure.localizedDescription)"
+            error = "Signed out on this device. The server could not be reached to close the remote session: \(remoteFailure.localizedDescription)"
         }
     }
 

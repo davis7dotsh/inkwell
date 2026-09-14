@@ -61,3 +61,12 @@ jobs:
 
       - name: Test native iPad app in Simulator
         run: bash apps/ios/scripts/test.sh
+
+      - name: Preserve native test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ios-test-results
+          path: apps/ios/build/Logs/Test/*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7

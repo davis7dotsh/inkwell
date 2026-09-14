@@ -45,9 +45,22 @@ final class InkwellUITests: XCTestCase {
 
         replaceText(in: search, with: "no matching fixture")
         XCTAssertTrue(app.staticTexts["No matching articles"].waitForExistence(timeout: 3))
-        app.buttons["Clear filters"].tap()
+        // Submit the query so the first tap is not consumed dismissing the
+        // search keyboard on older iPadOS versions.
+        search.typeText("\n")
+        let clearFilters = app.buttons["clearLibraryFilters"]
+        XCTAssertTrue(waitUntil { clearFilters.isHittable })
+        clearFilters.tap()
+        XCTAssertTrue(waitUntil { (search.value as? String) != "no matching fixture" })
         XCTAssertTrue(articleActions(attention).waitForExistence(timeout: 3))
-        if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
+        if app.buttons["Cancel"].exists {
+            app.buttons["Cancel"].tap()
+        } else {
+            // iPadOS 26 keeps search active without exposing a Cancel button.
+            // Leave it before tapping a toolbar menu, which otherwise only
+            // dismisses the search presentation on the first tap.
+            app.staticTexts["demoBanner"].tap()
+        }
 
         selectFilter("Long reads")
         XCTAssertTrue(articleActions(slow).waitForExistence(timeout: 3))
@@ -157,7 +170,7 @@ final class InkwellUITests: XCTestCase {
         openArticle(slow)
         let actions = app.buttons["Article actions"]
         XCTAssertTrue(actions.waitForExistence(timeout: 5))
-        actions.tap()
+        tapToolbarMenu(actions)
         app.buttons["reader-mark-finished"].tap()
         XCTAssertFalse(app.alerts["Couldn't complete the action"].exists)
         goBackToLibrary()
@@ -189,10 +202,21 @@ final class InkwellUITests: XCTestCase {
     }
 
     private func selectFilter(_ label: String) {
-        app.buttons["Filter and sort"].tap()
+        tapToolbarMenu(app.buttons["Filter and sort"])
         let choice = app.buttons[label]
         XCTAssertTrue(choice.waitForExistence(timeout: 3))
         choice.tap()
+    }
+
+    private func tapToolbarMenu(_ menu: XCUIElement) {
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitUntil {
+            menu.isEnabled && !menu.frame.isEmpty && self.app.frame.contains(menu.frame)
+        })
+        // XCTest on iPadOS 18 tries an unsupported AX scroll action for SwiftUI
+        // toolbar menus. Tap the verified on-screen control directly; callers
+        // still assert that the menu opens and its action changes app state.
+        menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
     private func openArticle(_ title: String) {
@@ -220,7 +244,21 @@ final class InkwellUITests: XCTestCase {
             field.tap()
         } else {
             // A populated alert field can put the caret in its middle.
-            field.typeKey("a", modifierFlags: .command)
+            // Use the native edit menu; Command-A depends on the simulator's
+            // hardware-keyboard state and may silently leave the caret alone.
+            field.press(forDuration: 1)
+            let selectAll = app.menuItems["Select All"]
+            XCTAssertTrue(selectAll.waitForExistence(timeout: 3))
+            let selectionFrame = selectAll.frame
+            XCTAssertFalse(selectionFrame.isEmpty)
+            XCTAssertTrue(app.frame.contains(selectionFrame))
+            // Anchor the touch inside the alert's hierarchy. XCTest otherwise
+            // treats the alert as an interruption to its detached edit menu
+            // and automatically dismisses it with Cancel.
+            field.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(
+                dx: selectionFrame.midX - field.frame.minX,
+                dy: selectionFrame.midY - field.frame.minY
+            )).tap()
         }
         field.typeText(text)
         XCTAssertEqual(field.value as? String, text, "The test must finish editing before submitting the form.")

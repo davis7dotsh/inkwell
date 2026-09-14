@@ -69,6 +69,28 @@ final class ModelAndCacheTests: XCTestCase {
     }
 
     @MainActor
+    func testRefreshOutcomeDoesNotDependOnDismissedError() async {
+        let configuration = AppConfiguration(apiBaseURL: nil, convexURL: nil, clerkPublishableKey: "")
+        let auth = Authentication(configuration: configuration)
+        let store = InkwellStore(authentication: auth, configuration: configuration, demo: false)
+
+        let firstRefresh = await store.refresh()
+        XCTAssertFalse(firstRefresh)
+        XCTAssertNotNil(store.error)
+        XCTAssertFalse(store.isLoading)
+
+        store.error = nil
+        let retry = await store.refresh()
+        XCTAssertFalse(retry)
+        XCTAssertNotNil(store.error)
+
+        let demo = InkwellStore(authentication: auth, configuration: configuration, demo: true)
+        let demoRefresh = await demo.refresh()
+        XCTAssertTrue(demoRefresh)
+        XCTAssertNil(demo.error)
+    }
+
+    @MainActor
     func testDemoLibraryMutationsAndAnnotationsStayLocal() async throws {
         let auth = Authentication(configuration: AppConfiguration(apiBaseURL: nil, convexURL: nil, clerkPublishableKey: ""))
         let store = InkwellStore(authentication: auth, demo: true)

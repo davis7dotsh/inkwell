@@ -43,9 +43,10 @@ final class InkwellStore {
         }
     }
 
-    func refresh() async {
-        guard !isLoading else { return }
-        guard !isDemo else { return }
+    @discardableResult
+    func refresh() async -> Bool {
+        guard !isLoading else { return false }
+        guard !isDemo else { return true }
         isLoading = true
         defer { isLoading = false }
         do {
@@ -61,9 +62,12 @@ final class InkwellStore {
             error = nil
             try persist()
             await syncAnnotations()
+            return true
         } catch is CancellationError {
+            return false
         } catch {
             self.error = articles.isEmpty ? error.localizedDescription : "Showing your saved library. \(error.localizedDescription)"
+            return false
         }
     }
 
@@ -163,9 +167,11 @@ final class InkwellStore {
             let account = try prepareAccount()
             while let (articleID, pending) = snapshot.pendingAnnotations.sorted(by: { $0.value.queuedAt < $1.value.queuedAt }).first {
                 try requireAccount(account)
-                // Another gesture may have arrived while the preceding upload was
-                // suspended. Its own revision must also be durable before upload.
-                try persist()
+                // Staging normally persisted this exact queue already. A failed
+                // write or a newer gesture must become durable before upload.
+                if persistedPendingRevisions != snapshot.pendingAnnotations.mapValues(\.revision) {
+                    try persist()
+                }
                 try pending.annotations.validate()
                 let args = try annotationArguments(pending.annotations, articleID: articleID)
                 try await client.mutate("annotations:save", args: args)

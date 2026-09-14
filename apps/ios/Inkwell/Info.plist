@@ -15,11 +15,12 @@
   <key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
   <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
   <key>UISupportedInterfaceOrientations~ipad</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationPortraitUpsideDown</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
-  <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>sh.davis7.inkwell</string><key>CFBundleURLSchemes</key><array><string>inkwell</string></array></dict></array>
+  <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string><key>CFBundleURLSchemes</key><array><string>$(INKWELL_URL_SCHEME)</string></array></dict></array>
   <key>NSMicrophoneUsageDescription</key><string>Record voice memos attached to your reading.</string>
   <key>NSSpeechRecognitionUsageDescription</key><string>Transcribe your voice memos on this device.</string>
   <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
   <key>APIBaseURL</key><string>$(API_BASE_URL)</string>
   <key>ConvexURL</key><string>$(CONVEX_URL)</string>
   <key>ClerkPublishableKey</key><string>$(CLERK_PUBLISHABLE_KEY)</string>
+  <key>InkwellURLScheme</key><string>$(INKWELL_URL_SCHEME)</string>
 </dict></plist>

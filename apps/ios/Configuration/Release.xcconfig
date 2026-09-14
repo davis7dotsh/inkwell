@@ -1,3 +1,4 @@
 API_BASE_URL = https:/$()/api.inkwellapp.net
 CONVEX_URL = https:/$()/judicious-mastiff-652.convex.cloud
 CLERK_PUBLISHABLE_KEY = pk_live_Y2xlcmsuaW5rd2VsbGFwcC5uZXQk
+INKWELL_URL_SCHEME = inkwell

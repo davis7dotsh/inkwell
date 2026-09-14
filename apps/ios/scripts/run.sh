@@ -14,6 +14,10 @@ for argument in "$@"; do
     *) printf 'Unknown argument: %s\n' "$argument" >&2; exit 1 ;;
   esac
 done
+if $iphone && ! $device; then
+  printf '%s\n' '--iphone requires --device. For an iPhone simulator, set INKWELL_SIMULATOR_ID.' >&2
+  exit 1
+fi
 bundle=sh.davis7.inkwell.dev
 if [[ "$configuration" == Release ]]; then bundle=sh.davis7.inkwell; fi
 if $device; then

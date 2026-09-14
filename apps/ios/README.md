@@ -20,9 +20,9 @@ Use `INKWELL_SIMULATOR_ID` to select a simulator, or `INKWELL_DEVICE_ID` with `p
 
 ## Configuration
 
-Debug uses the existing staging Clerk, Convex, and API services. Release uses production. The Debug app has its own orange icon and bundle identifier, so it coexists with the production app.
+Debug uses the existing staging Clerk, Convex, and API services. Release uses production. The Debug app has its own orange icon, bundle identifier, and `inkwell-dev://` sign-in callback, so it coexists with the production app, which keeps `inkwell://`.
 
-To connect the simulator to `pnpm api`, copy `Configuration/Local.xcconfig.example` to `Configuration/Local.xcconfig` and rebuild. This ignored override points the API at `http://localhost:8787`. A physical iPad uses the deployed staging API unless you provide a reachable development address.
+To connect the simulator to `pnpm api`, copy `Configuration/Local.xcconfig.example` to `Configuration/Local.xcconfig` and rebuild. This ignored override points only simulator builds at `http://localhost:8787`. A physical iPad uses the deployed staging API unless you provide a reachable development address.
 
 GitHub and Google sign-in open the system authentication browser. The app follows Clerk's native frontend API protocol; device and session credentials stay in Keychain. Existing users may need to sign in once after replacing the React Native app.
 
@@ -30,7 +30,7 @@ GitHub and Google sign-in open the system authentication browser. The app follow
 
 The app uses the existing Convex queries/mutations and worker endpoints. Articles, tags, read status, pins, strokes, boxes, notes, and voice memo metadata keep their current wire formats. No server schema migration is required.
 
-Saved annotation block geometry maps existing marks to native text wrapping and future layout changes. Completed edits enter an atomic local queue before upload. Cached articles can be reopened offline, and pending annotations retry when the app reconnects. The foreground library refreshes every five seconds; pull to refresh is also available. Concurrent edits to the same article from multiple devices retain the backend's existing last-save-wins behavior.
+Saved annotation block geometry maps existing marks to native text wrapping and future layout changes. Completed edits enter an atomic local queue before upload. Cached articles can be reopened offline, and pending annotations retry when the app reconnects. The library refreshes when the app becomes active and every 30 seconds while active, backing off to five minutes after failures. Pull to refresh is also available. Concurrent edits to the same article from multiple devices retain the backend's existing last-save-wins behavior.
 
 Release preserves the production bundle identifier. Existing local recordings in `Documents/memos` migrate on access to the native audio store, and synced recordings remain accessible through the existing authenticated API. Imported PDFs continue to use extracted content blocks, matching the previous app.
 

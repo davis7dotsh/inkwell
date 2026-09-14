@@ -2,4 +2,5 @@
 API_BASE_URL = https:/$()/inkwell-api-dev.davis-benjamin41902.workers.dev
 CONVEX_URL = https:/$()/abundant-grouse-159.convex.cloud
 CLERK_PUBLISHABLE_KEY = pk_test_aGFwcHktc2hlZXAtODcuY2xlcmsuYWNjb3VudHMuZGV2JA
+INKWELL_URL_SCHEME = inkwell-dev
 #include? "Local.xcconfig"
