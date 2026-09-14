@@ -1,0 +1,2 @@
+// Copy to Local.xcconfig to connect the simulator to pnpm api.
+API_BASE_URL[sdk=iphonesimulator*] = http:/$()/localhost:8787

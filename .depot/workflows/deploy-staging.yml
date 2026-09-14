@@ -40,17 +40,13 @@ jobs:
       - name: Convex codegen
         run: pnpm --filter @inkwell/backend codegen
 
-      - name: Check types (all packages + mobile)
+      - name: Check TypeScript workspaces
         run: pnpm typecheck
 
       - name: Run tests
         run: |
           pnpm --filter @inkwell/content test
           pnpm --filter @inkwell/api test
-
-      - name: Validate mobile bundle
-        working-directory: apps/mobile
-        run: pnpm exec expo export --platform ios --output-dir /tmp/mobile-export
 
       - name: Deploy Convex (staging) and build web app
         working-directory: packages/backend

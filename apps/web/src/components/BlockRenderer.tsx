@@ -1,5 +1,5 @@
-// Web port of the mobile BlockRenderer: article blocks as semantic HTML
-// with the same ink-wash styling (see styles.css for the visual rules).
+// Article blocks as semantic HTML with Inkwell's ink-wash styling
+// (see styles.css for the visual rules).
 import type { Block, Span } from "@inkwell/content";
 import React, { Fragment, memo, type ReactNode } from "react";
 

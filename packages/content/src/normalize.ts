@@ -29,8 +29,8 @@ const clean = (value: string | null | undefined): string | undefined => {
 };
 
 /**
- * Hostname of an absolute URL. Hand-rolled instead of `new URL` because this
- * package runs on React Native too, where WHATWG URL support is incomplete.
+ * Hostname of an absolute URL, preserving the parser's tolerant behavior for
+ * source metadata without relying on URL-constructor validation.
  */
 function hostnameOf(url: string | undefined): string | undefined {
   if (!url) return undefined;
