@@ -1,4 +1,4 @@
-// Ink-wash visual language, mirrored from apps/mobile/src/lib/theme.ts —
+// Inkwell's ink-wash visual language, shared with the native iPad app —
 // the same two finishes (light "paper", dark "night study"). Layout styling
 // lives in styles.css (same values as CSS custom properties); this module
 // covers the places JS needs a literal color, plus the scheme hook.

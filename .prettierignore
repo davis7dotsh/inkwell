@@ -1,3 +1,7 @@
 # Package-manager and generated output
 pnpm-lock.yaml
 packages/backend/convex/_generated/
+
+# Xcode owns project formatting and generated build output.
+apps/ios/Inkwell.xcodeproj/
+apps/ios/build/

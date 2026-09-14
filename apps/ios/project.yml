@@ -1,0 +1,73 @@
+name: Inkwell
+options:
+  bundleIdPrefix: sh.davis7
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: 4UQML39V9S
+    TARGETED_DEVICE_FAMILY: "1,2"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  Inkwell:
+    type: application
+    platform: iOS
+    sources:
+      - path: Inkwell
+    configFiles:
+      Debug: Configuration/Debug.xcconfig
+      Release: Configuration/Release.xcconfig
+    settings:
+      base:
+        INFOPLIST_FILE: Inkwell/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_EMIT_LOC_STRINGS: YES
+        SUPPORTS_MACCATALYST: NO
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: sh.davis7.inkwell.dev
+          ASSETCATALOG_COMPILER_APPICON_NAME: AppIconDev
+          INKWELL_DISPLAY_NAME: Inkwell Dev
+        Release:
+          PRODUCT_BUNDLE_IDENTIFIER: sh.davis7.inkwell
+          ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+          INKWELL_DISPLAY_NAME: Inkwell
+  InkwellTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: InkwellTests
+    dependencies:
+      - target: Inkwell
+    settings:
+      GENERATE_INFOPLIST_FILE: YES
+      PRODUCT_BUNDLE_IDENTIFIER: sh.davis7.inkwell.tests
+  InkwellUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: InkwellUITests
+    dependencies:
+      - target: Inkwell
+    settings:
+      GENERATE_INFOPLIST_FILE: YES
+      PRODUCT_BUNDLE_IDENTIFIER: sh.davis7.inkwell.uitests
+schemes:
+  Inkwell:
+    build:
+      targets:
+        Inkwell: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - InkwellTests
+        - InkwellUITests
+      gatherCoverageData: true
+    archive:
+      config: Release

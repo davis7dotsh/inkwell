@@ -42,3 +42,22 @@ jobs:
         run: pnpm check:convex-codegen
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build native iPad app
+        run: bash apps/ios/scripts/build.sh
+
+      - name: Test native iPad app in Simulator
+        run: bash apps/ios/scripts/test.sh

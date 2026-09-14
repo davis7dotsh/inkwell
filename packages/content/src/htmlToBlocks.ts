@@ -1,5 +1,5 @@
 // Converts Readability-cleaned article HTML into renderable Blocks.
-// Pure TypeScript + htmlparser2; safe for React Native (no Node APIs, no DOM).
+// Pure TypeScript + htmlparser2, without Node APIs or DOM dependencies.
 
 import { ElementType, parseDocument } from "htmlparser2";
 

@@ -1,6 +1,9 @@
 # Effect v4 migration plan
 
-Status: implementation plan for `codex/effect-v4-port`
+Status: historical implementation plan for `codex/effect-v4-port`. The Expo
+app described here has since been replaced by the native Swift app in
+`apps/ios`; mobile Effect and Metro instructions below are historical only.
+Current commands and architecture are documented in the root README.
 
 Pinned cohort:
 

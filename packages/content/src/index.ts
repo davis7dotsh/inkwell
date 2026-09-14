@@ -1,7 +1,6 @@
 // @inkwell/content — shared content model: Block types, HTML/Markdown
 // parsers, Firecrawl normalization, Markdown export, and stroke geometry.
-// Pure TypeScript (htmlparser2 + marked only); consumed as source by Metro,
-// Vite, and Workers bundlers alike.
+// Pure TypeScript; consumed as source by Vite and Workers bundlers.
 
 export * from "./types";
 export * from "./htmlToBlocks";

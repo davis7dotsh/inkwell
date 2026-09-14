@@ -1,7 +1,7 @@
 // A quiet ink motif tucked into the bottom-right corner — the logo's brush
 // gesture stacked in parallel strokes that fade as they climb away from the
-// corner. Direct SVG port of the mobile BackdropWash (Skia) so both apps
-// share the same backdrop language. Fixed behind the content; never
+// corner. The SVG uses Inkwell's shared backdrop language.
+// Fixed behind the content; never
 // intercepts pointer events.
 import React, { useEffect, useState } from "react";
 
